@@ -1,0 +1,11 @@
+{
+  "name": "Oppa Ramyeon POS",
+  "short_name": "Oppa POS",
+  "start_url": "/pos/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f6f5f3",
+  "theme_color": "#d4202f",
+  "lang": "th",
+  "icons": [{ "src": "/assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

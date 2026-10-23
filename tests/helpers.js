@@ -4,6 +4,11 @@ import { clearSettingsCache, clearRulesCache } from '../server/lib/util.js';
 process.env.RATE_LIMIT_FACTOR = '100';
 export async function startServer() {
   clearSettingsCache(); clearRulesCache();
+  if (process.env.TEST_DATABASE_URL) { // fresh schema per test file when running against PostgreSQL
+    const pg = (await import('pg')).default;
+    const c = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
+    await c.connect(); await c.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public'); await c.end();
+  }
   const ctx = await createApp({ db: { url: process.env.TEST_DATABASE_URL || '', file: ':memory:' }, noTimers: true });
   await new Promise((r) => ctx.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${ctx.server.address().port}`;

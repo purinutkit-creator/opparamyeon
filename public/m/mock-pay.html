@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="th">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ทดสอบชำระเงิน</title>
+<link rel="stylesheet" href="/shared/style.css"></head>
+<body>
+<main style="max-width:440px;margin:10vh auto;padding:16px">
+  <div class="card">
+    <h2>🧪 Mock Payment Gateway</h2>
+    <p class="muted">หน้านี้ใช้ทดสอบระบบเท่านั้น (เปิดได้เมื่อแอดมินเปิด "โหมดทดสอบ Mock Gateway") — ระบบจะส่ง webhook ที่ลงลายเซ็น และร้านยืนยันสถานะกับ gateway ก่อนเปลี่ยนเป็นชำระแล้ว</p>
+    <p>Ref: <code id="ref"></code></p>
+    <button class="btn ok big block" id="pay">จำลองการจ่ายสำเร็จ</button>
+    <button class="btn block" style="margin-top:.5em" onclick="history.back()">ยกเลิก / กลับ</button>
+    <p id="out" class="small"></p>
+  </div>
+</main>
+<script>
+  const ref = location.hash.slice(1); document.getElementById('ref').textContent = ref;
+  document.getElementById('pay').onclick = async (e) => {
+    e.target.disabled = true;
+    const r = await fetch('/api/payments/mock/' + encodeURIComponent(ref) + '/complete', { method: 'POST' }).then((x) => x.json()).catch((er) => ({ error: er.message }));
+    document.getElementById('out').textContent = JSON.stringify(r);
+    if (r.status === 'paid' || r.duplicate) setTimeout(() => history.back(), 1200);
+  };
+</script>
+</body>
+</html>

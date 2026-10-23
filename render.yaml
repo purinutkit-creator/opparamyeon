@@ -1,0 +1,37 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Web service (Node 22) + managed PostgreSQL. Free plans work for trying the system;
+# for a real shop use paid plans (free web services sleep after ~15 min idle and free Postgres expires after 30 days).
+services:
+  - type: web
+    name: opparamyeon
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 22.13.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: opparamyeon-db
+          property: connectionString
+      - key: PUBLIC_URL
+        value: https://opparamyeon.onrender.com
+      - key: OWNER_PIN
+        sync: false # first owner PIN (digits). Change it after the first login.
+      - key: SEED_DEMO
+        value: "true" # demo menu on an empty database; set to "false" before first boot for a blank shop
+      - key: BEAM_MERCHANT_ID
+        sync: false
+      - key: BEAM_API_KEY
+        sync: false
+      - key: BEAM_WEBHOOK_SECRET
+        sync: false
+databases:
+  - name: opparamyeon-db
+    plan: free
+    region: singapore
+    databaseName: opparamyeon
+    user: opparamyeon

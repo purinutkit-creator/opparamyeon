@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db, J, S } from '../db.js';
 import { ah, id, now, bad, notFound, conflict, emit, audit, getSettings, businessDateOf } from '../lib/util.js';
 import { staffAuth, staffForAction, can, requirePerm } from '../lib/auth.js';
-import { saveOrder, payOrder, checkout, voidOrder, refundItems, orderFull, getOrder, sendKitchen, freeTableIfIdle } from '../lib/orders.js';
+import { saveOrder, payOrder, checkout, voidOrder, refundItems, orderFull, getOrder, sendKitchen, freeTableIfIdle, idemRetry } from '../lib/orders.js';
 import { enqueue, orderDocData, reprint, retry } from '../lib/print.js';
 
 const r = Router();
@@ -35,7 +35,7 @@ r.post('/orders/save', staffAuth('sell'), ah(async (req, res) => {
   const { order_id, cart, action, idempotency_key } = req.body || {};
   if (!['hold', 'send', 'save'].includes(action || 'save')) throw bad('action ไม่ถูกต้อง');
   if (cart && cart.discount && cart.discount.value && req.body.approver) { await staffForAction(req, 'discount'); cart._approved_discount = true; }
-  const out = await saveOrder({ orderId: order_id, cart, staff: req.staff, terminalId: req.terminalId, shiftId: sh.id, action: action || 'save', idempotencyKey: order_id ? null : idempotency_key });
+  const out = await idemRetry(() => saveOrder({ orderId: order_id, cart, staff: req.staff, terminalId: req.terminalId, shiftId: sh.id, action: action || 'save', idempotencyKey: order_id ? null : idempotency_key }));
   res.json(await orderFull(out.order.id));
 }));
 
@@ -44,9 +44,9 @@ r.post('/orders/checkout', staffAuth('sell'), ah(async (req, res) => {
   const { order_id, cart, payments, idempotency_key, print } = req.body || {};
   if (!idempotency_key) throw bad('missing idempotency_key');
   if (cart && cart.discount && cart.discount.value && req.body.approver) { await staffForAction(req, 'discount'); cart._approved_discount = true; }
-  const out = cart
-    ? await checkout({ orderId: order_id, cart, payments, staff: req.staff, terminalId: req.terminalId, shiftId: sh.id, idempotencyKey: idempotency_key, print: print || {} })
-    : await payOrder({ orderId: order_id, payments, staff: req.staff, terminalId: req.terminalId, shiftId: sh.id, idempotencyKey: idempotency_key, print: print || {} });
+  const out = await idemRetry(() => (cart
+    ? checkout({ orderId: order_id, cart, payments, staff: req.staff, terminalId: req.terminalId, shiftId: sh.id, idempotencyKey: idempotency_key, print: print || {} })
+    : payOrder({ orderId: order_id, payments, staff: req.staff, terminalId: req.terminalId, shiftId: sh.id, idempotencyKey: idempotency_key, print: print || {} })));
   if (print && print.mobile_qr) {
     requirePerm(req.staff, 'print_mobile_qr');
     const { issueMobileForOrder } = await import('./mobile.js');
@@ -105,8 +105,8 @@ r.post('/orders/:id/verify-slip', staffAuth('verify_payment'), ah(async (req, re
   const sh = await needShift(req);
   const o = await getOrder(req.params.id);
   if (req.body.approve) {
-    const out = await payOrder({ orderId: o.id, payments: [{ method: 'promptpay', amount: o.total, ref: 'slip:' + (req.body.ref || ''), slip_file: req.body.slip_file || null }],
-      staff: req.staff, terminalId: req.terminalId, shiftId: sh.id, idempotencyKey: 'slip:' + o.id });
+    const out = await idemRetry(() => payOrder({ orderId: o.id, payments: [{ method: 'promptpay', amount: o.total, ref: 'slip:' + (req.body.ref || ''), slip_file: req.body.slip_file || null }],
+      staff: req.staff, terminalId: req.terminalId, shiftId: sh.id, idempotencyKey: 'slip:' + o.id }));
     await db.run("UPDATE orders SET verify_status = 'approved' WHERE id = ?", [o.id]);
     await audit(req.staff.id, 'verify_slip', 'order', o.id, null, { approved: true });
     return res.json(await orderFull(out.order.id));

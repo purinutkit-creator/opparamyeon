@@ -142,11 +142,15 @@ r.get('/print/jobs', staffAuth(), ah(async (req, res) => {
 r.post('/print/test', staffAuth('manage_printers'), ah(async (req, res) => {
   const p = await db.get('SELECT * FROM printers WHERE id = ?', [req.body.printer_id]);
   if (!p) throw notFound();
-  const jobs = await enqueue('test', 'test-' + Date.now(), { ...(await storeData()), test: req.body.what || 'all', datetime: new Date().toLocaleString('th-TH') }, { printerId: p.id });
+  // a template from the designer can be test-printed on the real printer (same renderer as the preview)
+  const jobs = req.body.template
+    ? await enqueue(req.body.doc_type || 'receipt', 'test-' + Date.now(), { ...(req.body.data || {}), ...(await storeData()) }, { printerId: p.id, template: req.body.template })
+    : await enqueue('test', 'test-' + Date.now(), { ...(await storeData()), test: req.body.what || 'all', datetime: new Date().toLocaleString('th-TH') }, { printerId: p.id });
   res.json({ jobs });
 }));
 r.post('/print/cut', staffAuth('cut_paper'), ah(async (req, res) => {
   await audit(req.staff.id, 'manual_cut', 'printer', req.body.printer_id);
+  if (req.body.local) return res.json({ ok: true }); // already cut directly on this device
   const jobs = await enqueue('cut', 'cut-' + Date.now(), {}, { printerId: req.body.printer_id });
   res.json({ jobs });
 }));
@@ -225,7 +229,7 @@ const PUBLIC_KEYS = ['store', 'display', 'fonts', 'queue', 'mobile', 'members', 
 export function publicSettings(s) {
   const out = Object.fromEntries(PUBLIC_KEYS.map((k) => [k, s[k]]));
   out.members = { ...s.members, otp_webhook_url: undefined };
-  out.payment = { promptpay_enabled: !!s.payment.promptpay_id, promptpay_name: s.payment.promptpay_name, slip_upload: s.payment.slip_upload,
+  out.payment = { promptpay_enabled: !!s.payment.promptpay_id, promptpay_id: s.payment.promptpay_id, promptpay_name: s.payment.promptpay_name, slip_upload: s.payment.slip_upload,
     beam: !!(s.payment.providers.beam && s.payment.providers.beam.enabled), mock: !!s.payment.mock_enabled };
   out.sale = { payment_methods: s.sale.payment_methods, tax_rate: s.sale.tax_rate, tax_inclusive: s.sale.tax_inclusive, packaging_fee: s.sale.packaging_fee,
     packaging_mode: s.sale.packaging_mode, kitchen_send: s.sale.kitchen_send, auto_lock_minutes: s.sale.auto_lock_minutes, max_discount_pct: s.sale.max_discount_pct };

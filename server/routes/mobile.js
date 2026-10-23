@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { db, J } from '../db.js';
 import { ah, id, now, token, bad, notFound, conflict, forbidden, emit, addMinutes, getSettings, rateLimit, audit, randomCode } from '../lib/util.js';
 import { staffAuth, requirePerm } from '../lib/auth.js';
-import { saveOrder, getOrder, orderFull, sendKitchen, freeTableIfIdle, voidOrder } from '../lib/orders.js';
+import { saveOrder, getOrder, orderFull, sendKitchen, freeTableIfIdle, voidOrder, idemRetry } from '../lib/orders.js';
 import { enqueue, storeData, fmtDate } from '../lib/print.js';
 import { catalog } from './catalog.js';
 import { dineLabel } from '../../public/shared/core.js';
@@ -137,7 +137,8 @@ r.post('/m/orders', ah(async (req, res) => {
   const s = await getSettings();
   const b = req.body || {};
   if (!b.idempotency_key || String(b.idempotency_key).length < 8) throw bad('missing idempotency_key');
-  const dup = await db.get('SELECT id FROM orders WHERE idempotency_key = ?', ['m:' + b.idempotency_key]);
+  const findDup = () => db.get('SELECT id FROM orders WHERE idempotency_key = ?', ['m:' + b.idempotency_key]);
+  const dup = await findDup();
   if (dup) return res.json({ id: dup.id, duplicate: true });
   let mode = ms.mode === 'table' ? 'table' : b.mode === 'table' ? 'table' : 'pickup';
   let tableId = null;
@@ -158,7 +159,8 @@ r.post('/m/orders', ah(async (req, res) => {
   const lines = (b.lines || []).map((l) => ({ product_id: l.product_id, qty: l.qty, options: l.options || [], note: l.note, bowl_group: l.bowl_group,
     dine_type: mode === 'table' ? 'dine_in' : 'takeaway' }));
   if (!lines.length) throw bad('ตะกร้าว่าง');
-  const out = await db.tx(async () => {
+  let out;
+  try { out = await db.tx(async () => {
     // single-use QR: the conditional increment is the lock — two phones submitting together cannot both pass
     const use = await db.run(`UPDATE mobile_sessions SET used_count = used_count + 1 WHERE id = ? AND status = 'active' AND (single_use = 0 OR used_count = 0)`, [ms.id]);
     if (!use.changes) throw forbidden('QR นี้ใช้ส่งออเดอร์ไปแล้ว', 'session_used');
@@ -170,7 +172,11 @@ r.post('/m/orders', ah(async (req, res) => {
     let o = await getOrder(order.id);
     if (kitchenRule === 'immediately') { await sendKitchen(o, null, null, null); o = await getOrder(order.id); }
     return o;
-  });
+  }); } catch (e) {
+    // a simultaneous duplicate submission (network retry) → answer with the order that won
+    if (/23505|unique/i.test(`${e.code || ''} ${e.message || ''}`)) { const d = await findDup(); if (d) return res.json({ id: d.id, duplicate: true }); }
+    throw e;
+  }
   emit('shop', 'mobile:new_order', { id: out.id, bill_no: out.bill_no, customer_name: out.customer_name, table_name: out.table_name, total: out.total, bowls: out.bowls,
     pay_mode: payMode, status: 'pending_payment', source: out.source });
   emit('shop', 'orders:changed', { id: out.id });

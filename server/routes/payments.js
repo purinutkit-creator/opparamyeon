@@ -4,7 +4,7 @@ import multer from 'multer';
 import { db, J, S } from '../db.js';
 import { ah, id, now, bad, notFound, conflict, forbidden, emit, getSettings, rateLimit, audit } from '../lib/util.js';
 import { staffAuth } from '../lib/auth.js';
-import { getOrder, payOrder } from '../lib/orders.js';
+import { getOrder, payOrder, idemRetry } from '../lib/orders.js';
 import { GATEWAYS } from '../lib/gateways.js';
 import { saveFile } from './system.js';
 import { promptPayPayload } from '../../public/shared/core.js';
@@ -119,7 +119,7 @@ export async function settleIntent(gw, ref, claimedPaid) {
     return { status: 'needs_review' };
   }
   try {
-    await payOrder({ orderId: o.id, payments: [{ method: 'online', amount: intent.amount, ref }], staff: null, idempotencyKey: gw.id + ':' + ref, provider: gw.id });
+    await idemRetry(() => payOrder({ orderId: o.id, payments: [{ method: 'online', amount: intent.amount, ref }], staff: null, idempotencyKey: gw.id + ':' + ref, provider: gw.id }));
   } catch (e) {
     if (e.code !== 'already_paid') throw e;
   }

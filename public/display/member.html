@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>กรอกสมาชิก · Oppa Ramyeon</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700;800&display=swap">
+<link rel="stylesheet" href="/shared/style.css">
+</head>
+<body>
+<main style="max-width:460px;margin:0 auto;padding:16px" id="m"></main>
+<script type="module">
+import { makeApi } from '/shared/api.js';
+import { h, toast, errToast, keypad } from '/shared/ui.js';
+const api = makeApi({ tokenKey: '__none' });
+const promptId = location.hash.slice(1);
+const m = document.getElementById('m');
+const inp = h('input', { class: 'input', inputmode: 'numeric', placeholder: 'เบอร์โทร หรือ หมายเลขสมาชิก', style: { fontSize: '1.6em', textAlign: 'center' } });
+const res = h('div');
+async function search() {
+  try {
+    const r = await api.post('/member-prompt/lookup', { prompt_id: promptId, q: inp.value });
+    res.replaceChildren(...(r.results.length ? r.results.map((x) => h('button', { class: 'btn big block', style: { marginTop: '.5em' }, onclick: async () => {
+      try { await api.post('/member-prompt/confirm', { prompt_id: promptId, member_id: x.id }); m.replaceChildren(h('div', { class: 'card', style: { textAlign: 'center' } }, h('h2', {}, '✅ ยืนยันแล้ว'), h('p', {}, 'ปิดหน้านี้ได้เลย ขอบคุณค่ะ'))); } catch (e) { errToast(e); }
+    } }, `${x.name} · ${x.phone}`)) : [h('p', { class: 'empty' }, 'ไม่พบสมาชิก กรุณาแจ้งพนักงาน')]));
+  } catch (e) { errToast(e); }
+}
+m.append(h('h2', {}, 'ระบุสมาชิกสำหรับบิลนี้'), inp, h('div', { style: { marginTop: '.8em' } }, keypad(inp, { onEnter: search })), res,
+  h('p', { class: 'small muted' }, 'หน้านี้ใช้ได้ชั่วคราวและผูกกับบิลที่พนักงานเปิดไว้เท่านั้น'));
+</script>
+</body>
+</html>

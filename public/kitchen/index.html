@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ครัว · Oppa Ramyeon</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="/shared/style.css">
+<style>
+  .k-top { display: flex; gap: .5em; align-items: center; padding: .6em .8em; background: var(--surface); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .board { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: .8em; padding: .8em; align-items: start; }
+  .tk { background: var(--surface); border: 2px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .tk.add { border-color: var(--info); } .tk.void { border-color: var(--bad); background: var(--bad-soft); }
+  .tk.cooking { border-color: var(--warn); } .tk.ready { border-color: var(--ok); }
+  .tk .hd { display: flex; justify-content: space-between; align-items: center; padding: .5em .8em; background: var(--surface2); }
+  .tk .q { font-size: 2em; font-weight: 800; }
+  .tk .tw { background: var(--takeaway); color: #fff; font-weight: 800; padding: .2em .6em; border-radius: 8px; font-size: 1.1em; }
+  .tk ul { list-style: none; margin: 0; padding: .5em .8em; font-size: 1.15em; }
+  .tk li { padding: .3em 0; border-bottom: 1px dashed var(--line); }
+  .tk li .o { font-size: .85em; color: var(--muted); }
+  .tk .note { background: #000; color: #fff; padding: .1em .4em; border-radius: 6px; font-weight: 800; display: inline-block; margin-top: .2em; }
+  .tk .ft { display: flex; gap: .4em; padding: .5em .8em .8em; }
+  .tk .ft .btn { flex: 1; }
+  .age { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="module" src="/kitchen/kitchen.js"></script>
+</body>
+</html>

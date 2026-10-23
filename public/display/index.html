@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>จอลูกค้า · Oppa Ramyeon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="/shared/style.css">
+<style>
+  body { overflow: hidden; background: var(--d-bg, #111827); color: var(--d-fg, #fff); }
+  .disp { position: fixed; inset: 0; display: grid; grid-template-columns: 1fr; }
+  .disp.split.active { grid-template-columns: 1.1fr 1fr; }
+  .promo { position: relative; overflow: hidden; background: #000; }
+  .promo img, .promo video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: var(--fit, cover); transition: opacity .8s; }
+  .promo .welcome { position: absolute; left: 0; right: 0; bottom: 0; padding: 4vh 4vw; font-size: clamp(22px, 4vw, 54px); font-weight: 800; text-shadow: 0 2px 12px rgb(0 0 0 / .7); background: linear-gradient(transparent, rgb(0 0 0 / .6)); }
+  .promo .logo { position: absolute; top: 3vh; left: 3vw; max-height: 14vh; max-width: 30vw; }
+  .panel { display: flex; flex-direction: column; padding: 3vh 3vw; gap: 1.5vh; min-height: 0; background: var(--d-bg); }
+  .disp:not(.active) .panel { display: none; }
+  .disp.full.active .promo { display: none; }
+  .dine { font-size: clamp(22px, 3.2vw, 44px); font-weight: 800; padding: .3em .6em; border-radius: 14px; text-align: center; background: rgb(255 255 255 / .1); }
+  .dine.takeaway { background: #c2410c; color: #fff; }
+  .items { flex: 1; overflow: hidden; font-size: clamp(18px, 2.2vw, 30px); }
+  .it { display: flex; justify-content: space-between; gap: 1em; padding: .35em 0; border-bottom: 1px solid rgb(255 255 255 / .12); }
+  .it small { display: block; opacity: .7; font-size: .7em; }
+  .sum { font-size: clamp(18px, 2vw, 28px); }
+  .sum .r { display: flex; justify-content: space-between; }
+  .sum .total { font-size: clamp(34px, 5vw, 72px); font-weight: 800; color: var(--d-accent, #ef4444); }
+  .qr { background: #fff; border-radius: 16px; padding: 1vh; width: min(34vh, 80%); margin: 0 auto; display: block; }
+  .done { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; background: var(--d-bg); z-index: 5; }
+  .done .q { font-size: clamp(80px, 22vh, 260px); font-weight: 800; color: var(--d-accent); line-height: 1; }
+  .pairing { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); color: var(--text); z-index: 20; padding: 1em; }
+  .overlay { position: fixed; inset: 0; z-index: 10; background: rgb(0 0 0 / .78); display: grid; place-items: center; padding: 2vh; }
+  .overlay .box { background: var(--surface); color: var(--text); border-radius: 22px; padding: 3vh 3vw; width: min(560px, 96vw); }
+  .overlay .val { font-size: 2.2em; font-weight: 800; text-align: center; letter-spacing: .08em; min-height: 1.4em; border-bottom: 3px solid var(--line); margin-bottom: .5em; }
+  .net { position: fixed; right: 8px; bottom: 6px; font-size: 12px; opacity: .6; z-index: 30; }
+  .member { font-size: clamp(16px, 1.8vw, 24px); background: rgb(255 255 255 / .1); padding: .4em .7em; border-radius: 12px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="/display/display.js"></script>
+</body>
+</html>

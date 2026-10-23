@@ -44,7 +44,7 @@ export const DEFAULT_SETTINGS = {
   queue: { enabled: true, digits: 3, start: 1, prefix: '', dine_in_prefix: 'D', takeaway_prefix: 'T', separate: true, mixed_series: 'dine_in',
     scope: 'shared', reset: 'business_day', epoch: 0 },
   bill: { prefix: 'B' },
-  sound: { enabled: true, volume: 0.8, count: 4, file: '', error_file: '', new_order_file: '', output: ['kitchen', 'pos'], on: 'printed' },
+  sound: { enabled: true, volume: 0.8, count: 4, file: '', error_file: '', new_order_file: '', output: ['kitchen', 'pos'], on: 'sent' },
   display: { layout: 'split', bg: '#111827', color: '#ffffff', accent: '#ef4444', logo: '', welcome: 'ยินดีต้อนรับสู่ Oppa Ramyeon', thanks: 'ขอบคุณค่ะ 감사합니다',
     media: [], image_seconds: 8, video_muted: true, video_volume: 0.5, fit: 'cover', show_qr: true, pairing_minutes: 10, member_prompt_seconds: 90 },
   fonts: { global: 'Sarabun', pos: '', display: '', member: '', mobile: '', admin: '', reports: '', receipt: '', kitchen: '', fallback: 'Sarabun, Noto Sans Thai, sans-serif',

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#d4202f">
+<title>Oppa Ramyeon POS</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700;800&display=swap">
+<link rel="stylesheet" href="/shared/style.css">
+<style>
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px; }
+  .hero { text-align: center; padding: 2em 0 1em; }
+  .hero h1 { font-size: clamp(28px, 6vw, 44px); }
+  .apps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .apps a { text-decoration: none; color: var(--text); }
+  .apps .card { height: 100%; }
+  .apps .ic { font-size: 2em; }
+</style>
+</head>
+<body>
+<main>
+  <div class="hero"><h1>🍜 Oppa Ramyeon POS</h1><p class="muted">ระบบขายหน้าร้านมาม่าเกาหลี · เวอร์ชัน <span id="v">…</span></p></div>
+  <div class="apps">
+    <a href="/pos/"><div class="card"><div class="ic">🛒</div><h3>หน้าขาย POS</h3><p class="muted small">ขาย สแกนบาร์โค้ด รับชำระ ส่งครัว รอบการขาย</p></div></a>
+    <a href="/admin/"><div class="card"><div class="ic">📊</div><h3>เว็บไซต์จัดการร้าน</h3><p class="muted small">ยอดขายวันนี้ รายงาน เมนู สต็อก สมาชิก ตั้งค่า</p></div></a>
+    <a href="/kitchen/"><div class="card"><div class="ic">👩‍🍳</div><h3>จอครัว</h3><p class="muted small">ใบครัวแบบเรียลไทม์ พิมพ์ใบครัว เสียงแจ้งเตือน</p></div></a>
+    <a href="/display/"><div class="card"><div class="ic">📺</div><h3>จอลูกค้า</h3><p class="muted small">จับคู่ด้วยรหัส 6 หลัก หรือเปิดบนจอที่สอง</p></div></a>
+    <a href="/member/"><div class="card"><div class="ic">⭐</div><h3>เว็บไซต์สมาชิก</h3><p class="muted small">แต้ม Tier คูปอง ประวัติการซื้อ</p></div></a>
+    <a href="/guide/"><div class="card"><div class="ic">📖</div><h3>คู่มือการใช้งาน</h3><p class="muted small">ทุกฟังก์ชัน การเชื่อมต่อเครื่องพิมพ์และจอลูกค้า</p></div></a>
+  </div>
+</main>
+<script>fetch('/api/version').then((r) => r.json()).then((v) => { document.getElementById('v').textContent = v.version; });</script>
+</body>
+</html>

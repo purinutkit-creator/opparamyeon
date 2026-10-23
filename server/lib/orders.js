@@ -7,6 +7,16 @@ import { awardOrder, reverseForRefund } from './members.js';
 
 const EDITABLE = ['held', 'open', 'pending_payment'];
 
+// PostgreSQL: two identical submissions racing both pass the duplicate check and one hits the unique index.
+// Retrying once (outside any transaction) lands on the idempotent "already exists" path instead of an error.
+export async function idemRetry(fn) {
+  try { return await fn(); } catch (e) {
+    if (!/23505|unique/i.test(`${e.code || ''} ${e.message || ''}`)) throw e;
+    await new Promise((r) => setTimeout(r, 250));
+    return fn();
+  }
+}
+
 // ---------- pricing: never trust client prices ----------
 export async function priceLines(rawLines, { staff = null, source = 'pos', existing = new Map() } = {}) {
   const out = [];

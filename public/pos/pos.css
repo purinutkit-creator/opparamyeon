@@ -1,0 +1,70 @@
+body { overflow: hidden; }
+.pos { display: grid; grid-template-rows: auto 1fr; height: 100vh; height: 100dvh; }
+.topbar { display: flex; align-items: center; gap: .5em; padding: .5em .8em; background: var(--surface); border-bottom: 1px solid var(--line); overflow-x: auto; }
+.topbar .brand { font-weight: 800; color: var(--brand); white-space: nowrap; margin-right: .3em; }
+.topbar .who { white-space: nowrap; font-size: .9em; }
+.topbar .spacer { flex: 1; }
+.topbar .btn { min-height: 44px; padding: .4em .8em; white-space: nowrap; position: relative; }
+.topbar .count { position: absolute; top: -6px; right: -6px; background: var(--brand); color: #fff; border-radius: 999px; font-size: .75em; min-width: 22px; height: 22px; display: grid; place-items: center; padding: 0 5px; }
+.topbar .count.pulse { animation: pulse 1s infinite; }
+@keyframes pulse { 50% { transform: scale(1.25); } }
+.main { display: grid; grid-template-columns: 1fr minmax(360px, 34%); min-height: 0; }
+.menu { display: flex; flex-direction: column; min-height: 0; padding: .7em; gap: .6em; }
+.search { display: flex; gap: .5em; }
+.search .input { font-size: 1.1em; }
+.products { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .6em; align-content: start; padding-bottom: 1em; }
+.prod { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 0; text-align: left; cursor: pointer; overflow: hidden; display: flex; flex-direction: column; min-height: 150px; touch-action: manipulation; }
+.prod:active { transform: scale(.98); }
+.prod .img { aspect-ratio: 4/3; background: var(--surface2) center/cover no-repeat; display: grid; place-items: center; font-size: 2em; }
+.prod .nm { padding: .4em .6em 0; font-weight: 700; line-height: 1.25; }
+.prod .pr { padding: 0 .6em .5em; color: var(--brand); font-weight: 800; margin-top: auto; }
+.prod.out { opacity: .45; cursor: not-allowed; }
+.prod .tag { position: absolute; }
+.cart { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-left: 1px solid var(--line); }
+.cart-head { padding: .7em; display: flex; flex-direction: column; gap: .5em; border-bottom: 1px solid var(--line); }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 2px solid var(--text); border-radius: 12px; overflow: hidden; }
+.seg button { border: 0; background: var(--surface); min-height: 50px; font-weight: 800; font-size: 1.05em; cursor: pointer; }
+.seg button.on { background: var(--text); color: var(--bg); }
+.seg button.on.takeaway { background: var(--takeaway); color: #fff; }
+.lines { flex: 1; overflow-y: auto; padding: .4em .7em; }
+.line { border-bottom: 1px dashed var(--line); padding: .5em 0; }
+.line .top { display: flex; gap: .5em; align-items: flex-start; }
+.line .nm { flex: 1; font-weight: 700; }
+.line .opts { font-size: .85em; color: var(--muted); }
+.line .ctl { display: flex; gap: .35em; align-items: center; margin-top: .35em; flex-wrap: wrap; }
+.qty { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; }
+.qty button { width: 42px; height: 40px; border: 0; background: transparent; font-size: 1.3em; font-weight: 800; cursor: pointer; }
+.qty span { min-width: 2em; text-align: center; font-weight: 800; }
+.chip { border: 1px solid var(--line); background: var(--surface2); border-radius: 999px; padding: .3em .7em; font-size: .85em; font-weight: 700; cursor: pointer; min-height: 36px; }
+.chip.takeaway { background: var(--takeaway-soft); color: var(--takeaway); border-color: transparent; }
+.chip.bowl { background: var(--info-soft); color: var(--info); border-color: transparent; }
+.chip.sent { background: var(--ok-soft); color: var(--ok); border-color: transparent; cursor: default; }
+.totals { padding: .6em .8em; border-top: 1px solid var(--line); }
+.totals .r { display: flex; justify-content: space-between; }
+.totals .grand { font-size: 1.6em; font-weight: 800; }
+.actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: .45em; padding: .6em .7em .8em; }
+.actions .pay { grid-column: span 4; min-height: 64px; font-size: 1.3em; }
+.member-box { display: flex; align-items: center; gap: .5em; background: var(--info-soft); color: var(--info); border-radius: 10px; padding: .4em .6em; font-weight: 700; }
+.login { display: grid; place-items: center; height: 100vh; padding: 1em; }
+.login .card { width: min(420px, 100%); }
+.pin { font-size: 2em; letter-spacing: .4em; text-align: center; }
+.pay-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1em; }
+.pay-methods { display: grid; grid-template-columns: 1fr 1fr; gap: .5em; }
+.pay-methods .btn.on { outline: 3px solid var(--brand); }
+.bigsum { font-size: 2.2em; font-weight: 800; text-align: center; }
+.qbig { font-size: 5em; font-weight: 800; text-align: center; color: var(--brand); line-height: 1.1; }
+.lock { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); z-index: 900; display: grid; place-items: center; }
+.order-row { display: grid; grid-template-columns: auto 1fr auto; gap: .6em; align-items: center; padding: .6em; border: 1px solid var(--line); border-radius: 12px; margin-bottom: .5em; }
+.opt-group { margin-bottom: 1em; }
+.opt-group .opts { display: flex; flex-wrap: wrap; gap: .5em; }
+.opt-group .opt { border: 2px solid var(--line); background: var(--surface); border-radius: 12px; padding: .6em .9em; min-height: 50px; cursor: pointer; font-weight: 700; }
+.opt-group .opt.on { border-color: var(--brand); background: var(--brand-soft); }
+.mobile-cart-btn { display: none; }
+@media (max-width: 900px) {
+  .main { grid-template-columns: 1fr; }
+  .cart { position: fixed; inset: auto 0 0 0; height: 82dvh; transform: translateY(100%); transition: transform .25s; z-index: 50; border-radius: 18px 18px 0 0; box-shadow: 0 -10px 30px rgb(0 0 0 / .2); }
+  .cart.open { transform: none; }
+  .mobile-cart-btn { display: flex; position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 40; }
+  .products { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); padding-bottom: 90px; }
+  .pay-grid { grid-template-columns: 1fr; }
+}
