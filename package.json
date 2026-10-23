@@ -1,0 +1,26 @@
+{
+  "name": "opparamyeon-pos",
+  "version": "1.0.0",
+  "description": "ระบบ POS ร้านมาม่าเกาหลี Oppa Ramyeon — POS, ครัว, จอลูกค้า, Mobile Ordering, สมาชิก และเว็บไซต์ดูยอดขาย",
+  "type": "module",
+  "main": "server/index.js",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server/index.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch server/index.js",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 tests/*.test.js",
+    "agent": "node agent/print-agent.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "multer": "^2.0.2",
+    "pg": "^8.16.3",
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.1"
+  }
+}
