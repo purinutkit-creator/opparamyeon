@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#d4202f">
 <title>จัดการร้าน · Oppa Ramyeon</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@500;600;700&family=Sarabun:wght@400;600;700;800&display=swap">
 <link rel="stylesheet" href="/shared/style.css">
 <style>
   .layout { display: grid; grid-template-columns: 230px 1fr; min-height: 100vh; }
@@ -46,6 +46,30 @@
     .content { padding: .8em; }
     .designer { grid-template-columns: 1fr; }
   }
+  /* v1.2: warm dark sidebar + shaped KPI cards */
+  .side { background: linear-gradient(180deg, #2b1712, #3d1d15 60%, #4a2016); border-right: 0; color: #fbe9df; }
+  .side::after { content: ''; position: absolute; width: 220px; height: 220px; border-radius: 50%; left: -90px; bottom: -80px; border: 26px solid rgb(255 255 255 / .05); pointer-events: none; }
+  .side a { color: #f5ddd2; }
+  .side a:hover { background: rgb(255 255 255 / .07); }
+  .side a.on { background: var(--grad); color: #fff; box-shadow: 0 8px 20px rgb(232 50 31 / .35); }
+  .side h4 { color: #c79a88; }
+  .side .version { color: #c79a88; }
+  .side .brandbox { display: flex; align-items: center; gap: 10px; padding: .4em .5em 1em; }
+  .side .brandbox img { width: 44px; filter: drop-shadow(0 6px 10px rgb(0 0 0 / .3)); }
+  .side .brandbox b { font-family: var(--head-font); font-size: 1.15em; color: #fff; display: block; line-height: 1.1; }
+  .side .brandbox small { color: #c79a88; }
+  .content { position: relative; }
+  .kpi { border-radius: 22px; }
+  .kpi::after { content: ''; position: absolute; width: 110px; height: 110px; border-radius: 50%; right: -40px; top: -40px; background: var(--brand-soft); opacity: .7; }
+  .kpi > * { position: relative; z-index: 1; }
+  .kpi.hero { border-top: 0; background: var(--grad); color: #fff; box-shadow: 0 16px 34px rgb(232 50 31 / .28); }
+  .kpi.hero .lbl, .kpi.hero .sub { color: rgb(255 255 255 / .85); }
+  .kpi.hero .val { color: #fff; }
+  .kpi.hero::after { background: rgb(255 255 255 / .16); }
+  .cards > .kpi.hero:nth-child(2) { background: var(--grad-warm); }
+  .cards > .kpi.hero:nth-child(3) { background: linear-gradient(135deg, #3d1d15, #6b2a1c); }
+  .page-head h2 { font-size: 1.8em; }
+  .topm { background: linear-gradient(90deg, #2b1712, #4a2016); color: #fff; }
 </style>
 </head>
 <body>

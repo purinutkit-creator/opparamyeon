@@ -110,3 +110,64 @@ table.table { width: 100%; border-collapse: collapse; }
 .menu-pop { position: absolute; right: 8px; top: 56px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-lg); padding: .4em; z-index: 60; min-width: 220px; animation: pop .14s ease-out; }
 .menu-pop button, .menu-pop a { display: flex; width: 100%; gap: .6em; align-items: center; padding: .7em .8em; border: 0; background: transparent; border-radius: 10px; font-weight: 600; text-decoration: none; color: var(--text); cursor: pointer; font-size: 1em; }
 .menu-pop button:hover, .menu-pop a:hover { background: var(--surface2); }
+
+/* =====================================================================
+   v1.2 design — warm "gochujang" theme, soft shapes, rounded surfaces
+   ===================================================================== */
+:root {
+  --bg: #fff8f2; --surface: #ffffff; --surface2: #fff1e7; --line: #f1dfd2; --text: #2b1712; --muted: #8a6f63;
+  --brand: #e8321f; --brand-2: #c21d12; --brand-3: #ff8a3d; --brand-ink: #ffffff; --brand-soft: #ffe7dd;
+  --grad: linear-gradient(135deg, #ff5a36 0%, #e8321f 45%, #b8160f 100%);
+  --grad-warm: linear-gradient(135deg, #ffb35c 0%, #ff6a3d 55%, #e8321f 100%);
+  --ink: #2b1712; --cream: #fff8f2;
+  --radius: 22px; --shadow: 0 1px 2px rgb(120 40 20 / .05), 0 10px 30px rgb(120 40 20 / .08); --shadow-lg: 0 24px 60px rgb(120 40 20 / .18);
+  --head-font: 'Prompt', var(--app-font, 'Sarabun'), 'Noto Sans Thai', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #160d0a; --surface: #21140f; --surface2: #2c1a13; --line: #3d261c; --text: #fbeee6; --muted: #c4a597;
+    --brand: #ff5a3c; --brand-2: #e8321f; --brand-soft: #3a1710; --ink: #fbeee6; --cream: #160d0a;
+    --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 10px 30px rgb(0 0 0 / .35); --shadow-lg: 0 24px 60px rgb(0 0 0 / .5);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #160d0a; --surface: #21140f; --surface2: #2c1a13; --line: #3d261c; --text: #fbeee6; --muted: #c4a597;
+  --brand: #ff5a3c; --brand-2: #e8321f; --brand-soft: #3a1710; --ink: #fbeee6; --cream: #160d0a;
+}
+h1, h2, h3, .page-head h2, .modal-head h3 { font-family: var(--head-font); font-weight: 600; letter-spacing: -.005em; }
+.btn { border-radius: 14px; }
+.btn.primary { background: var(--grad); border: 0; box-shadow: 0 8px 20px rgb(232 50 31 / .28); }
+.btn.primary:hover { background: var(--grad); filter: brightness(1.06); }
+.btn.ok { border-radius: 14px; box-shadow: 0 8px 20px rgb(21 128 61 / .22); }
+.card { border-radius: var(--radius); border-color: transparent; box-shadow: var(--shadow); }
+.input, select.input, textarea.input { border-radius: 14px; background: var(--surface); border-color: var(--line); }
+.tab { border-color: var(--line); }
+.tab.active { background: var(--grad); color: #fff; border-color: transparent; box-shadow: 0 6px 16px rgb(232 50 31 / .25); }
+.modal { border-radius: 26px; border: 0; }
+.badge.brand { background: var(--grad); }
+.keypad .key { border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); border-color: transparent; }
+.keypad .key:active { transform: scale(.97); }
+.keypad .key.enter { background: var(--grad); border: 0; }
+
+/* decorative shapes (blobs + rings) used behind pages */
+.shapes { position: fixed; inset: 0; pointer-events: none; z-index: -1; overflow: hidden; }
+.shapes i { position: absolute; border-radius: 50%; filter: blur(2px); opacity: .55; }
+.shapes .s1 { width: 520px; height: 520px; right: -160px; top: -180px; background: radial-gradient(circle at 30% 30%, #ffd2b8, #ff8a5c 60%, transparent 70%); }
+.shapes .s2 { width: 380px; height: 380px; left: -140px; bottom: -120px; background: radial-gradient(circle at 60% 40%, #ffe3a8, #ffb35c 55%, transparent 70%); opacity: .45; }
+.shapes .s3 { width: 160px; height: 160px; left: 12%; top: 18%; border: 18px solid rgb(232 50 31 / .08); background: transparent; filter: none; }
+.shapes .s4 { width: 90px; height: 90px; right: 18%; bottom: 14%; background: rgb(255 138 61 / .18); filter: none; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .shapes i { opacity: .16; } }
+
+/* shared hero login (POS / admin / kitchen) */
+.login-hero { min-height: 100vh; min-height: 100dvh; display: grid; grid-template-columns: 1.1fr 1fr; background: var(--bg); }
+.login-hero .art { position: relative; overflow: hidden; background: var(--grad); color: #fff; padding: 6vh 5vw; display: flex; flex-direction: column; justify-content: flex-end; }
+.login-hero .art::before { content: ''; position: absolute; width: 70vh; height: 70vh; border-radius: 50%; right: -18vh; top: -20vh; background: radial-gradient(circle, rgb(255 255 255 / .22), transparent 65%); }
+.login-hero .art::after { content: ''; position: absolute; width: 38vh; height: 38vh; border-radius: 50%; left: -10vh; top: 30vh; border: 3.2vh solid rgb(255 255 255 / .12); }
+.login-hero .art h1 { font-size: clamp(30px, 4.4vw, 60px); line-height: 1.1; margin: 0 0 .3em; position: relative; }
+.login-hero .art p { font-size: clamp(15px, 1.4vw, 19px); opacity: .9; max-width: 32em; position: relative; }
+.login-hero .art .bowl { position: absolute; right: 6%; top: 14%; width: min(38vh, 42%); filter: drop-shadow(0 20px 40px rgb(0 0 0 / .25)); }
+.login-hero .form { display: grid; place-items: center; padding: 4vh 5vw; }
+.login-hero .form .card { width: min(420px, 100%); padding: 1.6em; }
+@media (max-width: 860px) { .login-hero { grid-template-columns: 1fr; } .login-hero .art { min-height: 30vh; padding: 4vh 6vw; } .login-hero .art .bowl { width: 26vh; top: 6%; } }
+.spinner { width: 46px; height: 46px; margin: 1em auto; border-radius: 50%; border: 5px solid var(--brand-soft); border-top-color: var(--brand); animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }

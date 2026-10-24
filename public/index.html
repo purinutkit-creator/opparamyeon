@@ -3,34 +3,63 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#d4202f">
+<meta name="theme-color" content="#e8321f">
 <title>Oppa Ramyeon POS</title>
 <link rel="manifest" href="/manifest.webmanifest">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@500;600;700&family=Sarabun:wght@400;600;700;800&display=swap">
 <link rel="stylesheet" href="/shared/style.css">
 <style>
-  main { max-width: 860px; margin: 0 auto; padding: 24px 16px; }
-  .hero { text-align: center; padding: 3em 1em 2em; margin: -24px -16px 1.5em; background: radial-gradient(1200px 300px at 50% -20%, var(--brand-soft), transparent); }
-  .hero h1 { font-size: clamp(30px, 6vw, 52px); letter-spacing: -.02em; }
-  .apps .card { transition: transform .15s, box-shadow .2s; }
-  .apps a:hover .card { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
-  .apps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  body { overflow-x: hidden; }
+  .hero { position: relative; color: #fff; background: var(--grad); padding: 64px 20px 140px; overflow: hidden; }
+  .hero::before { content: ''; position: absolute; width: 640px; height: 640px; border-radius: 50%; right: -200px; top: -260px; background: radial-gradient(circle, rgb(255 255 255 / .22), transparent 62%); }
+  .hero::after { content: ''; position: absolute; width: 260px; height: 260px; border-radius: 50%; left: -80px; bottom: 40px; border: 34px solid rgb(255 255 255 / .1); }
+  .hero .in { max-width: 1080px; margin: 0 auto; display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; align-items: center; position: relative; z-index: 1; }
+  .hero h1 { font-size: clamp(36px, 6vw, 68px); line-height: 1.05; margin: 0 0 .25em; }
+  .hero p { font-size: clamp(16px, 1.6vw, 20px); opacity: .92; max-width: 30em; margin: 0 0 1.4em; }
+  .hero .cta { display: flex; gap: 10px; flex-wrap: wrap; }
+  .hero .cta a { text-decoration: none; }
+  .hero .btn.white { background: #fff; color: var(--brand-2); border: 0; box-shadow: 0 10px 30px rgb(0 0 0 / .18); }
+  .hero .btn.glass { background: rgb(255 255 255 / .16); color: #fff; border: 1px solid rgb(255 255 255 / .35); backdrop-filter: blur(6px); }
+  .hero img.bowl { width: min(100%, 380px); justify-self: center; filter: drop-shadow(0 30px 50px rgb(0 0 0 / .28)); animation: float 6s ease-in-out infinite; }
+  @keyframes float { 50% { transform: translateY(-10px) rotate(-1.5deg); } }
+  .hero .ver { display: inline-block; margin-bottom: 14px; padding: 4px 12px; border-radius: 999px; background: rgb(255 255 255 / .18); font-weight: 700; font-size: .9em; }
+  .wave { position: absolute; left: 0; right: 0; bottom: -1px; width: 100%; height: 110px; display: block; }
+  main { max-width: 1080px; margin: -80px auto 0; padding: 0 20px 60px; position: relative; z-index: 2; }
+  .apps { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
   .apps a { text-decoration: none; color: var(--text); }
-  .apps .card { height: 100%; }
-  .apps .ic { font-size: 2em; }
+  .tile { background: var(--surface); border-radius: 26px; padding: 22px; box-shadow: var(--shadow); height: 100%; transition: transform .18s, box-shadow .2s; position: relative; overflow: hidden; }
+  .tile::after { content: ''; position: absolute; width: 140px; height: 140px; border-radius: 50%; right: -50px; bottom: -60px; background: var(--c, var(--brand-soft)); opacity: .55; }
+  .apps a:hover .tile { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+  .ic { width: 58px; height: 58px; border-radius: 18px; display: grid; place-items: center; font-size: 28px; background: var(--c, var(--brand-soft)); margin-bottom: 12px; }
+  .tile h3 { margin: 0 0 .25em; font-size: 1.25em; }
+  .tile p { margin: 0; color: var(--muted); font-size: .95em; position: relative; z-index: 1; }
+  .foot { text-align: center; color: var(--muted); margin-top: 32px; font-size: .9em; }
+  @media (max-width: 760px) { .hero .in { grid-template-columns: 1fr; text-align: center; } .hero .cta { justify-content: center; } .hero p { margin-left: auto; margin-right: auto; } .hero img.bowl { width: 220px; order: -1; } }
 </style>
 </head>
 <body>
-<main>
-  <div class="hero"><h1>🍜 Oppa Ramyeon POS</h1><p class="muted">ระบบขายหน้าร้านมาม่าเกาหลี · เวอร์ชัน <span id="v">…</span></p></div>
-  <div class="apps">
-    <a href="/pos/"><div class="card"><div class="ic">🛒</div><h3>หน้าขาย POS</h3><p class="muted small">ขาย สแกนบาร์โค้ด รับชำระ ส่งครัว รอบการขาย</p></div></a>
-    <a href="/admin/"><div class="card"><div class="ic">📊</div><h3>เว็บไซต์จัดการร้าน</h3><p class="muted small">ยอดขายวันนี้ รายงาน เมนู สต็อก สมาชิก ตั้งค่า</p></div></a>
-    <a href="/kitchen/"><div class="card"><div class="ic">👩‍🍳</div><h3>จอครัว</h3><p class="muted small">ใบครัวแบบเรียลไทม์ พิมพ์ใบครัว เสียงแจ้งเตือน</p></div></a>
-    <a href="/display/"><div class="card"><div class="ic">📺</div><h3>จอลูกค้า</h3><p class="muted small">จับคู่ด้วยรหัส 6 หลัก หรือเปิดบนจอที่สอง</p></div></a>
-    <a href="/member/"><div class="card"><div class="ic">⭐</div><h3>เว็บไซต์สมาชิก</h3><p class="muted small">แต้ม Tier คูปอง ประวัติการซื้อ</p></div></a>
-    <a href="/guide/"><div class="card"><div class="ic">📖</div><h3>คู่มือการใช้งาน</h3><p class="muted small">ทุกฟังก์ชัน การเชื่อมต่อเครื่องพิมพ์และจอลูกค้า</p></div></a>
+<section class="hero">
+  <div class="in">
+    <div>
+      <span class="ver">เวอร์ชัน <span id="v">…</span></span>
+      <h1>Oppa Ramyeon<br>ระบบร้านมาม่าเกาหลี</h1>
+      <p>ขายหน้าร้าน ส่งครัว จอลูกค้า สั่งผ่านมือถือ สมาชิกสะสมแต้ม และดูยอดขายได้ทุกที่ — ทุกอย่างเชื่อมกันแบบเรียลไทม์</p>
+      <div class="cta"><a class="btn big white" href="/pos/">🛒 เปิดหน้าขาย</a><a class="btn big glass" href="/admin/">📊 ดูยอดขาย</a></div>
+    </div>
+    <img class="bowl" src="/assets/bowl.svg" alt="">
   </div>
+  <svg class="wave" viewBox="0 0 1440 110" preserveAspectRatio="none" aria-hidden="true"><path d="M0,64 C240,120 480,10 720,40 C960,70 1200,110 1440,50 L1440,110 L0,110 Z" fill="var(--bg)"/></svg>
+</section>
+<main>
+  <div class="apps">
+    <a href="/pos/"><div class="tile" style="--c:#ffe1d6"><div class="ic">🛒</div><h3>หน้าขาย POS</h3><p>ขาย สแกนบาร์โค้ด รับชำระ ส่งครัว รอบการขาย</p></div></a>
+    <a href="/admin/"><div class="tile" style="--c:#ffefc7"><div class="ic">📊</div><h3>จัดการร้าน</h3><p>ยอดขายวันนี้ รายงาน เมนู สต็อก สมาชิก ตั้งค่า</p></div></a>
+    <a href="/kitchen/"><div class="tile" style="--c:#dff3e4"><div class="ic">👩‍🍳</div><h3>จอครัว</h3><p>ใบครัวเรียลไทม์ พิมพ์ใบครัว เสียงแจ้งเตือน</p></div></a>
+    <a href="/display/"><div class="tile" style="--c:#dfe9ff"><div class="ic">📺</div><h3>จอลูกค้า</h3><p>จับคู่ด้วยรหัส 6 หลัก หรือเปิดบนจอที่สอง</p></div></a>
+    <a href="/member/"><div class="tile" style="--c:#f3e1ff"><div class="ic">⭐</div><h3>สมาชิก</h3><p>บัตรสมาชิก แต้ม Tier คูปอง รับแต้มจากใบเสร็จ</p></div></a>
+    <a href="/guide/"><div class="tile" style="--c:#e2f5f7"><div class="ic">📖</div><h3>คู่มือการใช้งาน</h3><p>ทุกฟังก์ชัน การต่อเครื่องพิมพ์และจอลูกค้า</p></div></a>
+  </div>
+  <p class="foot">🍜 Oppa Ramyeon POS · 감사합니다</p>
 </main>
 <script>fetch('/api/version').then((r) => r.json()).then((v) => { document.getElementById('v').textContent = v.version; });</script>
 </body>

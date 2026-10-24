@@ -1,5 +1,5 @@
 import { makeApi, store, socket, uid } from '/shared/api.js';
-import { h, $, toast, errToast, modal, keypad, JOB_TH } from '/shared/ui.js';
+import { h, $, toast, errToast, modal, keypad, JOB_TH, loginHero } from '/shared/ui.js';
 import { dineLabel, VERSION } from '/shared/core.js';
 import { applyFonts } from '/shared/fonts.js';
 import { PrintHost, pairPrinter, isLinkedHere, testPrint } from '/shared/printers.js';
@@ -42,7 +42,7 @@ function login() {
   const code = h('input', { class: 'input', placeholder: 'รหัสพนักงาน', inputmode: 'numeric' });
   const pin = h('input', { class: 'input', type: 'password', placeholder: 'PIN', inputmode: 'numeric' });
   const go = async () => { try { const r = await api.post('/auth/login', { code: code.value, pin: pin.value }, { token: null }); store.set('kitchen_token', r.token); location.reload(); } catch (e) { errToast(e); } };
-  app.replaceChildren(h('div', { style: { maxWidth: '420px', margin: '8vh auto', padding: '1em' } }, h('div', { class: 'card' }, h('h2', {}, '👩‍🍳 จอครัว'), h('label', { class: 'field' }, 'รหัสพนักงาน', code), h('label', { class: 'field' }, 'PIN', pin), keypad(pin, { onEnter: go }))));
+  app.replaceChildren(loginHero('จอครัว', 'ใบครัวเรียลไทม์ แยกตามจุดเตรียมอาหาร พร้อมเสียงแจ้งเตือน', h('div', { class: 'card' }, h('h2', {}, '👩‍🍳 เข้าสู่ระบบครัว'), h('label', { class: 'field' }, 'รหัสพนักงาน', code), h('label', { class: 'field' }, 'PIN', pin), keypad(pin, { onEnter: go }))));
 }
 function drawTop() {
   const top = $('.k-top'); if (!top) return;

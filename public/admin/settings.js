@@ -40,6 +40,7 @@ export async function settingsPage() {
   const mem = form([{ k: 'enabled', label: 'เปิดระบบสมาชิก', type: 'bool' }, { k: 'web_signup', label: 'เปิดสมัครผ่านเว็บไซต์', type: 'bool' }, { k: 'signup_from_display', label: 'สมัครจากหน้าจอลูกค้าได้', type: 'bool' },
     { k: 'show_on_receipt', label: 'แสดงชื่อสมาชิกบนใบเสร็จ', type: 'bool' }, { k: 'show_on_display', label: 'แสดงชื่อสมาชิกบนจอลูกค้า', type: 'bool' },
     { k: 'sensitive_verify', label: 'ยืนยันเพิ่มเติมก่อนรับแต้ม/แลก/แก้ข้อมูลสำคัญ', type: 'select', options: [['staff', 'ให้พนักงานยืนยัน (ลูกค้าแสดงรหัสที่เคาน์เตอร์)'], ['otp', 'OTP ผ่าน SMS webhook'], ['none', 'ไม่ตรวจเพิ่ม (ไม่แนะนำ)']] },
+    { k: 'claim_verify', label: 'รับแต้มจาก QR ใบเสร็จ', type: 'select', options: [['none', 'สแกนแล้วรับแต้มทันที (ไม่ต้องใส่รหัส)'], ['staff', 'ให้พนักงานยืนยัน'], ['otp', 'OTP']] },
     { k: 'otp_webhook_url', label: 'OTP webhook URL (POST {phone,message})', wide: true }], s.members);
   const fieldsCfg = s.members.fields;
   const fieldBox = h('div', { class: 'grid2' }, Object.entries(fieldsCfg).map(([k, c]) => { const on = h('input', { type: 'checkbox', checked: c.on }); const req = h('input', { type: 'checkbox', checked: c.req }); on.onchange = () => (c.on = on.checked); req.onchange = () => (c.req = req.checked);

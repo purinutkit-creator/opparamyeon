@@ -56,7 +56,7 @@ export const DEFAULT_SETTINGS = {
     cashier_expire_minutes: 30, auto_print_mobile_with_receipt: false },
   members: { enabled: true, web_signup: true, fields: { first_name: { on: true, req: true }, last_name: { on: true, req: false }, nickname: { on: true, req: false },
     birthday: { on: true, req: false }, email: { on: false, req: false }, avatar: { on: false, req: false } }, custom_fields: [],
-    show_on_receipt: true, show_on_display: true, signup_from_display: true, sensitive_verify: 'staff', otp_webhook_url: '' },
+    show_on_receipt: true, show_on_display: true, signup_from_display: true, sensitive_verify: 'staff', claim_verify: 'none', otp_webhook_url: '' },
   points: { enabled: true, rate_baht: 25, rounding: 'floor', base: 'after_discount', include_tax: false, include_packaging: false, min_spend: 0,
     excluded_products: [], expire_days: 365, claim_qr: true, claim_enabled: true, claim_hours: 72, refund_policy: 'negative_allowed',
     tier_mode: 'auto' },

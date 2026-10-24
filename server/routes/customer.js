@@ -14,7 +14,7 @@ const upload = multer({ limits: { fileSize: 4 * 1024 * 1024 } });
 r.get('/c/config', ah(async (req, res) => {
   const s = await getSettings();
   res.json({ enabled: s.members.enabled, signup: s.members.enabled && s.members.web_signup, fields: s.members.fields, custom_fields: s.members.custom_fields,
-    points: { enabled: s.points.enabled, rate_baht: s.points.rate_baht, claim_enabled: s.points.claim_enabled }, verify: s.members.sensitive_verify,
+    points: { enabled: s.points.enabled, rate_baht: s.points.rate_baht, claim_enabled: s.points.claim_enabled }, verify: s.members.sensitive_verify, claim_verify: s.members.claim_verify || 'none',
     store: { name: s.store.name, logo: s.store.logo, phone: s.store.phone, address: s.store.address, contact_line: s.store.contact_line },
     mobile: s.mobile.enabled, fonts: s.fonts, colors: { bg: s.display.bg, accent: s.display.accent } });
 }));
@@ -133,9 +133,12 @@ r.post('/c/reset', ah(async (req, res) => {
 // ---------- extra verification for sensitive actions (claim points, redeem, change important data) ----------
 // method 'otp': code sent through the store's SMS webhook; 'staff': customer shows a code that staff enters on the POS;
 // 'none': only if the store explicitly chose it.
+// Claiming receipt points only ADDS points to the logged-in member, so by default it needs no extra code
+// (scan → points). Redeeming points and changing important data still use the stronger setting.
+const methodFor = (s, purpose) => (purpose === 'claim' ? s.members.claim_verify || 'none' : s.members.sensitive_verify);
 async function requireVerified(m, purpose, verificationId) {
   const s = await getSettings();
-  const method = s.members.sensitive_verify;
+  const method = methodFor(s, purpose);
   if (method === 'none') return true;
   if (!verificationId) throw new HttpError(428, 'ต้องยืนยันตัวตนเพิ่มเติม', 'verification_required');
   const v = await db.get('SELECT * FROM verifications WHERE id = ? AND member_id = ?', [verificationId, m.id]);
@@ -147,7 +150,7 @@ async function requireVerified(m, purpose, verificationId) {
 r.post('/c/verify/start', memberAuth(), ah(async (req, res) => {
   rateLimit('vstart:' + req.member.id, 5, 600000);
   const s = await getSettings();
-  const method = s.members.sensitive_verify;
+  const method = methodFor(s, String(req.body.purpose || ''));
   if (method === 'none') return res.json({ method: 'none' });
   const code = randomDigits(6);
   const vid = id();

@@ -1,5 +1,5 @@
 import { makeApi, store, socket, uid, storageWarning } from '/shared/api.js';
-import { h, $, toast, errToast, modal, confirmBox, promptBox, keypad, fmtTime, STATUS_TH, PREP_TH, SOURCE_TH, JOB_TH, debounce } from '/shared/ui.js';
+import { loginHero, h, $, toast, errToast, modal, confirmBox, promptBox, keypad, fmtTime, STATUS_TH, PREP_TH, SOURCE_TH, JOB_TH, debounce } from '/shared/ui.js';
 import { baht, toSatang, addToCart, computeTotals, countBowls, dineLabel, lineUnitTotal, lineTotal, orderDineType, promptPayPayload, VERSION, maskPhone } from '/shared/core.js';
 import { applyFonts } from '/shared/fonts.js';
 import { PrintHost, pairPrinter, unpairPrinter, isLinkedHere, testPrint, support, agentUrl, linkOf } from '/shared/printers.js';
@@ -47,8 +47,8 @@ function loginScreen() {
     } catch (e) { errToast(e); pin.value = ''; }
   };
   pin.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
-  app.replaceChildren(h('div', { class: 'login' }, h('div', { class: 'card' },
-    h('h2', {}, '🍜 Oppa Ramyeon POS'), h('p', { class: 'muted' }, 'เข้าสู่ระบบด้วยรหัสพนักงานและ PIN'),
+  app.replaceChildren(loginHero('หน้าขาย POS', 'ขายเร็ว ปุ่มใหญ่ สแกนบาร์โค้ด ส่งครัว และรับชำระได้ในที่เดียว', h('div', { class: 'card' },
+    h('h2', {}, 'เข้าสู่ระบบ'), h('p', { class: 'muted' }, 'ใช้รหัสพนักงานและ PIN'),
     h('label', { class: 'field' }, 'รหัสพนักงาน', code), h('label', { class: 'field' }, 'PIN', pin),
     keypad(pin, { onEnter: go }),
     h('p', { class: 'version' }, `เวอร์ชัน ${VERSION} · `, h('a', { href: '/guide/' }, 'คู่มือการใช้งาน')))));

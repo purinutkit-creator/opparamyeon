@@ -56,6 +56,7 @@ export function table(cols, rows, { empty = 'ไม่มีข้อมูล',
 }
 // Single-series bar chart (one hue, rounded data-ends, hover tooltip; the table next to it is the accessible view)
 export function barChart(points, { fmt = (v) => v, label = (p) => p.x, height = 220 } = {}) {
+  if (!points.length || points.every((p) => !p.y)) return h('div', { class: 'empty' }, 'ยังไม่มียอดขายในช่วงนี้');
   const W = Math.max(320, points.length * 28), H = height, pad = { l: 56, r: 8, t: 10, b: 28 };
   const max = Math.max(1, ...points.map((p) => p.y));
   const step = (W - pad.l - pad.r) / Math.max(1, points.length);

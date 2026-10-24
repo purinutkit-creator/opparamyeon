@@ -1,4 +1,5 @@
 import { store, socket, storageWarning } from '/shared/api.js';
+import { loginHero } from '/shared/ui.js';
 import { h, $, toast, errToast, modal, keypad, fmtTime, fmtDateOnly, STATUS_TH, SOURCE_TH, PREP_TH, debounce } from '/shared/ui.js';
 import { baht, dineLabel, latestOnly, VERSION } from '/shared/core.js';
 import { applyFonts } from '/shared/fonts.js';
@@ -33,12 +34,12 @@ function login() {
   const pin = h('input', { class: 'input', type: 'password', placeholder: 'PIN', inputmode: 'numeric', autocomplete: 'current-password' });
   const go = async () => { try { const r = await api.post('/auth/login', { code: code.value, pin: pin.value }, { token: null }); store.set('admin_token', r.token); location.reload(); } catch (e) { errToast(e); } };
   pin.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
-  app.replaceChildren(h('div', { style: { maxWidth: '420px', margin: '8vh auto', padding: '1em' } }, h('div', { class: 'card' }, h('h2', {}, '📊 เว็บไซต์จัดการร้าน'), h('p', { class: 'muted' }, 'สำหรับเจ้าของและผู้จัดการ'),
+  app.replaceChildren(loginHero('เว็บไซต์จัดการร้าน', 'ดูยอดขายวันนี้ รายงาน เมนู สมาชิก และตั้งค่าร้านได้จากทุกที่', h('div', { class: 'card' }, h('h2', {}, 'เข้าสู่ระบบ'), h('p', { class: 'muted' }, 'สำหรับเจ้าของและผู้จัดการ'),
     h('label', { class: 'field' }, 'รหัสพนักงาน', code), h('label', { class: 'field' }, 'PIN', pin), keypad(pin, { onEnter: go }), h('p', { class: 'version' }, 'v' + VERSION))));
 }
 function shell(r, content) {
-  const side = h('nav', { class: 'side' }, h('div', { style: { fontWeight: 800, color: 'var(--brand)', padding: '.3em .5em' } }, '🍜 ', ctx.settings.store.name),
-    h('div', { class: 'small muted', style: { padding: '0 .5em' } }, ctx.staff.name, ' · ', ctx.staff.role_name),
+  const side = h('nav', { class: 'side' }, h('div', { class: 'brandbox' }, h('img', { src: '/assets/bowl.svg', alt: '' }),
+      h('div', {}, h('b', {}, ctx.settings.store.name), h('small', {}, ctx.staff.name, ' · ', ctx.staff.role_name))),
     ...ROUTES.flatMap(([g, items]) => {
       const vis = items.filter(([, , p]) => can(p));
       return vis.length ? [h('h4', {}, g), ...vis.map(([k, t]) => h('a', { href: '#/' + k, class: r === k ? 'on' : '', onclick: () => side.classList.remove('open') }, t))] : [];

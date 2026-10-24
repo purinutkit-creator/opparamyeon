@@ -86,3 +86,9 @@ export const STATUS_TH = { held: 'พักบิล', open: 'เปิดบิ
 export const PREP_TH = { none: 'รอชำระ', received: 'รับออเดอร์แล้ว', cooking: 'กำลังทำ', ready: 'พร้อมรับ', done: 'เสร็จสิ้น' };
 export const SOURCE_TH = { pos: 'POS', mobile_table: 'Mobile โต๊ะ', mobile_pickup: 'Mobile Pick Up' };
 export const JOB_TH = { queued: 'รอพิมพ์', claimed: 'กำลังส่ง', sent: 'เครื่องรับงานแล้ว (ยืนยันการพิมพ์ไม่ได้)', printed: 'พิมพ์สำเร็จ (เครื่องยืนยัน)', failed: 'ผิดพลาด', unknown: 'ไม่ทราบผล', cancelled: 'ยกเลิก' };
+
+// Split login screen with the brand artwork (POS / admin / kitchen)
+export function loginHero(title, text, formCard) {
+  return h('div', { class: 'login-hero' }, h('div', { class: 'art' }, h('img', { class: 'bowl', src: '/assets/bowl.svg', alt: '' }),
+    h('h1', {}, '🍜 Oppa Ramyeon', h('br'), title), h('p', {}, text)), h('div', { class: 'form' }, formCard));
+}

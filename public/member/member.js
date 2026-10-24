@@ -30,7 +30,10 @@ async function loadMe() {
 }
 const shell = (...kids) => {
   const r = location.hash.split('/')[1] || 'home';
-  app.replaceChildren(h('div', { class: 'top' }, cfg.store.logo ? h('img', { src: cfg.store.logo, alt: '' }) : h('span', { style: { fontSize: '1.8em' } }, '🍜'), h('strong', {}, cfg.store.name)),
+  const titles = { home: 'บัตรสมาชิกของคุณ', rewards: 'ของรางวัล', coupons: 'คูปองของฉัน', history: 'ประวัติการซื้อ', points: 'ประวัติแต้ม', benefits: 'สิทธิประโยชน์', account: 'บัญชีของฉัน', claim: 'รับแต้มจากใบเสร็จ', register: 'สมัครสมาชิก', forgot: 'ลืมรหัสผ่าน', contact: 'ติดต่อร้าน' };
+  app.replaceChildren(h('header', { class: 'mhead' }, h('div', { class: 'row1' }, h('div', { class: 'logo' }, cfg.store.logo ? h('img', { src: cfg.store.logo, alt: '' }) : '🍜'),
+      h('div', {}, h('div', { class: 'name' }, cfg.store.name), h('div', { class: 'sub' }, me ? `สวัสดี ${me.first_name || me.nickname || ''} 👋` : (titles[r] || 'สมาชิก')))),
+    h('img', { class: 'bowl', src: '/assets/bowl.svg', alt: '' })),
     h('div', { class: 'wrap' }, ...kids),
     me ? h('nav', { class: 'bot' }, [['home', '🏠', 'หน้าหลัก'], ['rewards', '🎁', 'ของรางวัล'], ['coupons', '🎟️', 'คูปอง'], ['history', '🧾', 'ประวัติ'], ['account', '👤', 'บัญชี']].map(([k, i, t]) =>
       h('a', { href: '#/' + k, class: r === k ? 'on' : '' }, h('span', {}, i), t))) : null);
@@ -124,7 +127,7 @@ function resetPage(tok) {
 
 // ---------- extra verification (OTP or show code to staff) ----------
 async function verify(purpose, ref) {
-  if (cfg.verify === 'none') return null;
+  if ((purpose === 'claim' ? cfg.claim_verify : cfg.verify) === 'none') return null;
   const v = await api.post('/c/verify/start', { purpose, ref });
   if (v.method === 'none') return null;
   return new Promise((resolve, reject) => {
@@ -166,13 +169,22 @@ async function claimPage(tok) {
       h('button', { class: 'btn primary big block', onclick: () => { loginPage(() => { location.hash = '#/claim/' + tok; route(); }); } }, 'เข้าสู่ระบบ'),
       cfg.signup ? h('button', { class: 'btn big block', style: { marginTop: '.5em' }, onclick: () => go('register') }, 'สมัครสมาชิกใหม่แล้วรับแต้ม') : null));
   }
+  // logged in → claim straight away (no button, no code) unless the shop requires verification for claims
+  const doClaim = async () => {
+    const vid = await verify('claim', c.bill_no);
+    const r = await api.post('/c/claim/' + tok, { verification_id: vid });
+    store.del('return_to');
+    shell(h('div', { class: 'success-card' }, h('div', { class: 'burst' }, '🎉'), h('h2', {}, 'รับแต้มสำเร็จ'), h('div', { class: 'big-pts' }, `+${r.points}`),
+      h('p', {}, `บิล ${r.bill_no} · แต้มคงเหลือ `, h('strong', {}, r.balance.toLocaleString())), h('a', { class: 'btn primary big block', href: '#/home' }, 'ไปหน้าสมาชิก')));
+  };
+  if (cfg.claim_verify === 'none') {
+    shell(box, h('div', { class: 'card', style: { textAlign: 'center' } }, h('div', { class: 'spinner' }), h('p', {}, 'กำลังรับแต้มเข้าบัญชี ', h('strong', {}, `${me.first_name || ''} (${me.member_no})`))));
+    try { await doClaim(); } catch (er) { shell(box, h('div', { class: 'card' }, h('p', { class: 'badge bad', style: { whiteSpace: 'normal' } }, er.message), h('a', { class: 'btn block', href: '#/home' }, 'ไปหน้าสมาชิก'))); }
+    return;
+  }
   shell(box, h('p', {}, 'รับแต้มเข้าบัญชี ', h('strong', {}, `${me.first_name || ''} (${me.member_no})`)), h('button', { class: 'btn primary big block', onclick: async (e) => {
     e.target.disabled = true;
-    try {
-      const vid = await verify('claim', c.bill_no);
-      const r = await api.post('/c/claim/' + tok, { verification_id: vid });
-      shell(h('div', { class: 'card', style: { textAlign: 'center' } }, h('h2', {}, '🎉 รับแต้มสำเร็จ'), h('div', { style: { fontSize: '2.4em', fontWeight: 800 } }, `+${r.points}`), h('p', {}, `แต้มคงเหลือ ${r.balance}`), h('a', { class: 'btn primary block', href: '#/home' }, 'ไปหน้าสมาชิก')));
-    } catch (er) { errToast(er); e.target.disabled = false; }
+    try { await doClaim(); } catch (er) { errToast(er); e.target.disabled = false; }
   } }, 'ยืนยันรับแต้ม'));
 }
 
@@ -185,15 +197,15 @@ function homePage() {
   shell(
     suggest ? h('div', { class: 'card', style: { background: 'var(--warn-soft)' } }, h('strong', {}, 'แนะนำให้เปลี่ยนรหัสผ่าน'), h('p', { class: 'small' }, 'คุณยังใช้รหัสเริ่มต้น (4 ตัวท้ายของเบอร์) — เปลี่ยนตอนนี้หรือภายหลังก็ได้'),
       h('div', { class: 'row' }, h('a', { class: 'btn sm primary', href: '#/account' }, 'เปลี่ยนตอนนี้'), h('button', { class: 'btn sm', onclick: () => { store.del('suggest_pw'); homePage(); } }, 'ไว้ภายหลัง'))) : null,
-    h('div', { class: 'mcard', style: { '--tier': tier.color || '#d4202f' } },
-      h('div', { class: 'row between' }, h('strong', {}, cfg.store.name), h('span', { class: 'badge', style: { background: '#fff', color: '#111' } }, tier.icon || '⭐', ' ', tier.name || 'Member')),
+    h('div', { class: 'mcard', style: { '--tier': tier.color || '#e8321f' } },
+      h('div', { class: 'row between' }, h('div', { class: 'chip' }), h('span', { class: 'badge', style: { background: '#fff', color: '#111' } }, tier.icon || '⭐', ' ', tier.name || 'Member')),
       h('div', { style: { marginTop: '1em' } }, h('div', { class: 'small' }, 'แต้มคงเหลือ'), h('div', { class: 'pts' }, m.points.toLocaleString()),
         m.reserved_points ? h('div', { class: 'small' }, `สำรองไว้สำหรับคูปอง ${m.reserved_points} แต้ม`) : null,
         m.expiring_points ? h('div', { class: 'small' }, `⏳ ${m.expiring_points} แต้มจะหมดอายุ ${fmtTime(m.expiring_first)}`) : null),
       h('div', { class: 'no', style: { marginTop: '1em' } }, `${m.first_name || ''} ${m.last_name || ''} · ${m.member_no}`),
       pr ? h('div', { style: { marginTop: '.6em' } }, h('div', { class: 'small' }, `ความคืบหน้าสู่ ${pr.name} ${m.progress.pct}%`), h('div', { class: 'prog' }, h('i', { style: { width: m.progress.pct + '%' } })),
         h('div', { class: 'small' }, m.progress.need.map((n) => (n.kind === 'spent' ? `ยอดซื้อ ${baht(n.have)}/${baht(n.need)} บาท` : `มาใช้บริการ ${n.have}/${n.need} ครั้ง`)).join(' · '))) : h('div', { class: 'small', style: { marginTop: '.6em' } }, 'คุณอยู่ระดับสูงสุดแล้ว 🎉')),
-    h('div', { style: { textAlign: 'center' } }, h('canvas', { id: 'mbc', width: 320, height: 70 }), h('div', { class: 'small muted' }, 'แสดงบาร์โค้ดนี้หรือบอกเบอร์โทรเพื่อสะสมแต้มที่ร้าน')),
+    h('div', { class: 'barcode-card' }, h('canvas', { id: 'mbc', width: 320, height: 70 }), h('div', { class: 'small muted' }, 'แสดงบาร์โค้ดนี้หรือบอกเบอร์โทรเพื่อสะสมแต้มที่ร้าน')),
     h('div', { class: 'quick' },
       h('a', { class: 'btn', href: '#/claim-help' , onclick: (e) => { e.preventDefault(); claimHelp(); } }, h('b', {}, '🧾'), 'สะสมแต้มจากใบเสร็จ'),
       h('a', { class: 'btn', href: '#/rewards' }, h('b', {}, '🎁'), 'แลกของรางวัล'),

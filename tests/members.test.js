@@ -66,8 +66,10 @@ test('สะสมแต้มย้อนหลังจาก QR ใบเส�
   // new customer signs up from the QR, then claims
   const reg = (await S.call('POST', '/api/c/register', { phone: '0840000004', first_name: 'ลิซ่า' })).body;
   const reg2 = (await S.call('POST', '/api/c/register', { phone: '0840000005', first_name: 'โรเซ่' })).body;
+  // shop can require verification for claims; by default scanning claims immediately (see next test)
+  await S.call('PUT', '/api/settings/members', { value: { claim_verify: 'staff' } }, { token: owner });
   const noVerify = await S.call('POST', '/api/c/claim/' + o.claim_token, {}, MT(reg.token));
-  assert.equal(noVerify.status, 428, 'ต้องยืนยันตัวตนเพิ่ม เพราะรหัสเริ่มต้นคาดเดาได้');
+  assert.equal(noVerify.status, 428, 'ตั้งให้ยืนยันแล้วต้องยืนยันก่อน');
   const v1 = await staffVerify(reg.token, 'claim');
   const v2 = await staffVerify(reg2.token, 'claim');
   const [a, b] = await Promise.all([
@@ -87,6 +89,18 @@ test('สะสมแต้มย้อนหลังจาก QR ใบเส�
   const rp = await S.call('POST', `/api/orders/${o.id}/print`, { doc: 'receipt' }, { token: owner });
   const job = await db.get('SELECT payload FROM print_jobs WHERE id = ?', [rp.body.job_id]);
   assert.match(JSON.parse(job.payload).data.claim_url, new RegExp(o.claim_token));
+});
+
+test('ค่าเริ่มต้น: สแกน QR ใบเสร็จแล้วรับแต้มได้ทันทีโดยไม่ต้องใส่รหัส แต่การแลกรางวัลยังต้องยืนยัน', async () => {
+  await S.call('PUT', '/api/settings/members', { value: { claim_verify: 'none' } }, { token: owner });
+  const o = await sell([line('p_d001', 2)]);
+  const reg = (await S.call('POST', '/api/c/register', { phone: '0890000099', first_name: 'แบม' })).body;
+  const r = await S.call('POST', '/api/c/claim/' + o.claim_token, {}, MT(reg.token));
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.points, 3);
+  assert.equal((await S.call('POST', '/api/c/claim/' + o.claim_token, {}, MT(reg.token))).status, 409, 'ยังรับได้ครั้งเดียว');
+  await S.call('POST', `/api/members/${reg.member.id}/points`, { delta: 50, reason: 'test' }, { token: owner });
+  assert.equal((await S.call('POST', '/api/c/rewards/rw_egg/redeem', {}, MT(reg.token))).status, 428);
 });
 
 test('บิลยกเลิก/หมดเขต/ปิดฟังก์ชัน รับแต้มไม่ได้', async () => {
