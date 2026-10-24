@@ -1,7 +1,7 @@
 // Pure logic shared by the server (Node) and the browser.
 // Money is always an integer number of satang (1 บาท = 100 satang).
 
-export const VERSION = '1.6.1';
+export const VERSION = '1.7.0';
 
 export const baht = (satang) => {
   const v = (Number(satang) || 0) / 100;
@@ -238,6 +238,9 @@ export function code128(text) {
   codes.push(sum % 103, 106);
   return codes.map((c) => C128[c]).join('').split('').map(Number);
 }
+
+// option kind for tickets/receipts: add-on (extra the customer added) vs choice (required pick); older orders: priced = add-on
+export const isAddon = (o) => (o && o.addon !== undefined ? !!o.addon : !!(o && o.price > 0));
 
 // ---------- EAN-13 (retail barcodes such as 885xxxxxxxxxx) ----------
 export function ean13Check(d12) {

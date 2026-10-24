@@ -61,6 +61,7 @@
   </div>
   <p class="foot">🍜 Oppa Ramyeon POS · 감사합니다</p>
 </main>
+<script type="module">import { applyTheme } from '/shared/theme.js'; fetch('/api/settings/public').then((r) => r.json()).then((s) => applyTheme(s.theme)).catch(() => {});</script>
 <script>fetch('/api/version').then((r) => r.json()).then((v) => { document.getElementById('v').textContent = v.version; });</script>
 </body>
 </html>

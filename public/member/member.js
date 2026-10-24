@@ -1,6 +1,7 @@
 import { makeApi, store, socket } from '/shared/api.js';
 import { h, $, toast, errToast, modal, fmtTime } from '/shared/ui.js';
 import { baht, code128, VERSION, maskPhone } from '/shared/core.js';
+import { applyTheme } from '/shared/theme.js';
 import { applyFonts } from '/shared/fonts.js';
 
 const api = makeApi({ tokenKey: 'member_token', onUnauthorized: () => { store.del('member_token'); } });
@@ -13,7 +14,7 @@ window.addEventListener('hashchange', route);
 async function boot() {
   cfg = await api.get('/c/config', { token: null });
   applyFonts(cfg.fonts, 'member');
-  document.documentElement.style.setProperty('--brand', cfg.colors.accent || '#d4202f');
+  if (cfg.theme && Object.keys(cfg.theme).length) applyTheme(cfg.theme); else document.documentElement.style.setProperty('--brand', cfg.colors.accent || '#d4202f');
   if (store.get('member_token')) {
     const s = await socket({ kind: 'member', token: store.get('member_token') }).catch(() => null);
     if (s) { s.on('coupon:used', () => { toast('คูปองถูกใช้แล้ว', 'ok'); route(); }); s.on('verification', (v) => window.dispatchEvent(new CustomEvent('verification', { detail: v }))); }

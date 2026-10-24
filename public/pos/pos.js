@@ -1,6 +1,7 @@
 import { makeApi, store, socket, uid, storageWarning } from '/shared/api.js';
 import { loginHero, h, $, toast, errToast, modal, confirmBox, promptBox, keypad, fmtTime, STATUS_TH, PREP_TH, SOURCE_TH, JOB_TH, debounce } from '/shared/ui.js';
-import { baht, toSatang, addToCart, computeTotals, countBowls, dineLabel, lineUnitTotal, lineTotal, orderDineType, promptPayPayload, VERSION, maskPhone, pointsFor } from '/shared/core.js';
+import { baht, toSatang, addToCart, computeTotals, countBowls, dineLabel, lineUnitTotal, lineTotal, orderDineType, promptPayPayload, VERSION, maskPhone, pointsFor, isAddon } from '/shared/core.js';
+import { applyTheme } from '/shared/theme.js';
 import { applyFonts } from '/shared/fonts.js';
 import { PrintHost, pairPrinter, unpairPrinter, isLinkedHere, testPrint, support, agentUrl, linkOf } from '/shared/printers.js';
 import { playSound, unlock, beep } from '/shared/sound.js';
@@ -18,7 +19,7 @@ const newCart = () => ({ cart_id: uid(), order_id: null, version: null, lines: [
 // ---------------- boot ----------------
 async function boot() {
   st.settings = await fetch('/api/settings/public').then((r) => r.json());
-  applyFonts(st.settings.fonts, 'pos');
+  applyFonts(st.settings.fonts, 'pos'); applyTheme(st.settings.theme);
   document.addEventListener('pointerdown', unlock, { once: true });
   if (!store.get('staff_token')) return loginScreen();
   try { st.staff = (await api.get('/auth/me')).staff; } catch { return loginScreen(); }
@@ -72,7 +73,7 @@ async function connect() {
   s.on('connect', () => { setNet(true); pushDisplay(); refreshBadges(); });
   s.on('disconnect', () => setNet(false));
   s.on('catalog:changed', async () => { st.catalog = await api.get('/catalog'); renderMenu(); });
-  s.on('settings:changed', async () => { st.settings = await fetch('/api/settings/public').then((r) => r.json()); render(); });
+  s.on('settings:changed', async () => { st.settings = await fetch('/api/settings/public').then((r) => r.json()); applyTheme(st.settings.theme); render(); });
   s.on('mobile:new_order', (o) => {
     st.pending.mobile++; renderTop();
     playSound(st.settings.sound, 'new_order', 'pos');
@@ -187,7 +188,7 @@ function renderGrid() {
     onclick: () => pickProduct(p), oncontextmenu: (e) => { e.preventDefault(); soldOutToggle(p); } },
     h('div', { class: 'img' + (p.image ? '' : ' noimg'), style: p.image ? { backgroundImage: `url(${p.image})` } : {} }, p.image ? null : h('img', { src: '/assets/bowl.svg', alt: '' }),
       inCart.get(p.id) ? h('span', { class: 'incart' }, '×' + inCart.get(p.id)) : null, p.sold_out ? h('span', { class: 'soldout' }, 'หมด') : null),
-    h('div', { class: 'nm' }, p.name),
+    h('div', { class: 'nm' }, p.big_options ? h('span', { class: 'addon-tag' }, '✨ Add-on') : null, p.name),
     h('div', { class: 'pr' }, h('span', { class: 'price' }, baht(p.price) + ' ฿'), p.bowl_count ? h('span', { class: 'unit' }, `${p.bowl_count} ${U()}`) : null, h('span', { class: 'plus' }, '+')))) : [h('div', { class: 'empty' }, 'ไม่พบสินค้า')]));
 }
 async function soldOutToggle(p) {
@@ -235,7 +236,8 @@ function optionsDialog(p, editLine = null) {
   const draw = () => {
     const price = p.price + groups.reduce((s, g) => s + g.options.filter((o) => chosen.get(g.id).has(o.id)).reduce((a, o) => a + o.price, 0), 0);
     body.replaceChildren(
-      ...groups.map((g) => h('div', { class: 'opt-group' }, h('h4', {}, g.name, h('span', { class: 'muted small' }, g.min_select ? ` (บังคับ${g.max_select > 1 ? ` เลือกได้ ${g.max_select}` : ''})` : g.max_select ? ` (เลือกได้ไม่เกิน ${g.max_select})` : '')),
+      ...groups.map((g) => h('div', { class: 'opt-group' + (g.min_select ? ' req' : ' addon') }, h('h4', {}, big ? h('span', { class: 'gtag' }, g.min_select ? 'เลือก' : '✨ ADD-ON') : null, g.name,
+          h('span', { class: big ? 'gnote' : 'muted small' }, g.min_select ? ` บังคับ${g.max_select > 1 ? ` · เลือกได้ ${g.max_select}` : ' · เลือก 1'}` : g.max_select ? ` ไม่บังคับ · เพิ่มได้ไม่เกิน ${g.max_select}` : ' ไม่บังคับ')),
         h('div', { class: 'opts' }, g.options.map((o) => h('button', { class: 'opt' + (chosen.get(g.id).has(o.id) ? ' on' : ''), onclick: () => {
           const set = chosen.get(g.id);
           if (set.has(o.id)) { if (!(g.min_select && set.size <= g.min_select)) set.delete(o.id); }
@@ -254,7 +256,7 @@ function optionsDialog(p, editLine = null) {
   draw();
   modal((big ? '✨ ' : '') + p.name, body, { autofocus: false, wide: big, actions: [{ label: 'ยกเลิก', onClick: () => {} }, { label: editLine ? 'บันทึก' : 'เพิ่มลงบิล', class: 'primary', onClick: () => {
     for (const g of groups) if (chosen.get(g.id).size < g.min_select) { toast('กรุณาเลือก ' + g.name, 'warn'); return false; }
-    const options = groups.flatMap((g) => g.options.filter((o) => chosen.get(g.id).has(o.id)).map((o) => ({ group_id: g.id, group: g.name, id: o.id, name: o.name, price: o.price })));
+    const options = groups.flatMap((g) => g.options.filter((o) => chosen.get(g.id).has(o.id)).map((o) => ({ group_id: g.id, group: g.name, id: o.id, name: o.name, price: o.price, addon: !g.min_select })));
     if (editLine) Object.assign(editLine, { options, qty, dine_type: dine, note: note.value });
     else {
       const bowl = p.bowl_count ? nextBowlGroup() : currentBowlGroup();
@@ -338,7 +340,9 @@ function lineView(l) {
     saveCart(); renderCart();
   };
   return h('div', { class: 'line' },
-    h('div', { class: 'top' }, h('div', { class: 'nm' }, l.name, h('div', { class: 'opts' }, (l.options || []).map((o) => o.name + (o.price ? ` +${baht(o.price)}` : '')).join(', ')),
+    h('div', { class: 'top' }, h('div', { class: 'nm' }, l.name, (l.options || []).length ? h('div', { class: 'optchips' }, (l.options || []).map((o) => isAddon(o)
+      ? h('span', { class: 'oc add' }, '+ ', o.name, o.price ? h('small', {}, ` ${baht(o.price)}`) : null)
+      : h('span', { class: 'oc' }, o.name, o.price ? h('small', {}, ` +${baht(o.price)}`) : null))) : null,
       l.note ? h('div', { class: 'opts' }, '📝 ' + l.note) : null), h('strong', { class: 'num' }, baht(lineTotal(l)))),
     h('div', { class: 'ctl' },
       h('div', { class: 'qty' }, h('button', { onclick: () => setQty(l.qty - 1), 'aria-label': 'ลด' }, '−'), h('span', {}, l.qty), h('button', { onclick: () => setQty(l.qty + 1), 'aria-label': 'เพิ่ม' }, '+')),
@@ -537,7 +541,7 @@ function pushDisplay(extra = {}) {
   lastPhase = phase;
   const m = st.cart.member;
   const state = { cart_id: st.cart.cart_id, phase, dine_type: orderDineType(st.cart.lines.length ? st.cart.lines : [{ qty: 1, dine_type: st.cart.dine_type }]),
-    lines: st.cart.lines.map((l) => ({ name: l.name, qty: l.qty, options: (l.options || []).map((o) => o.name), price: lineTotal(l), dine_type: l.dine_type, bowl_group: l.bowl_group })),
+    lines: st.cart.lines.map((l) => ({ name: l.name, qty: l.qty, options: (l.options || []).map((o) => (isAddon(o) ? '+ ' + o.name : o.name)), price: lineTotal(l), dine_type: l.dine_type, bowl_group: l.bowl_group })),
     items_total: t.items_total, discount: t.discount, packaging: t.packaging, tax: t.tax, total: t.total, bowls: t.bowls, table: st.cart.table_name,
     member: m && st.settings.members.show_on_display ? { name: (m.first_name || m.nickname || '').slice(0, 2) + '***', points: m.points, tier: m.tier && m.tier.name } : null,
     qr: null, received: 0, change: 0, ...ex, at: Date.now() };

@@ -193,3 +193,27 @@ test('พิมพ์บาร์โค้ดสินค้า: บันทึ
   const cashierTok = await S.login('0002', '2222', 'pos1');
   assert.equal((await S.call('POST', '/api/print/labels', { printer_id: printer, items: [{ product_id: 'p_r001', qty: 1 }] }, { token: cashierTok })).status, 403);
 });
+
+test('Add-on: ท็อปปิ้ง (กลุ่มไม่บังคับ) ถูกระบุเป็น add-on ในใบครัวและใบเสร็จ ส่วนตัวเลือกบังคับเป็น choice; ธีมบันทึกและส่งถึงทุกหน้า', async () => {
+  const o = await sell([line('p_r001', 1, { options: [...ramyeonOpts, { group_id: 'og_add', id: 'a_cheese' }] })]);
+  const rc = JSON.parse((await db.get("SELECT payload FROM print_jobs WHERE ref_id = ? AND doc_type = 'receipt'", [o.id])).payload).data;
+  const opts = rc.items[0].options;
+  assert.equal(opts.find((x) => x.id === 'a_cheese').addon, true);
+  assert.equal(opts.find((x) => x.id === 'n_shin').addon, false);
+  assert.equal(opts.find((x) => x.id === 'n_shin').group, 'ชนิดเส้น');
+  const kt = await db.get('SELECT content FROM kitchen_tickets WHERE order_id = ?', [o.id]);
+  const kopts = JSON.parse(kt.content).lines[0].options;
+  assert.deepEqual(kopts.filter((x) => x.addon).map((x) => x.name), ['ชีส']);
+  assert.ok(kopts.some((x) => !x.addon && x.group === 'ระดับความเผ็ด'));
+  // theme
+  const th = await S.call('PUT', '/api/settings/theme', { value: { preset: 'matcha', mode: 'dark', radius: 'square', pos_layout: 'list' } }, { token: owner });
+  assert.equal(th.status, 200);
+  const pub = (await S.call('GET', '/api/settings/public')).body;
+  assert.equal(pub.theme.preset, 'matcha');
+  assert.equal(pub.theme.pos_layout, 'list');
+  assert.equal((await S.call('GET', '/api/c/config')).body.theme.radius, 'square');
+  const { themeVars } = await import('../public/shared/theme.js');
+  const v = themeVars({ preset: 'custom', brand: '#123456' }, 'dark');
+  assert.equal(v['--brand-rgb'], '18 52 86');
+  assert.ok(v['--bg'] && v['--grad'].includes('linear-gradient'));
+});

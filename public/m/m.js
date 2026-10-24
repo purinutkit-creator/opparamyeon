@@ -1,6 +1,7 @@
 import { makeApi, socket, uid } from '/shared/api.js';
 import { h, $, toast, errToast, modal, PREP_TH, STATUS_TH } from '/shared/ui.js';
 import { baht, computeTotals, countBowls, lineTotal, optionsKey, VERSION } from '/shared/core.js';
+import { applyTheme } from '/shared/theme.js';
 import { applyFonts } from '/shared/fonts.js';
 
 const token = location.hash.slice(1);
@@ -16,7 +17,7 @@ const saveCart = () => { ss.set('m_cart_' + token, cart); ss.set('m_checkout_' +
 async function boot() {
   if (!token) return app.replaceChildren(h('div', { class: 'empty' }, 'กรุณาสแกน QR จากร้านเพื่อสั่งอาหาร'));
   settings = await fetch('/api/settings/public').then((r) => r.json());
-  applyFonts(settings.fonts, 'mobile');
+  applyFonts(settings.fonts, 'mobile'); applyTheme(settings.theme);
   try { info = await api.get('/m/session'); } catch (e) { return app.replaceChildren(h('div', { class: 'empty' }, '⚠️ ', e.message)); }
   if (info.session.can_order) menu = await api.get('/m/menu');
   if (!checkout.mode) checkout.mode = info.session.mode === 'table' ? 'table' : info.options.has_tables && info.options.table_enabled && info.options.any_table_free ? null : 'pickup';

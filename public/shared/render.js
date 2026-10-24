@@ -1,6 +1,6 @@
 // Document renderer: template JSON + data → canvas (1 px = 1 printer dot, 203 dpi ≈ 8 dots/mm).
 // The same output is used for the on-screen preview and for raster printing, so what you see is what prints.
-import { baht, dineLabel, fillVars, code128 } from './core.js';
+import { baht, dineLabel, fillVars, code128, isAddon } from './core.js';
 import { loadFont, familyCss } from './fonts.js';
 import { drawLabel, labelCfg, labelRowDots } from './labels.js';
 
@@ -90,14 +90,17 @@ export async function renderDoc(tpl, data, opts = {}) {
       font(e, size, weight);
       const lines = wrap(ctx, str, w - (invert ? 12 : 0));
       const h = lines.length * lh(size);
-      if (draw && invert) { ctx.fillStyle = '#000'; ctx.fillRect(x0, y, w, h + 4); }
+      // white-on-black: pad the band so Thai marks above/below the line (่ ้ ุ ู) stay on black and remain visible
+      const pad = invert ? Math.round(size * 0.22) : 0;
+      if (draw && invert) { ctx.fillStyle = '#000'; ctx.fillRect(x0, y, w, h + pad * 2); }
+      y += pad;
       for (const ln of lines) {
         const tw = ctx.measureText(ln).width;
         const x = align === 'center' ? x0 + (w - tw) / 2 : align === 'right' ? x0 + w - tw : x0 + (invert ? 6 : 0);
         if (draw) { ctx.fillStyle = invert ? '#fff' : '#000'; ctx.textBaseline = 'top'; ctx.fillText(ln, x, y + (lh(size) - size) / 2); if (e.underline) ctx.fillRect(x, y + lh(size) - 3, tw, 2); }
         y += lh(size);
       }
-      if (invert) y += 4;
+      y += pad;
       return h;
     };
     const twoCol = (left, right, e, { size = e.size || tpl.size || 24, weight } = {}) => {
@@ -177,7 +180,11 @@ export async function renderDoc(tpl, data, opts = {}) {
               if (draw) { ctx.fillStyle = '#000'; ctx.textBaseline = 'top'; ctx.fillText(String(it.qty), margin, y + (lh(size) - size * SC) / 2); }
               const take = e.show_dine && it.dine_type === 'takeaway' && data.dine_type !== 'takeaway' ? ' (กลับบ้าน)' : '';
               text(it.name + take, e, { size, weight: e.weight || 700, x0: margin + qtyW, w: inner - qtyW });
-              if (e.show_options !== false) for (const o of it.options || []) text(`• ${o.group ? o.group + ': ' : ''}${o.name}`, e, { size: Math.round(size * 0.6), weight: 600, x0: margin + qtyW, w: inner - qtyW });
+              if (e.show_options !== false) {
+                // choices (noodle, spice...) readable; add-ons printed as black bands so the kitchen can't miss them
+                for (const o of (it.options || []).filter((x) => !isAddon(x))) text(`• ${o.group ? o.group + ': ' : ''}${o.name}`, e, { size: Math.round(size * (e.option_ratio || 0.68)), weight: 700, x0: margin + qtyW, w: inner - qtyW });
+                for (const o of (it.options || []).filter(isAddon)) { text(`+ เพิ่ม ${o.name}`, e, { size: Math.round(size * (e.addon_ratio || 0.78)), weight: 800, x0: margin + qtyW, w: inner - qtyW, invert: e.addon_invert !== false }); y += 2; }
+              }
               if (e.show_note !== false && it.note) text(`⚠ ${it.note}`, e, { size: Math.round(size * 0.62), weight: 800, x0: margin + qtyW, w: inner - qtyW, invert: true });
               if (y === y0) y += lh(size);
               if (e.item_divider && idx < items.length - 1 && draw) { ctx.fillStyle = '#000'; for (let x = margin; x < margin + inner; x += 14) ctx.fillRect(x, y + 6, 8, 2); }
@@ -191,9 +198,9 @@ export async function renderDoc(tpl, data, opts = {}) {
             const dine = e.show_dine && (mixed || it.dine_type === 'takeaway') ? (it.dine_type === 'takeaway' ? ' [กลับบ้าน]' : mixed ? ' [ทานที่ร้าน]' : '') : '';
             twoCol(`${it.qty} x ${it.name}${dine}`, price, e, { size, weight: e.weight });
             if (e.show_options !== false) for (const o of it.options || []) {
-              font(e, Math.round(size * 0.85));
-              const extra = e.show_price !== false && o.price ? ` +${baht(o.price)}` : '';
-              text(`   - ${o.name}${extra}`, e, { size: Math.round(size * 0.85), weight: e.weight });
+              const extra = e.show_price !== false && o.price ? ` (+${baht(o.price)})` : '';
+              if (isAddon(o)) text(`   + เพิ่ม ${o.name}${extra}`, e, { size: Math.round(size * 0.85), weight: 700 });
+              else text(`   ${o.group ? o.group + ': ' : '- '}${o.name}${extra}`, e, { size: Math.round(size * 0.85), weight: e.weight });
             }
             if (e.show_note !== false && it.note) text(`   * ${it.note}`, e, { size: Math.round(size * 0.9), weight: 800, invert: data.ticket_kind !== undefined });
           }

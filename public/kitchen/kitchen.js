@@ -1,6 +1,7 @@
 import { makeApi, store, socket, uid } from '/shared/api.js';
 import { h, $, toast, errToast, modal, keypad, JOB_TH, loginHero } from '/shared/ui.js';
-import { dineLabel, VERSION } from '/shared/core.js';
+import { dineLabel, VERSION, isAddon } from '/shared/core.js';
+import { applyTheme } from '/shared/theme.js';
 import { applyFonts } from '/shared/fonts.js';
 import { PrintHost, pairPrinter, isLinkedHere, testPrint } from '/shared/printers.js';
 import { playSound, unlock } from '/shared/sound.js';
@@ -13,7 +14,7 @@ const deviceId = store.get('kitchen_device') || (store.set('kitchen_device', 'ki
 
 async function boot() {
   settings = await fetch('/api/settings/public').then((r) => r.json());
-  applyFonts(settings.fonts, 'pos');
+  applyFonts(settings.fonts, 'pos'); applyTheme(settings.theme);
   document.addEventListener('pointerdown', unlock);
   if (!store.get('kitchen_token')) return login();
   try { staff = (await api.get('/auth/me')).staff; } catch { return login(); }
@@ -69,7 +70,8 @@ function card(t) {
         c.table ? h('div', { style: { fontWeight: 800, fontSize: '1.2em' } }, 'โต๊ะ ' + c.table) : null, c.customer ? h('div', {}, c.customer) : null, h('div', { class: 'small age' }, `${age} นาที · ${c.station}`))),
     h('ul', {}, c.lines.map((l) => h('li', {}, h('strong', {}, `${l.qty} × ${l.name}`), l.bowl_label ? h('span', { class: 'badge info' }, ' ' + l.bowl_label) : null,
       l.dine_type === 'takeaway' && c.dine_type !== 'takeaway' ? h('span', { class: 'tw', style: { fontSize: '.8em', marginLeft: '.3em' } }, 'กลับบ้าน') : null,
-      l.options.length ? h('div', { class: 'o' }, l.options.map((o) => o.name).join(', ')) : null, l.note ? h('div', { class: 'note' }, '⚠ ' + l.note) : null))),
+      l.options.filter((o) => !isAddon(o)).length ? h('div', { class: 'o' }, l.options.filter((o) => !isAddon(o)).map((o) => o.name).join(' · ')) : null,
+      l.options.filter(isAddon).length ? h('div', { class: 'adds' }, l.options.filter(isAddon).map((o) => h('span', {}, '+ ' + o.name))) : null, l.note ? h('div', { class: 'note' }, '⚠ ' + l.note) : null))),
     c.note ? h('div', { style: { padding: '0 .8em' } }, h('span', { class: 'note' }, 'หมายเหตุ: ' + c.note)) : null,
     c.ref ? h('div', { class: 'small', style: { padding: '0 .8em' } }, c.ref) : null,
     h('div', { class: 'ft' }, t.kind === 'void' ? h('button', { class: 'btn', onclick: () => set('done') }, 'รับทราบ') : [

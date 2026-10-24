@@ -16,7 +16,7 @@ r.get('/c/config', ah(async (req, res) => {
   res.json({ enabled: s.members.enabled, signup: s.members.enabled && s.members.web_signup, fields: s.members.fields, custom_fields: s.members.custom_fields,
     points: { enabled: s.points.enabled, rate_baht: s.points.rate_baht, claim_enabled: s.points.claim_enabled }, verify: s.members.sensitive_verify, claim_verify: s.members.claim_verify || 'none',
     store: { name: s.store.name, logo: s.store.logo, phone: s.store.phone, address: s.store.address, contact_line: s.store.contact_line },
-    mobile: s.mobile.enabled, fonts: s.fonts, colors: { bg: s.display.bg, accent: s.display.accent } });
+    mobile: s.mobile.enabled, fonts: s.fonts, colors: { bg: s.display.bg, accent: s.display.accent }, theme: s.theme || {} });
 }));
 
 r.post('/c/register', ah(async (req, res) => {
