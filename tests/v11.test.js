@@ -267,3 +267,85 @@ test('ผู้ช่วยเพิ่มสินค้า: บาร์โค
     assert.equal((await S.call('POST', '/api/products/lookup', { barcode: '8850987654328' }, { token: cashierTok })).status, 403);
   } finally { delete process.env.LOOKUP_ALLOW_PRIVATE; delete process.env.LOOKUP_OFF_URL; delete process.env.LOOKUP_UPC_URL; mock.close(); }
 });
+
+test('ผู้ช่วยเพิ่มสินค้า + AI: รูปสินค้าไม่มีบาร์โค้ด → Claude ระบุสินค้า ตั้งชื่อไทย/อังกฤษหลายชื่อ, รูปจากหลายแหล่ง; ไม่มีคีย์ก็ยังใช้ชื่อสินค้าได้', async () => {
+  const http = await import('node:http');
+  const seen = [];
+  let mode = 'ok';
+  const AI = { identified: true, product_type: 'บะหมี่กึ่งสำเร็จรูปเกาหลี', brand: 'Samyang', product_name_en: 'Samyang Buldak Carbonara', product_name_th: 'ซัมยัง บูลดัก คาโบนาร่า', flavor: 'คาโบนาร่าเผ็ด', size: '130 g', barcode: '',
+    names_th: ['บูลดักคาโบนาร่า', 'มาม่าเกาหลีบูลดักคาโบนาร่า', 'ซัมยัง คาโบนาร่า 130 กรัม', 'บูลดักครีมชีสเผ็ด'], names_en: ['Buldak Carbonara', 'Samyang Carbonara Hot Chicken Ramen'], names_mixed: ['Buldak คาโบนาร่า'],
+    image_queries_product: ['Samyang Buldak Carbonara pack'], image_queries_promo: ['spicy carbonara ramen bowl'], category_hint: 'มาม่าเกาหลี' };
+  const mock = http.createServer(async (req, res) => {
+    const u = new URL(req.url, 'http://x');
+    let body = ''; for await (const c of req) body += c;
+    const json = (o, st = 200) => { res.writeHead(st, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+    if (u.pathname === '/v1/messages') {
+      seen.push({ headers: req.headers, body: JSON.parse(body) });
+      if (mode === 'auth') return json({ type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }, 401);
+      if (mode === 'refusal') return json({ id: 'm1', type: 'message', role: 'assistant', model: 'claude-opus-5-5', content: [], stop_reason: 'refusal', usage: { input_tokens: 1, output_tokens: 0 } });
+      return json({ id: 'm1', type: 'message', role: 'assistant', model: 'claude-opus-5-5', content: [{ type: 'text', text: JSON.stringify(AI) }], stop_reason: 'end_turn', usage: { input_tokens: 10, output_tokens: 10 } });
+    }
+    if (u.pathname === '/cgi/search.pl') return json({ products: [{ product_name: 'Buldak Carbonara', brands: 'Samyang', image_front_url: base + '/off/front.400.jpg' }] });
+    if (u.pathname.startsWith('/api/v2/product/')) return json({ status: 0 });
+    if (u.pathname === '/prod/trial/lookup') return json({ items: [] });
+    if (u.pathname === '/v1/images/') return json({ results: [{ url: base + '/ov/1.jpg', thumbnail: base + '/ov/1t.jpg', title: 'ramen', license: 'by', creator: 'A' }] });
+    if (u.pathname === '/w/api.php') return json({ query: { pages: { 1: { imageinfo: [{ url: base + '/wk/1.jpg', thumburl: base + '/wk/1t.jpg' }] } } } });
+    if (u.pathname === '/v1/search') return json({ photos: [{ src: { large2x: base + '/px/1.jpg', medium: base + '/px/1m.jpg' }, alt: 'bowl', photographer: 'P' }] });
+    if (u.pathname === '/images') return json({ images: [{ imageUrl: base + '/gg/1.jpg', thumbnailUrl: base + '/gg/1t.jpg', title: 'Buldak', source: 'shop.com' }] });
+    res.writeHead(404); res.end();
+  });
+  await new Promise((r) => mock.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${mock.address().port}`;
+  Object.assign(process.env, { ANTHROPIC_BASE_URL: base, LOOKUP_OFF_URL: base, LOOKUP_UPC_URL: base, LOOKUP_OPENVERSE_URL: base, LOOKUP_WIKI_URL: base, LOOKUP_PEXELS_URL: base, LOOKUP_SERPER_URL: base });
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  try {
+    // without an AI key: a photo with no barcode cannot be identified, but a typed name still searches
+    const noKey = (await S.call('POST', '/api/products/identify', { image: PNG }, { token: owner })).body;
+    assert.equal(noKey.need_ai, true);
+    const typed = (await S.call('POST', '/api/products/identify', { text: 'Buldak Carbonara' }, { token: owner })).body;
+    assert.ok(typed.names.includes('Buldak Carbonara'));
+    assert.ok(typed.images.length >= 2, 'รูปจาก Open Food Facts / Openverse / Wikimedia แม้ไม่มีคีย์');
+    assert.ok(!typed.images.some((i) => i.source.startsWith('Pexels')), 'ไม่มีคีย์ Pexels ก็ไม่เรียก Pexels');
+    // keys: only staff with settings permission can set them, and they never come back in full
+    const cashierTok = await S.login('0002', '2222', 'pos1');
+    assert.equal((await S.call('PUT', '/api/assistant/config', { anthropic_api_key: 'sk-x' }, { token: cashierTok })).status, 403);
+    await S.call('PUT', '/api/assistant/config', { anthropic_api_key: 'sk-ant-test-1234', pexels_api_key: 'px-9999', serper_api_key: 'sr-7777' }, { token: owner });
+    const conf = (await S.call('GET', '/api/assistant/config', undefined, { token: owner })).body;
+    assert.deepEqual([conf.ai, conf.pexels, conf.serper], [true, true, true]);
+    assert.equal(conf.hints.anthropic, '…1234');
+    assert.ok(!JSON.stringify(conf).includes('sk-ant-test'), 'ไม่ส่งคีย์เต็มกลับ');
+    // with AI: photo only (no barcode)
+    const r = (await S.call('POST', '/api/products/identify', { image: PNG }, { token: owner })).body;
+    assert.equal(r.identified, true);
+    assert.equal(r.brand, 'Samyang');
+    assert.equal(r.names[0], 'ซัมยัง บูลดัก คาโบนาร่า');
+    assert.ok(r.names.length >= 9, 'หลายชื่อ');
+    assert.ok(r.names.some((n) => /[฀-๿]/.test(n)) && r.names.includes('Buldak Carbonara'), 'มีทั้งไทยและอังกฤษ');
+    assert.equal(r.suggested_category_id, 'c_ramyeon');
+    const srcs = new Set(r.images.map((i) => i.source.split(' · ')[0]));
+    for (const s of ['Open Food Facts', 'Google Images', 'Wikimedia Commons', 'Pexels', 'Openverse']) assert.ok(srcs.has(s), 'มีรูปจาก ' + s);
+    assert.equal(r.images[0].kind, 'product', 'รูปสินค้าจริงก่อน แล้วตามด้วยรูปโปรโมท');
+    assert.equal(r.price, undefined);
+    const call = seen.at(-1);
+    assert.equal(call.body.model, 'claude-opus-5-5');
+    assert.equal(call.body.fallbacks, 'default');
+    assert.match(String(call.headers['anthropic-beta']), /server-side-fallback-2026-07-01/);
+    assert.equal(call.body.output_config.format.type, 'json_schema');
+    assert.equal(call.body.messages[0].content[0].type, 'image');
+    assert.ok([call.headers['x-api-key'], call.headers.authorization].some((v) => String(v || '').includes('sk-ant-test-1234')), 'ส่งคีย์ของร้าน');
+    // AI errors are explained, never a crash
+    mode = 'refusal';
+    const ref = (await S.call('POST', '/api/products/identify', { image: PNG }, { token: owner })).body;
+    assert.match(ref.ai_error, /ไม่สามารถวิเคราะห์/);
+    mode = 'auth';
+    const au = (await S.call('POST', '/api/products/identify', { image: PNG, text: 'บูลดัก' }, { token: owner })).body;
+    assert.match(au.ai_error, /API Key/);
+    assert.ok(au.names.includes('บูลดัก'), 'ยังใช้ชื่อที่พิมพ์ได้');
+    assert.equal((await S.call('POST', '/api/products/identify', { image: 'data:text/html;base64,PGgxPg==' }, { token: owner })).status, 400);
+    assert.equal((await S.call('POST', '/api/products/identify', { image: PNG }, { token: cashierTok })).status, 403);
+  } finally {
+    await S.call('PUT', '/api/assistant/config', { clear: ['anthropic_api_key', 'pexels_api_key', 'serper_api_key'] }, { token: owner });
+    for (const k of ['ANTHROPIC_BASE_URL', 'LOOKUP_OFF_URL', 'LOOKUP_UPC_URL', 'LOOKUP_OPENVERSE_URL', 'LOOKUP_WIKI_URL', 'LOOKUP_PEXELS_URL', 'LOOKUP_SERPER_URL']) delete process.env[k];
+    mock.close();
+  }
+});

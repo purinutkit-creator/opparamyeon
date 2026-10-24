@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { db, J, S } from '../db.js';
-import { ah, id, now, bad, notFound, conflict, audit, emit, getSettings, setSetting } from '../lib/util.js';
+import { ah, id, now, bad, notFound, conflict, audit, emit, getSettings, setSetting, getSecret, setSecret, rateLimit } from '../lib/util.js';
 import { enqueue } from '../lib/print.js';
 import { lookupBarcode, suggestCategory, fetchImage } from '../lib/productlookup.js';
+import { aiKeys, identifyWithClaude, findImages, basicNames, AiError, AI_MODEL } from '../lib/productai.js';
 import { saveFile } from './system.js';
 import { labelCfg, labelRowDots } from '../../public/shared/labels.js';
 import { isEan13, ean13Check } from '../../public/shared/core.js';
@@ -254,4 +255,62 @@ r.post('/products/import-image', staffAuth('manage_menu'), ah(async (req, res) =
   try { img = await fetchImage(String(req.body.url || '')); } catch (e) { throw bad(e.message); }
   const fid = await saveFile(img.buf, img.name.slice(0, 120), img.mime);
   res.json({ url: '/files/' + fid });
+}));
+
+// ---------- product assistant with AI: any product photo (barcode optional) → names + many photos ----------
+const hint4 = (v) => (v ? '…' + String(v).slice(-4) : '');
+r.get('/assistant/config', staffAuth('manage_menu'), ah(async (req, res) => {
+  const k = await aiKeys();
+  res.json({ ai: !!k.anthropic, pexels: !!k.pexels, serper: !!k.serper, model: AI_MODEL, hints: { anthropic: hint4(k.anthropic), pexels: hint4(k.pexels), serper: hint4(k.serper) } });
+}));
+r.put('/assistant/config', staffAuth('settings'), ah(async (req, res) => {
+  const b = req.body || {};
+  for (const [k, name] of [['anthropic_api_key', 'anthropic_api_key'], ['pexels_api_key', 'pexels_api_key'], ['serper_api_key', 'serper_api_key']]) if (b[k]) await setSecret(name, String(b[k]).trim()); // blank = keep the saved key
+  for (const k of [].concat(b.clear || [])) if (['anthropic_api_key', 'pexels_api_key', 'serper_api_key'].includes(k)) await setSecret(k, null);
+  await audit(req.staff.id, 'settings', 'secrets', 'assistant', null, { set: Object.keys(b).filter((k) => b[k] && k !== 'clear'), clear: b.clear || [] });
+  res.json({ ok: true });
+}));
+r.post('/products/identify', staffAuth('manage_menu'), ah(async (req, res) => {
+  rateLimit('identify:' + req.staff.id, 30, 600000);
+  const text = String(req.body.text || '').trim().slice(0, 200);
+  let barcode = String(req.body.barcode || '').trim();
+  if (barcode && !/^[0-9A-Za-z-]{4,32}$/.test(barcode)) barcode = '';
+  let image = null;
+  const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(req.body.image || ''));
+  if (req.body.image && !m) throw bad('รูปไม่ถูกต้อง (รองรับ JPEG/PNG/WebP)');
+  if (m) { if (m[2].length > 7_000_000) throw bad('รูปใหญ่เกินไป'); image = { mediaType: m[1], data: m[2] }; }
+  if (!image && !text && !barcode) throw bad('ถ่ายรูปสินค้า หรือพิมพ์ชื่อสินค้าก่อน');
+  const keys = await aiKeys();
+  const cats = await db.all('SELECT id, name FROM categories WHERE active = 1 ORDER BY sort, name');
+  const existsFor = (code) => db.get('SELECT p.id, p.name, p.price, p.active FROM barcodes b JOIN products p ON p.id = b.product_id WHERE b.code = ?', [code]);
+  if (barcode) { const has = await existsFor(barcode); if (has) return res.json({ barcode, exists: has }); }
+  const info = barcode ? await lookupBarcode(barcode) : { found: false, names: [], images: [] };
+  let ai = null, aiError = null;
+  if (keys.anthropic && (image || text || info.found)) {
+    try {
+      ai = await identifyWithClaude({ apiKey: keys.anthropic, imageBase64: image && image.data, mediaType: image && image.mediaType, text,
+        barcodeInfo: info.found ? `${info.names.join(' / ')} (${info.brand || ''} ${info.quantity || ''})` : '', categories: cats });
+    } catch (e) { if (!(e instanceof AiError)) throw e; aiError = e.message; }
+  }
+  if (ai && !barcode && /^\d{8,14}$/.test(ai.barcode || '')) {
+    barcode = ai.barcode;
+    const has = await existsFor(barcode); if (has) return res.json({ barcode, exists: has, ai });
+  }
+  if (!ai && !info.found && !text) {
+    return res.json({ need_ai: !keys.anthropic, ai_error: aiError, barcode, names: [], images: [], errors: info.errors || [] });
+  }
+  const names = [...new Set([
+    ...(ai ? [ai.product_name_th, ...(ai.names_th || []), ...(ai.names_mixed || []), ai.product_name_en, ...(ai.names_en || [])] : []),
+    ...basicNames([...(info.names || []), text], { brand: info.brand, size: info.quantity }),
+  ].map((n) => String(n || '').replace(/\s+/g, ' ').trim()).filter(Boolean))].slice(0, 30);
+  const productQueries = ai ? ai.image_queries_product : [[info.brand, info.names[0]].filter(Boolean).join(' ') || text];
+  const promoQueries = ai ? ai.image_queries_promo : [info.names.find((n) => /^[\x00-\x7F]+$/.test(n)) || text];
+  const found = await findImages({ productQueries, promoQueries, keys });
+  const images = [...(info.images || []).map((u) => ({ url: u, thumb: u, source: info.source, kind: 'product' })), ...found.images].filter((im, i, a) => a.findIndex((x) => x.url === im.url) === i);
+  const hintByName = ai && ai.category_hint ? cats.find((c) => c.name === ai.category_hint || ai.category_hint.includes(c.name)) : null;
+  const taken = barcode ? await db.get('SELECT id FROM products WHERE code = ?', [barcode]) : null;
+  res.json({ barcode, found: !!ai || info.found, source: ai ? (ai.identified ? 'AI (Claude)' : 'AI (ไม่แน่ใจ)') : info.source, identified: ai ? !!ai.identified : info.found,
+    product_type: ai ? ai.product_type : '', brand: (ai && ai.brand) || info.brand || '', quantity: (ai && ai.size) || info.quantity || '', flavor: ai ? ai.flavor : '',
+    names, images, suggested_category_id: (hintByName && hintByName.id) || suggestCategory({ names, categories: info.categories || [], brand: info.brand }, cats),
+    suggested_code: barcode && !taken ? barcode : '', ai_error: aiError, errors: [...(info.errors || []), ...found.errors], sources: { ai: !!keys.anthropic, pexels: !!keys.pexels, serper: !!keys.serper } });
 }));
