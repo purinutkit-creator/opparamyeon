@@ -149,7 +149,10 @@ class PgDB {
     pg.types.setTypeParser(20, (v) => parseInt(v, 10));
     pg.types.setTypeParser(1700, (v) => parseFloat(v));
     pg.types.setTypeParser(701, (v) => parseFloat(v));
-    const ssl = /localhost|127\.0\.0\.1/.test(this.url) || process.env.PGSSL === 'off' ? false : { rejectUnauthorized: false };
+    // Render internal hosts (no dot, e.g. dpg-xxxx-a) and localhost connect without SSL; external hosts use SSL
+    let host = '';
+    try { host = new URL(this.url).hostname; } catch { /* keep default */ }
+    const ssl = process.env.PGSSL === 'off' || /^(localhost|127\.0\.0\.1)$/.test(host) || (host && !host.includes('.')) ? false : { rejectUnauthorized: false };
     this.pool = new pg.Pool({ connectionString: this.url, ssl, max: 10 });
     await this.pool.query(SCHEMA.replaceAll('{REAL}', 'DOUBLE PRECISION'));
     for (const [t, c, d] of MIGRATIONS) await this.pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS ${c} ${d}`);
