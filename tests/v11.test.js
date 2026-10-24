@@ -217,3 +217,53 @@ test('Add-on: ท็อปปิ้ง (กลุ่มไม่บังคั�
   assert.equal(v['--brand-rgb'], '18 52 86');
   assert.ok(v['--bg'] && v['--grad'].includes('linear-gradient'));
 });
+
+test('ผู้ช่วยเพิ่มสินค้า: บาร์โค้ด → ชื่อ/รูปจากฐานข้อมูลออนไลน์, ดาวน์โหลดรูปเก็บในระบบ, กันลิงก์อันตราย, ราคาและหมวดหมู่ร้านตั้งเอง', async () => {
+  const http = await import('node:http');
+  const JPG = Buffer.from('ffd8ffe000104a464946000101', 'hex');
+  const mock = http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://x');
+    const json = (o, st = 200) => { res.writeHead(st, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+    if (u.pathname === '/api/v2/product/8850987654328.json') return json({ status: 1, product: { product_name_th: 'มาม่า รสต้มยำกุ้ง', product_name: 'Mama Tom Yum', brands: 'Mama', quantity: '55 g', image_front_url: base + '/img.jpg', categories_tags: ['en:instant-noodles'] } });
+    if (u.pathname.startsWith('/api/v2/product/')) return json({ status: 0 });
+    if (u.pathname === '/prod/trial/lookup' && u.searchParams.get('upc') === '0012345678905') return json({ items: [{ title: 'Cola Can', brand: 'Fizz', images: [base + '/img.jpg'] }] });
+    if (u.pathname === '/prod/trial/lookup') return json({ items: [] });
+    if (u.pathname === '/img.jpg') { res.writeHead(200, { 'content-type': 'image/jpeg' }); return res.end(JPG); }
+    if (u.pathname === '/page.html') { res.writeHead(200, { 'content-type': 'text/html' }); return res.end('<h1>x</h1>'); }
+    res.writeHead(404); res.end();
+  });
+  await new Promise((r) => mock.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${mock.address().port}`;
+  Object.assign(process.env, { LOOKUP_OFF_URL: base, LOOKUP_UPC_URL: base });
+  try {
+    const a = (await S.call('POST', '/api/products/lookup', { barcode: '8850987654328' }, { token: owner })).body;
+    assert.equal(a.found, true);
+    assert.equal(a.source, 'Open Food Facts');
+    assert.equal(a.names[0], 'มาม่า รสต้มยำกุ้ง');
+    assert.ok(a.names.includes('Mama Tom Yum'));
+    assert.equal(a.images[0], base + '/img.jpg');
+    assert.equal(a.suggested_category_id, 'c_ramyeon', 'แนะนำหมวดจากคำในข้อมูล (ร้านยังต้องเลือกเอง)');
+    assert.equal(a.price, undefined, 'ไม่เดาราคา');
+    const b = (await S.call('POST', '/api/products/lookup', { barcode: '0012345678905' }, { token: owner })).body;
+    assert.equal(b.source, 'UPCitemdb');
+    assert.ok(b.names.includes('Cola Can'));
+    const none = (await S.call('POST', '/api/products/lookup', { barcode: '2000000000008' }, { token: owner })).body;
+    assert.equal(none.found, false);
+    const exists = (await S.call('POST', '/api/products/lookup', { barcode: '8850001000035' }, { token: owner })).body;
+    assert.ok(exists.exists, 'บาร์โค้ดที่มีในระบบแล้วไม่สร้างซ้ำ');
+    assert.equal((await S.call('POST', '/api/products/lookup', { barcode: 'x' }, { token: owner })).status, 400);
+    // images are copied into the shop's file store
+    const blocked = await S.call('POST', '/api/products/import-image', { url: base + '/img.jpg' }, { token: owner });
+    assert.equal(blocked.status, 400, 'ที่อยู่ภายในเครือข่ายถูกบล็อก');
+    process.env.LOOKUP_ALLOW_PRIVATE = '1';
+    const img = await S.call('POST', '/api/products/import-image', { url: base + '/img.jpg' }, { token: owner });
+    assert.equal(img.status, 200, JSON.stringify(img.body));
+    const f = await fetch(S.base + img.body.url);
+    assert.equal(f.headers.get('content-type').split(';')[0], 'image/jpeg');
+    assert.deepEqual(Buffer.from(await f.arrayBuffer()), JPG);
+    assert.equal((await S.call('POST', '/api/products/import-image', { url: base + '/page.html' }, { token: owner })).status, 400, 'ไม่ใช่รูป');
+    assert.equal((await S.call('POST', '/api/products/import-image', { url: 'file:///etc/passwd' }, { token: owner })).status, 400);
+    const cashierTok = await S.login('0002', '2222', 'pos1');
+    assert.equal((await S.call('POST', '/api/products/lookup', { barcode: '8850987654328' }, { token: cashierTok })).status, 403);
+  } finally { delete process.env.LOOKUP_ALLOW_PRIVATE; delete process.env.LOOKUP_OFF_URL; delete process.env.LOOKUP_UPC_URL; mock.close(); }
+});

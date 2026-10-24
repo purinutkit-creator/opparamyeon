@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { db, J, S } from '../db.js';
 import { ah, id, now, bad, notFound, conflict, audit, emit, getSettings, setSetting } from '../lib/util.js';
 import { enqueue } from '../lib/print.js';
+import { lookupBarcode, suggestCategory, fetchImage } from '../lib/productlookup.js';
+import { saveFile } from './system.js';
 import { labelCfg, labelRowDots } from '../../public/shared/labels.js';
 import { isEan13, ean13Check } from '../../public/shared/core.js';
 import { staffAuth, can } from '../lib/auth.js';
@@ -234,4 +236,22 @@ r.post('/products/barcodes/generate', staffAuth('manage_menu'), ah(async (req, r
   });
   if (made.length) { await audit(req.staff.id, 'generate_barcodes', 'product', null, null, { count: made.length }); changed(); }
   res.json({ created: made });
+}));
+
+// ---------- product assistant: photo/barcode → name + photo (price and category are set by staff) ----------
+r.post('/products/lookup', staffAuth('manage_menu'), ah(async (req, res) => {
+  const code = String(req.body.barcode || '').trim();
+  if (!/^[0-9A-Za-z-]{4,32}$/.test(code)) throw bad('บาร์โค้ดไม่ถูกต้อง');
+  const has = await db.get('SELECT p.id, p.name, p.price, p.active FROM barcodes b JOIN products p ON p.id = b.product_id WHERE b.code = ?', [code]);
+  if (has) return res.json({ barcode: code, exists: has });
+  const info = await lookupBarcode(code);
+  const cats = await db.all('SELECT id, name FROM categories WHERE active = 1 ORDER BY sort, name');
+  const taken = await db.get('SELECT id FROM products WHERE code = ?', [code]);
+  res.json({ barcode: code, ...info, suggested_category_id: info.found ? suggestCategory(info, cats) : null, suggested_code: taken ? '' : code });
+}));
+r.post('/products/import-image', staffAuth('manage_menu'), ah(async (req, res) => {
+  let img;
+  try { img = await fetchImage(String(req.body.url || '')); } catch (e) { throw bad(e.message); }
+  const fid = await saveFile(img.buf, img.name.slice(0, 120), img.mime);
+  res.json({ url: '/files/' + fid });
 }));
