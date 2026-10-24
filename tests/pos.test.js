@@ -292,6 +292,46 @@ test('จอลูกค้า: จับคู่ด้วยรหัส 6 ห
   disp.close(); disp2.close(); pos.close();
 });
 
+test('Live View: แอดมินเห็นรายการที่แคชเชียร์กำลังคีย์และการชำระเงินแบบเรียลไทม์ แต่รายละเอียดไม่หลุดไปจอลูกค้า', async () => {
+  const pc = await S.call('POST', '/api/display/pairing', {}, { token: owner, terminal: 'pos1' });
+  const dtok = (await S.call('POST', '/api/display/pair', { code: pc.body.code })).body.token;
+  const disp = ioc(S.base, { auth: { kind: 'display', token: dtok }, transports: ['websocket'] });
+  const admin = ioc(S.base, { auth: { kind: 'staff', token: owner }, transports: ['websocket'] });
+  const cash2 = ioc(S.base, { auth: { kind: 'staff', token: cashier, terminal_id: 'pos1' }, transports: ['websocket'] });
+  try {
+  let cashierSaw = false;
+  cash2.on('live:update', () => { cashierSaw = true; });
+  const within = (p, what) => Promise.race([p, new Promise((_, j) => setTimeout(() => j(new Error('timeout: ' + what)), 4000))]);
+  await within(Promise.all([admin, disp, cash2].map((c, i) => new Promise((r) => (c.connected ? r() : c.on('connect', r))).then(() => i))), 'connect');
+  const fromAdmin = new Promise((r) => admin.on('live:update', (x) => { if (x.state.cart_id === 'live-1' && x.state.phase === 'pay') r(x); }));
+  const fromDisp = new Promise((r) => disp.on('display:state', (x) => { if (x.cart_id === 'live-1' && x.phase === 'pay') r(x); }));
+  cash2.emit('display:state', { cart_id: 'live-1', phase: 'cart', lines: [{ name: 'มาม่า', qty: 1, price: 7900 }], total: 7900, at: 1,
+    live: { member: { name: 'สมศรี ใจดี', member_no: 'M1', points: 10, earn: 3 } } });
+  cash2.emit('display:state', { cart_id: 'live-1', phase: 'pay', lines: [{ name: 'มาม่า', qty: 2, price: 15800 }], total: 15800, at: 2,
+    live: { member: { name: 'สมศรี ใจดี', member_no: 'M1', points: 10, earn: 6 }, pay: { method: 'เงินสด', entered: 20000, remaining: 15800, change: 4200 } } });
+  const rec = await within(fromAdmin, 'admin update');
+  assert.equal(rec.terminal_id, 'pos1');
+  assert.equal(rec.online, true);
+  assert.equal(rec.state.lines[0].qty, 2);
+  assert.equal(rec.detail.pay.method, 'เงินสด');
+  assert.equal(rec.detail.pay.change, 4200);
+  assert.equal(rec.detail.member.name, 'สมศรี ใจดี');
+  const d = await within(fromDisp, 'display state');
+  assert.equal(d.live, undefined, 'จอลูกค้าไม่ได้รับชื่อเต็มสมาชิก/รายละเอียดพนักงาน');
+  // an admin opening Live View later gets the current state of every terminal
+  const snap = await within(new Promise((r) => admin.emit('live:snapshot', r)), 'snapshot');
+  assert.equal(snap.find((x) => x.terminal_id === 'pos1').state.phase, 'pay');
+  // a late, older update never overwrites a newer one
+  cash2.emit('display:state', { cart_id: 'live-1', phase: 'cart', lines: [], total: 0, at: 0 });
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal((await new Promise((r) => admin.emit('live:snapshot', r))).find((x) => x.terminal_id === 'pos1').state.phase, 'pay');
+  assert.equal(cashierSaw, false, 'แคชเชียร์ที่ไม่มีสิทธิ์ดูยอดขายไม่เห็น Live View');
+  const off = new Promise((r) => admin.on('live:update', (x) => { if (x.terminal_id === 'pos1' && !x.online) r(x); }));
+  cash2.close();
+  assert.equal((await within(off, 'offline')).online, false, 'ปิด POS แล้วแสดงออฟไลน์');
+  } finally { admin.close(); disp.close(); cash2.close(); }
+});
+
 test('ช่องกรอกสมาชิกบนจอลูกค้า: เปิดเมื่อพนักงานสั่งเท่านั้น ผูกกับบิลและเครื่อง', async () => {
   await S.call('POST', '/api/members', { phone: '0891112222', first_name: 'สมชาย' }, { token: owner });
   const pc = await S.call('POST', '/api/display/pairing', {}, { token: owner, terminal: 'pos1' });

@@ -450,7 +450,9 @@ function payDialog() {
         h('div', { class: 'small muted' }, 'แสดงบนจอลูกค้าด้วย · ตรวจสอบยอดเงินเข้าก่อนกดยืนยัน')) : null,
       keypad(amt, { decimal: true }),
       h('div', { class: 'row', style: { marginTop: '.6em' } }, h('button', { class: 'btn block', onclick: addPay }, '+ เพิ่มช่องทางนี้ (แบ่งจ่าย)')));
-    pushDisplay({ phase: 'pay', received: method === 'cash' ? received : 0, change: method === 'cash' ? Math.max(0, received - rem) : 0, qr: method === 'promptpay' ? qrPayload(rem) : null });
+    pushDisplay({ phase: 'pay', received: method === 'cash' ? received : 0, change: method === 'cash' ? Math.max(0, received - rem) : 0, qr: method === 'promptpay' ? qrPayload(rem) : null,
+      livePay: { method: (methods.find((x) => x.id === method) || {}).name || method, entered: received, remaining: rem, change: method === 'cash' ? Math.max(0, received - rem) : 0,
+        splits: pays.map((p) => ({ method: (methods.find((x) => x.id === p.method) || {}).name || p.method, amount: p.amount })) } });
   };
   amt.addEventListener('input', debounce(drawRight, 200));
   const addPay = () => {
@@ -486,7 +488,8 @@ function payDialog() {
 const qrPayload = (amount) => (st.settings.payment.promptpay_enabled ? promptPayPayload(st.settings.payment.promptpay_id || '', amount) : null);
 function done(o) {
   const change = o.change_amount;
-  pushDisplay({ phase: 'done', queue_no: o.queue_no, change, total: o.total, received: o.paid_amount + change, dine_type: o.dine_type });
+  pushDisplay({ phase: 'done', queue_no: o.queue_no, change, total: o.total, received: o.paid_amount + change, dine_type: o.dine_type,
+    livePay: { done: true, bill_no: o.bill_no, method: (o.payments || []).map((p) => (st.settings.sale.payment_methods.find((x) => x.id === p.method) || {}).name || p.method).join(' + '), change } });
   modal('ชำระเงินสำเร็จ', h('div', { style: { textAlign: 'center' } }, h('div', { class: 'muted' }, 'เลขคิว'), h('div', { class: 'qbig' }, o.queue_no || '-'),
     h('div', { class: 'badge ' + (o.dine_type === 'takeaway' ? 'takeaway' : 'info'), style: { fontSize: '1.2em' } }, dineLabel(o.dine_type)),
     change ? h('div', { class: 'bigsum', style: { color: 'var(--ok)', marginTop: '.4em' } }, 'เงินทอน ', baht(change), ' ฿') : null,
@@ -500,6 +503,7 @@ function done(o) {
 let lastPhase = 'idle';
 function pushDisplay(extra = {}) {
   if (!st.cart || !st.sock) return;
+  const { livePay, ...ex } = extra;
   const t = previewTotals();
   const phase = extra.phase || (st.cart.lines.length ? 'cart' : 'idle');
   lastPhase = phase;
@@ -508,9 +512,15 @@ function pushDisplay(extra = {}) {
     lines: st.cart.lines.map((l) => ({ name: l.name, qty: l.qty, options: (l.options || []).map((o) => o.name), price: lineTotal(l), dine_type: l.dine_type, bowl_group: l.bowl_group })),
     items_total: t.items_total, discount: t.discount, packaging: t.packaging, tax: t.tax, total: t.total, bowls: t.bowls, table: st.cart.table_name,
     member: m && st.settings.members.show_on_display ? { name: (m.first_name || m.nickname || '').slice(0, 2) + '***', points: m.points, tier: m.tier && m.tier.name } : null,
-    qr: null, received: 0, change: 0, ...extra, at: Date.now() };
-  st.sock.emit('display:state', state);
+    qr: null, received: 0, change: 0, ...ex, at: Date.now() };
   if (st.bc) st.bc.postMessage(state);
+  // staff-only details for the admin Live View (the server strips them before the customer display)
+  const c = st.cart;
+  state.live = { bill_no: c.bill_no || '', queue_no: c.queue_no || '', table: c.table_name || '', customer: c.customer_name || '', note: c.note || '',
+    member: m ? { name: `${m.first_name || m.nickname || ''} ${m.last_name || ''}`.trim(), member_no: m.member_no, points: m.points, tier: m.tier && m.tier.name, earn: previewEarn(c, t) } : null,
+    discount_label: c.discount ? (c.discount.type === 'percent' ? `${c.discount.value}%` : baht(c.discount.value) + ' ฿') : '',
+    line_notes: c.lines.map((l) => l.note || ''), sent: c.lines.map((l) => l.sent_qty || 0), pay: livePay || null };
+  st.sock.emit('display:state', state);
 }
 
 // ---------------- members ----------------

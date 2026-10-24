@@ -70,6 +70,51 @@
   .cards > .kpi.hero:nth-child(3) { background: linear-gradient(135deg, #3d1d15, #6b2a1c); }
   .page-head h2 { font-size: 1.8em; }
   .topm { background: linear-gradient(90deg, #2b1712, #4a2016); color: #fff; }
+  /* Live View */
+  .live-btn { display: inline-flex; align-items: center; gap: .45em; font-weight: 800; }
+  .live-btn i, .live-card .phase i, .rec { width: 10px; height: 10px; border-radius: 50%; background: #ef2b2b; display: inline-block; box-shadow: 0 0 0 0 rgb(239 43 43 / .6); animation: rec 1.4s infinite; }
+  @keyframes rec { 70% { box-shadow: 0 0 0 8px rgb(239 43 43 / 0); } 100% { box-shadow: 0 0 0 0 rgb(239 43 43 / 0); } }
+  .live-wrap { display: grid; grid-template-columns: 1fr 300px; gap: 1em; margin-top: 1em; align-items: start; }
+  .live-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1em; align-items: start; }
+  .live-card { background: var(--surface); border-radius: 24px; padding: 14px; box-shadow: 0 8px 26px rgb(60 20 10 / .1); display: grid; gap: 10px; position: relative; overflow: hidden; border-top: 5px solid var(--line); }
+  .live-card.ph-cart { border-top-color: #f59e0b; } .live-card.ph-pay { border-top-color: var(--brand); box-shadow: 0 10px 30px rgb(232 50 31 / .22); }
+  .live-card.ph-done { border-top-color: var(--ok); } .live-card.ph-off { opacity: .6; }
+  .lc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: .5em; }
+  .lc-head b { font-family: var(--head-font); font-size: 1.1em; display: block; } .lc-head small { color: var(--muted); }
+  .live-card .phase { display: inline-flex; align-items: center; gap: .4em; font-weight: 800; font-size: .85em; padding: .3em .7em; border-radius: 999px; background: var(--surface2); white-space: nowrap; }
+  .live-card .phase i { width: 8px; height: 8px; animation: none; background: var(--muted); }
+  .ph-cart .phase { background: #fff4d6; color: #92400e; } .ph-cart .phase i { background: #f59e0b; animation: rec 1.4s infinite; }
+  .ph-pay .phase { background: var(--brand-soft); color: var(--brand); } .ph-pay .phase i { background: var(--brand); animation: rec 1s infinite; }
+  .ph-done .phase { background: var(--ok-soft); color: var(--ok); } .ph-done .phase i { background: var(--ok); }
+  .lc-tags { display: flex; flex-wrap: wrap; gap: .35em; } .lc-tags:empty { display: none; }
+  .lc-tags .tag { font-size: .78em; font-weight: 700; background: var(--surface2); border-radius: 999px; padding: .2em .65em; }
+  .lc-tags .tag.tw { background: var(--takeaway-soft, #ffedd5); color: var(--takeaway, #c2410c); } .lc-tags .tag.note { background: var(--warn-soft); color: var(--warn); }
+  .lc-member { display: grid; grid-template-columns: 36px 1fr auto; gap: .55em; align-items: center; color: #fff; padding: .5em .6em; border-radius: 16px; background: linear-gradient(135deg, #3d1d15, #7a2a1a); }
+  .lc-member .av { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; background: rgb(255 255 255 / .18); font-family: var(--head-font); }
+  .lc-member small { display: block; opacity: .85; } .lc-member .earn { background: #ffcf4a; color: #3d1d15; font-weight: 800; border-radius: 12px; padding: .25em .55em; font-size: .85em; }
+  .live-lines { display: grid; gap: 4px; max-height: 340px; overflow-y: auto; }
+  .ll { display: grid; grid-template-columns: 34px 1fr auto; gap: .5em; align-items: start; padding: .4em .5em; border-radius: 12px; background: var(--surface2); }
+  .ll .q { font-family: var(--head-font); font-weight: 700; font-size: 1.15em; color: var(--brand); text-align: center; }
+  .ll small { display: block; color: var(--muted); } .ll small.note { color: var(--warn); font-weight: 700; } .ll small.sent { color: var(--ok); }
+  .ll .tw { font-size: .72em; margin-left: .4em; background: #ffedd5; color: #c2410c; border-radius: 999px; padding: .05em .5em; }
+  .ll.hot { animation: hot 1.6s ease-out; } @keyframes hot { 0% { background: #ffe08a; transform: scale(1.02); } 100% { background: var(--surface2); transform: none; } }
+  .live-empty { display: grid; place-items: center; gap: .3em; color: var(--muted); padding: 1.2em 0; } .live-empty img { width: 64px; opacity: .7; }
+  .live-pay { border-radius: 16px; padding: .6em .8em; background: var(--brand-soft); border: 2px dashed var(--brand); display: grid; gap: .2em; }
+  .live-done { border-radius: 16px; padding: .8em; background: var(--ok-soft); color: var(--ok); text-align: center; } .live-done small { display: block; color: var(--text); }
+  .lc-total { display: flex; justify-content: space-between; align-items: end; border-top: 1px dashed var(--line); padding-top: .5em; }
+  .lc-total b { font-family: var(--head-font); font-size: 1.6em; color: var(--brand); }
+  .lc-foot { display: flex; justify-content: space-between; align-items: center; }
+  .live-feed { background: var(--surface); border-radius: 24px; padding: 14px; box-shadow: var(--shadow); position: sticky; top: 1em; }
+  .live-feed h3 { margin: 0 0 .5em; }
+  .lf-row { display: grid; grid-template-columns: 52px 1fr auto; gap: .5em; align-items: center; padding: .45em 0; border-bottom: 1px dashed var(--line); animation: pop .3s ease-out; }
+  .lf-row .t { font-variant-numeric: tabular-nums; color: var(--muted); font-size: .85em; } .lf-row small { display: block; color: var(--muted); font-size: .78em; }
+  .lf-row.void { opacity: .55; text-decoration: line-through; }
+  .live-big { position: fixed; inset: 0; z-index: 200; background: rgb(20 9 6 / .6); backdrop-filter: blur(6px); display: grid; place-items: center; padding: 16px; }
+  .live-big[hidden] { display: none; }
+  .live-big-in { width: min(760px, 100%); max-height: 94vh; overflow-y: auto; background: var(--bg); border-radius: 28px; padding: 18px; }
+  .live-card.big { font-size: 1.15em; } .live-card.big .live-lines { max-height: none; }
+  @media (max-width: 1100px) { .live-wrap { grid-template-columns: 1fr; } .live-feed { position: static; } }
+  @media (prefers-reduced-motion: reduce) { .live-btn i, .live-card .phase i, .rec, .ll.hot { animation: none !important; } }
 </style>
 </head>
 <body>

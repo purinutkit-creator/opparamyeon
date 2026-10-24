@@ -60,30 +60,63 @@ export async function createApp(opts = {}) {
   const io = new Server(server, { cors: { origin: false }, pingInterval: 20000, pingTimeout: 20000 });
   setIO(io);
   const lastCart = new Map(); // terminal → latest customer-display state (sent again when a display reconnects)
+  // Live View: what each POS is keying in right now, for staff who can see sales (never sent to customer displays)
+  const live = new Map();
+  const names = new Map();
+  const termName = async (tid) => {
+    if (!names.has(tid)) { const t = await db.get('SELECT name FROM terminals WHERE id = ?', [tid]).catch(() => null); names.set(tid, t ? t.name : tid); }
+    return names.get(tid);
+  };
+  const pushLive = (rec) => {
+    const old = live.get(rec.terminal_id);
+    if (old && rec.online && old.state && rec.state && Number(old.state.at) > Number(rec.state.at)) return; // an older update arriving late
+    live.set(rec.terminal_id, rec); io.to('live').emit('live:update', rec);
+  };
+  // authenticate staff during the handshake so their event handlers exist before the client sees 'connect'
+  // (otherwise the first POS updates can arrive before the handlers are attached and be lost)
+  io.use((sock, next) => {
+    const a = sock.handshake.auth || {};
+    if (a.kind !== 'staff') return next();
+    loadStaff(a.token).then((st) => { sock.data.staff = st || null; next(); }, () => { sock.data.staff = null; next(); });
+  });
   io.on('connection', async (sock) => {
     try {
       const a = sock.handshake.auth || {};
       if (a.kind === 'staff') {
-        const st = await loadStaff(a.token);
+        const st = sock.data.staff;
         if (!st) return sock.disconnect(true);
         sock.data.staff = st;
         const term = a.terminal_id || st.terminal_id;
         sock.join('shop');
         if (can(st, 'kitchen')) sock.join('kitchen');
         if (can(st, 'view_sales') || can(st, 'manage_members') || can(st, 'settings')) sock.join('admin');
+        if (can(st, 'view_sales')) {
+          sock.join('live');
+          sock.on('live:snapshot', (ack) => { if (typeof ack === 'function') ack([...live.values()]); });
+        }
         if (term) { sock.join('terminal:' + term); sock.data.terminal = term; }
         sock.on('print:watch', (ids) => { for (const pid of [].concat(ids || []).slice(0, 20)) sock.join('print:' + pid); });
         // POS → its paired customer displays (also used by the Dual Screen window)
-        sock.on('display:state', (state) => {
-          if (!sock.data.terminal) return;
-          lastCart.set(sock.data.terminal, state);
-          io.to('display:' + sock.data.terminal).emit('display:state', state);
+        sock.on('display:state', async (state) => {
+          if (!sock.data.terminal || !state || typeof state !== 'object') return;
+          sock.data.livePos = true;
+          const { live: detail, ...pub } = state; // staff-only details stay off the customer display
+          lastCart.set(sock.data.terminal, pub);
+          io.to('display:' + sock.data.terminal).emit('display:state', pub);
+          pushLive({ terminal_id: sock.data.terminal, terminal_name: await termName(sock.data.terminal), staff_name: st.name, online: true, state: pub, detail: detail || {}, updated_at: now() });
           if (state && state.cart_id && state.phase === 'idle') closePrompts(sock.data.terminal, 'cancelled').catch(() => {});
         });
         sock.on('display:cart_changed', ({ cart_id } = {}) => {
           // new bill → any member entry screen of the previous bill closes and clears
           if (sock.data.terminal) db.get("SELECT id, cart_id FROM member_prompts WHERE terminal_id = ? AND status = 'open'", [sock.data.terminal])
             .then((p) => { if (p && p.cart_id !== cart_id) return closePrompts(sock.data.terminal, 'cancelled'); }).catch(() => {});
+        });
+        sock.on('disconnect', () => {
+          const tid = sock.data.terminal, rec = tid && live.get(tid);
+          if (!rec || rec.staff_name !== st.name) return;
+          // another tab of the same terminal may still be open
+          const still = [...(io.sockets.adapter.rooms.get('terminal:' + tid) || [])].some((sid) => { const o = io.sockets.sockets.get(sid); return o && o !== sock && o.data.livePos; });
+          if (!still) pushLive({ ...rec, online: false, updated_at: now() });
         });
       } else if (a.kind === 'display') {
         const p = await displayFromToken(a.token);
