@@ -62,7 +62,7 @@ export async function labelsPage() {
   const chk = (k, label) => { const i = h('input', { type: 'checkbox', checked: !!cfg[k] }); i.addEventListener('change', () => { cfg[k] = i.checked; preview(); }); inputs[k] = i; return h('label', { class: 'switch' }, i, label); };
   const txt = (k, label, ph = '') => { const i = h('input', { class: 'input', value: cfg[k] || '', placeholder: ph }); i.addEventListener('input', () => { cfg[k] = i.value; preview(); }); inputs[k] = i; return h('label', { class: 'field' }, label, i); };
   const preset = h('select', { class: 'input' }, h('option', { value: '' }, '— กำหนดเอง —'), LABEL_PRESETS.map(([v, t]) => h('option', { value: v, selected: `${cfg.width_mm}x${cfg.height_mm}` === v }, t)));
-  preset.addEventListener('change', () => { if (!preset.value) return; const [w, hh] = preset.value.split('x').map(Number); cfg.width_mm = w; cfg.height_mm = hh; inputs.width_mm.value = w; inputs.height_mm.value = hh; preview(); });
+  preset.addEventListener('change', () => { if (!preset.value) return; const [w, hh] = preset.value.split('x').map(Number); cfg.width_mm = w; cfg.height_mm = hh; inputs.width_mm.value = w; inputs.height_mm.value = hh; preview(); checkFit(); });
   const settings = h('div', { class: 'lbl-settings' },
     h('h4', {}, '📐 ขนาดฉลาก'),
     h('div', { class: 'form-grid' }, h('label', { class: 'field', style: { gridColumn: '1 / -1' } }, 'ขนาดสำเร็จรูป', preset), num('width_mm', 'กว้าง (มม.)', 1, 15), num('height_mm', 'สูง (มม.)', 1, 10),
@@ -104,11 +104,33 @@ export async function labelsPage() {
 
   // ---- output ----
   const allItems = () => { const out = []; for (const [id, n] of qty) { const p = catalog.products.find((x) => x.id === id); for (let i = 0; i < n; i++) out.push(itemOf(p)); } return out; };
-  const printerSel = h('select', { class: 'input' }, printers.filter((p) => p.active).map((p) => h('option', { value: p.id }, `${p.name} (${p.paper} มม.)`)));
+  const active = printers.filter((p) => p.active);
+  const printerSel = h('select', { class: 'input' }, active.map((p) => h('option', { value: p.id, selected: p.id === cfg.printer_id }, `${p.name} (${p.paper} มม.)`)));
+  const printableMm = () => { const p = active.find((x) => x.id === printerSel.value); return p ? (Number(p.paper) === 58 ? 48 : 72) : 0; };
+  const fitNote = h('div', { class: 'small' });
+  const checkFit = () => {
+    const mm = printableMm(); if (!mm) return fitNote.replaceChildren();
+    const { cols } = labelRowDots(cfg); const need = cols * cfg.width_mm + (cols - 1) * cfg.gap_mm;
+    fitNote.replaceChildren(need > mm ? h('span', { class: 'badge warn', style: { whiteSpace: 'normal' } }, `⚠️ ฉลากกว้าง ${need} มม. เกินพื้นที่พิมพ์ ${mm} มม. ของเครื่องนี้ — กด "พอดีกระดาษ"`)
+      : h('span', { class: 'muted' }, `✓ พอดีกระดาษ (ใช้ ${need} จาก ${mm} มม.)`));
+  };
+  printerSel.addEventListener('change', () => { cfg.printer_id = printerSel.value; checkFit(); });
+  const fitPaper = () => {
+    const mm = printableMm(); if (!mm) return;
+    const { cols } = labelRowDots(cfg);
+    cfg.width_mm = Math.floor((mm - (cols - 1) * cfg.gap_mm) / cols);
+    inputs.width_mm.value = cfg.width_mm; preview(); checkFit();
+    toast(`ตั้งความกว้างฉลากเป็น ${cfg.width_mm} มม. ให้พอดีกระดาษ`, 'ok');
+  };
   const printShop = async (e) => {
     if (!total()) return toast('เลือกสินค้าและจำนวนก่อน', 'warn');
     e.target.disabled = true;
-    try { const r = await api.post('/print/labels', { printer_id: printerSel.value, items: [...qty].map(([product_id, n]) => ({ product_id, qty: n })), cfg }); toast(`ส่งพิมพ์ ${r.count} ดวงแล้ว`, 'ok'); }
+    try {
+      const r = await api.post('/print/labels', { printer_id: printerSel.value, items: [...qty].map(([product_id, n]) => ({ product_id, qty: n })), cfg });
+      // jobs print on the device the printer is linked to (POS / Print Agent / Android app), like receipts
+      toast(`ส่งพิมพ์ ${r.count} ดวงแล้ว — ฉลากจะออกที่เครื่องพิมพ์ทันทีที่อุปกรณ์ที่เชื่อมเครื่องพิมพ์ (เช่น หน้า POS) เปิดอยู่`, 'ok', 6000);
+      if (!cfg.printer_id || cfg.printer_id !== printerSel.value) { cfg.printer_id = printerSel.value; api.put('/labels/config', { value: { printer_id: cfg.printer_id } }).catch(() => {}); }
+    }
     catch (er) { errToast(er); } finally { e.target.disabled = false; }
   };
   const printBrowser = async () => {
@@ -130,7 +152,8 @@ export async function labelsPage() {
   };
   const saveCfg = async (e) => { e.target.disabled = true; try { Object.assign(cfg, await api.put('/labels/config', { value: cfg })); toast('บันทึกการตั้งค่าฉลากแล้ว', 'ok'); } catch (er) { errToast(er); } finally { e.target.disabled = false; } };
 
-  drawList(); drawSummary(); preview();
+  drawList(); drawSummary(); preview(); checkFit();
+  for (const k of ['width_mm', 'cols', 'gap_mm']) inputs[k].addEventListener('change', checkFit);
   return page('🏷️ พิมพ์บาร์โค้ดสินค้า',
     h('div', { class: 'lbl-layout' },
       h('div', {}, card(h('h3', {}, '1. เลือกสินค้าและจำนวนดวง'), h('div', { class: 'row' }, search, catSel), listBox, summary, h('div', { style: { marginTop: '.6em' } }, genBtn),
@@ -138,7 +161,10 @@ export async function labelsPage() {
         card(h('h3', {}, '2. ตั้งค่าฉลาก'), settings, h('div', { class: 'row', style: { marginTop: '.8em' } }, h('button', { class: 'btn', onclick: saveCfg }, '💾 บันทึกเป็นค่าเริ่มต้น')))),
       h('div', { class: 'lbl-side' }, card(h('h3', {}, '3. ตัวอย่างและพิมพ์'), canvasBox, sizeNote, warnBox,
         h('div', { class: 'lbl-out' },
-          h('h4', {}, '🖨 เครื่องพิมพ์ใบเสร็จในระบบ (58/80 มม.)'), printers.length ? h('div', { class: 'row' }, printerSel, h('button', { class: 'btn primary', onclick: printShop }, 'พิมพ์')) : h('p', { class: 'small muted' }, 'ยังไม่ได้เพิ่มเครื่องพิมพ์ (ตั้งค่า → เครื่องพิมพ์)'),
+          h('h4', {}, '🖨 เครื่องพิมพ์ใบเสร็จในระบบ (58/80 มม.)'),
+          active.length ? [printerSel, h('div', { class: 'row', style: { marginTop: '.5em' } }, h('button', { class: 'btn', style: { flex: 1 }, onclick: fitPaper, title: 'ปรับความกว้างฉลากให้เต็มกระดาษของเครื่องที่เลือก' }, '↔ พอดีกระดาษ'), h('button', { class: 'btn primary', style: { flex: 1 }, onclick: printShop }, '🖨 พิมพ์ด้วยเครื่องนี้')), fitNote,
+            h('p', { class: 'small muted' }, 'ใช้เครื่องพิมพ์ใบเสร็จเครื่องเดียวกับที่พิมพ์ใบเสร็จได้เลย ฉลากพิมพ์ต่อกันเป็นแถว (ตั้ง "ตัดกระดาษทุกแถว" ได้ในส่วนตั้งค่า) · ระบบจำเครื่องพิมพ์ที่เลือกไว้ใช้ครั้งหน้า')]
+            : h('div', {}, h('p', { class: 'small muted' }, 'ยังไม่มีเครื่องพิมพ์ใบเสร็จในระบบ — เพิ่มเครื่องพิมพ์ก่อน แล้วกลับมาที่หน้านี้'), h('a', { class: 'btn', href: '#/printers' }, '➕ เพิ่มเครื่องพิมพ์')),
           h('h4', {}, '🏷️ เครื่องพิมพ์สติกเกอร์ / PDF'), h('button', { class: 'btn primary block', onclick: printBrowser }, 'พิมพ์ผ่านเบราว์เซอร์ / บันทึกเป็น PDF'),
           h('p', { class: 'small muted' }, 'ใช้กับเครื่องพิมพ์สติกเกอร์ทุกยี่ห้อที่ติดตั้งไดรเวอร์ในคอมพิวเตอร์ (เช่น Xprinter, Gprinter, TSC, Godex, Zebra) — ในหน้าต่างพิมพ์ ให้ตั้งขนาดกระดาษตรงกับฉลาก ระยะขอบ "ไม่มี" และสเกล 100%'))))));
 }
