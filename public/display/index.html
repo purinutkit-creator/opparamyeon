@@ -12,9 +12,9 @@
   .disp { position: fixed; inset: 0; display: grid; grid-template-columns: 1fr; }
   .disp.split.active { grid-template-columns: 1.1fr 1fr; }
   .promo { position: relative; overflow: hidden; background: #000; }
-  .promo img, .promo video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: var(--fit, cover); transition: opacity .8s; }
+  .promo > img, .promo > video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: var(--fit, cover); transition: opacity .8s; }
   .promo .welcome { position: absolute; left: 0; right: 0; bottom: 0; padding: 4vh 4vw; font-size: clamp(22px, 4vw, 54px); font-weight: 800; text-shadow: 0 2px 12px rgb(0 0 0 / .7); background: linear-gradient(transparent, rgb(0 0 0 / .6)); }
-  .promo .logo { position: absolute; top: 3vh; left: 3vw; max-height: 14vh; max-width: 30vw; }
+  .promo > .logo { position: absolute; top: 3vh; left: 3vw; max-height: 14vh; max-width: 30vw; }
   .panel { display: flex; flex-direction: column; padding: 3vh 3vw; gap: 1.5vh; min-height: 0; background: var(--d-bg); }
   .disp:not(.active) .panel { display: none; }
   .disp.full.active .promo { display: none; }
@@ -44,8 +44,10 @@
   .payhead { background: var(--d-accent, #ef4444); color: #fff; text-align: right; padding: 2.5vh 3vw; }
   .payhead .lbl { font-size: clamp(16px, 2vw, 28px); font-weight: 700; opacity: .95; }
   .payhead .amt { font-size: clamp(48px, 9vw, 130px); font-weight: 800; line-height: 1; }
-  .qrcard { margin: 2.5vh auto; background: #fff; color: #111; border-radius: 16px; padding: 1.5vh 1.5vw 2vh; text-align: center; width: min(80%, 46vh); box-shadow: 0 8px 30px rgb(0 0 0 / .25); }
-  .qrcard img { width: 100%; display: block; }
+  .paybox .payarea { flex: 1; min-height: 0; display: grid; place-items: center; padding: 2vh 2vw; }
+  /* QR sized to the space left under the total: never larger than ~38% of the screen height */
+  .qrcard { background: #fff; color: #111; border-radius: 16px; padding: 1.4vh 1.4vw 1.8vh; text-align: center; width: min(78%, 44vh); box-shadow: 0 8px 30px rgb(0 0 0 / .25); }
+  .qrcard img { position: static; display: block; width: 100%; height: auto; max-height: 38vh; object-fit: contain; margin: 0 auto; }
   .qrtitle { background: #0f2a5f; color: #fff; font-weight: 800; border-radius: 10px; padding: .4em; margin-bottom: 1vh; font-size: clamp(14px, 1.6vw, 22px); }
   .qracc { font-size: clamp(14px, 1.6vw, 22px); margin-top: .5vh; }
   .paymethod { flex: 1; display: grid; place-items: center; text-align: center; padding: 3vh; }

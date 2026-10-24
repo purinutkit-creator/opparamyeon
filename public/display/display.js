@@ -83,8 +83,8 @@ function renderPay() {
   const showQr = s.qr && settings.display.show_qr !== false;
   el.replaceChildren(h('div', { class: 'paybox' },
     h('div', { class: 'payhead' }, h('div', { class: 'lbl' }, 'ราคารวม'), h('div', { class: 'amt' }, baht(s.total)), s.bowls ? h('div', { class: 'lbl' }, `${s.bowls} ${settings.sale.count_unit || 'ชาม'}`) : null),
-    showQr ? h('div', { class: 'qrcard' }, h('div', { class: 'qrtitle' }, 'THAI QR PAYMENT · พร้อมเพย์'), h('img', { src: '/api/qr.svg?d=' + encodeURIComponent(s.qr), alt: 'QR พร้อมเพย์' }),
-      h('div', { class: 'qracc' }, 'บัญชี: ', settings.payment.promptpay_name || '-'), h('div', { class: 'qracc' }, 'สแกนเพื่อจ่าย ', baht(s.total), ' บาท'))
+    showQr ? h('div', { class: 'payarea' }, h('div', { class: 'qrcard' }, h('div', { class: 'qrtitle' }, 'THAI QR PAYMENT · พร้อมเพย์'), h('img', { src: '/api/qr.svg?d=' + encodeURIComponent(s.qr), alt: 'QR พร้อมเพย์' }),
+      h('div', { class: 'qracc' }, 'บัญชี: ', settings.payment.promptpay_name || '-'), h('div', { class: 'qracc' }, 'สแกนเพื่อจ่าย ', baht(s.total), ' บาท')))
       : h('div', { class: 'paymethod' }, s.received ? h('div', {}, h('div', { class: 'lbl' }, 'รับเงิน'), h('div', { class: 'big' }, baht(s.received))) : h('div', { class: 'big' }, 'กรุณาชำระเงินที่พนักงาน'),
         s.change ? h('div', { style: { marginTop: '2vh' } }, h('div', { class: 'lbl' }, 'เงินทอน'), h('div', { class: 'big accent' }, baht(s.change))) : null),
     h('div', { class: 'paystatus' }, '● รอชำระเงิน')));
@@ -187,6 +187,6 @@ function renderPrompt() {
 function sampleState() {
   return { phase: 'pay', dine_type: 'mixed', table: 'A1', member: { name: 'จี***', points: 120, tier: 'Gold' },
     lines: [{ name: 'มาม่าเกาหลีต้นตำรับ', qty: 1, options: ['ชินราเมียน', 'เผ็ดกลาง', 'ไข่'], price: 8900 }, { name: 'ชาเย็น', qty: 2, options: ['หวานน้อย'], price: 9000, dine_type: 'takeaway' }],
-    items_total: 17900, discount: 0, packaging: 0, tax: 0, total: 17900, bowls: 1, received: 20000, change: 2100, qr: null };
+    items_total: 17900, discount: 0, packaging: 0, tax: 0, total: 17900, bowls: 1, received: 20000, change: 2100, qr: qs.get('qr') ? '00020101021229370016A000000677010111011300668012345675802TH530376454031796304ABCD' : null };
 }
 boot().catch((e) => { console.error(e); root.replaceChildren(h('div', { class: 'empty' }, 'โหลดไม่สำเร็จ ', e.message)); setTimeout(() => location.reload(), 10000); });
