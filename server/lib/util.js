@@ -61,7 +61,7 @@ export const DEFAULT_SETTINGS = {
     excluded_products: [], expire_days: 365, claim_qr: true, claim_enabled: true, claim_hours: 72, refund_policy: 'negative_allowed',
     tier_mode: 'auto' },
   // what prints automatically after payment, and in which order (same printer = printed in this order)
-  print: { order: ['receipt', 'kitchen', 'merchant', 'queue'], auto_receipt: true, auto_merchant: false, auto_queue: false, kitchen_every_order: true },
+  print: { order: ['receipt', 'kitchen', 'merchant', 'queue'], auto_receipt: true, auto_merchant: true, auto_queue: false, kitchen_every_order: true },
   week_start: 1,
 };
 

@@ -40,7 +40,9 @@ export async function createApp(opts = {}) {
   app.use('/api', webhookRouter);
   app.use(express.json({ limit: '8mb' }));
   app.get('/healthz', async (req, res) => { await db.get('SELECT 1 AS ok'); res.json({ ok: true, version: VERSION, db: db.kind, time: now() }); });
-  app.get('/api/version', (req, res) => res.json({ version: VERSION, db: db.kind }));
+  // persistent = data survives restarts/updates. On Render without DATABASE_URL the SQLite file lives on a temporary disk.
+  const persistent = db.kind === 'pg' || !process.env.RENDER || !!process.env.SQLITE_ON_DISK;
+  app.get('/api/version', (req, res) => res.json({ version: VERSION, db: db.kind, persistent }));
   app.get('/files/:id', (req, res, next) => serveFile(req, res).catch(next));
   app.get('/api/qr.svg', (req, res, next) => qrSvg(req, res).catch(next));
   for (const r of [staff, catalogR, orders, system, display, mobile, payments, members, customer, reports, importer]) app.use('/api', r);

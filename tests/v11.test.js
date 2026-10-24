@@ -33,14 +33,14 @@ test('ตั้งค่าเครื่องพิมพ์ละเอี�
 test('ลำดับการพิมพ์ตามที่ตั้ง: ใบเสร็จก่อนใบครัว และสลับได้; จำนวนสำเนาแยกตามเอกสาร; เปิดลิ้นชักเมื่อรับเงินสด', async () => {
   const o = await sell([line('p_r001', 1, { options: ramyeonOpts })]);
   const docs = (await jobsOf(o)).map((j) => j.doc_type);
-  assert.deepEqual(docs, ['drawer', 'receipt', 'receipt', 'kitchen'], docs.join(','));
+  assert.deepEqual(docs, ['drawer', 'receipt', 'receipt', 'kitchen', 'merchant'], 'ใบสรุปร้านค้าพิมพ์อัตโนมัติทุกบิล (ค่าเริ่มต้น): ' + docs.join(','));
   await S.call('PUT', '/api/settings/print', { value: { order: ['kitchen', 'receipt'], auto_merchant: true } }, { token: owner });
   const o2 = await sell([line('p_r001', 1, { options: ramyeonOpts })]);
   const docs2 = (await jobsOf(o2)).map((j) => j.doc_type);
   assert.deepEqual(docs2, ['drawer', 'kitchen', 'receipt', 'receipt', 'merchant']);
   const card = await sell([line('p_d003', 1)], { payments: [{ method: 'card', amount: 1500 }] });
   assert.ok(!(await jobsOf(card)).some((j) => j.doc_type === 'drawer'), 'จ่ายบัตรไม่เปิดลิ้นชัก');
-  await S.call('PUT', '/api/settings/print', { value: { order: ['receipt', 'kitchen'], auto_merchant: false } }, { token: owner });
+  await S.call('PUT', '/api/settings/print', { value: { order: ['receipt', 'kitchen'], auto_merchant: true } }, { token: owner });
 });
 
 test('ใบสรุปร้านค้า: มีบาร์โค้ดเลขบิล + QR รายละเอียด และสแกนเลขบิลเพื่อค้นบิลได้', async () => {

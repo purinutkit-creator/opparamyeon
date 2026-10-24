@@ -40,3 +40,16 @@ export async function socket(auth) {
 }
 
 export const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+
+// Warn loudly when the server stores data on a temporary disk (lost on every update/restart)
+export async function storageWarning() {
+  try {
+    const v = await fetch('/api/version').then((r) => r.json());
+    if (v.persistent !== false || document.getElementById('storage-warn')) return;
+    const el = document.createElement('div');
+    el.id = 'storage-warn';
+    el.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:5000;background:#b91c1c;color:#fff;padding:10px 16px;font-weight:700;text-align:center;font-size:15px';
+    el.textContent = '⚠️ ระบบยังไม่ได้เชื่อมฐานข้อมูลถาวร — ข้อมูลจะหายเมื่ออัปเดตเวอร์ชันหรือเซิร์ฟเวอร์รีสตาร์ท (ตั้ง DATABASE_URL ใน Render)';
+    document.body.append(el);
+  } catch { /* offline */ }
+}

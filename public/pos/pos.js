@@ -1,4 +1,4 @@
-import { makeApi, store, socket, uid } from '/shared/api.js';
+import { makeApi, store, socket, uid, storageWarning } from '/shared/api.js';
 import { h, $, toast, errToast, modal, confirmBox, promptBox, keypad, fmtTime, STATUS_TH, PREP_TH, SOURCE_TH, JOB_TH, debounce } from '/shared/ui.js';
 import { baht, toSatang, addToCart, computeTotals, countBowls, dineLabel, lineUnitTotal, lineTotal, orderDineType, promptPayPayload, VERSION, maskPhone } from '/shared/core.js';
 import { applyFonts } from '/shared/fonts.js';
@@ -818,3 +818,4 @@ async function logout() { await api.post('/auth/logout').catch(() => {}); store.
 
 window.addEventListener('beforeunload', () => { if (st.sock) pushDisplay({ phase: 'idle' }); });
 boot().catch((e) => { console.error(e); app.replaceChildren(h('div', { class: 'empty' }, 'โหลดไม่สำเร็จ: ' + e.message, h('br'), h('button', { class: 'btn', onclick: () => location.reload() }, 'ลองใหม่'))); });
+storageWarning();

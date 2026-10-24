@@ -1,4 +1,4 @@
-import { store, socket } from '/shared/api.js';
+import { store, socket, storageWarning } from '/shared/api.js';
 import { h, $, toast, errToast, modal, keypad, fmtTime, fmtDateOnly, STATUS_TH, SOURCE_TH, PREP_TH, debounce } from '/shared/ui.js';
 import { baht, dineLabel, latestOnly, VERSION } from '/shared/core.js';
 import { applyFonts } from '/shared/fonts.js';
@@ -228,3 +228,4 @@ async function reportsPage() {
 }
 
 boot().catch((e) => app.replaceChildren(h('div', { class: 'empty' }, e.message)));
+storageWarning();
