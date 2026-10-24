@@ -93,12 +93,32 @@ const SRC = {
   wiki: () => process.env.LOOKUP_WIKI_URL || 'https://commons.wikimedia.org',
   pexels: () => process.env.LOOKUP_PEXELS_URL || 'https://api.pexels.com',
   serper: () => process.env.LOOKUP_SERPER_URL || 'https://google.serper.dev',
+  ddg: () => process.env.LOOKUP_DDG_URL || 'https://duckduckgo.com',
+  bing: () => process.env.LOOKUP_BING_URL || 'https://www.bing.com',
 };
 const enc = encodeURIComponent;
 
 async function offImages(q) {
-  const j = await getJson(`${SRC.off()}/cgi/search.pl?search_terms=${enc(q)}&search_simple=1&json=1&page_size=12&fields=product_name,brands,image_front_url,code`);
-  return (j.products || []).filter((p) => p.image_front_url).map((p) => ({ url: p.image_front_url, thumb: p.image_front_url.replace(/\.(\d+)\.jpg$/, '.400.jpg'), title: [p.brands, p.product_name].filter(Boolean).join(' '), source: 'Open Food Facts', kind: 'product' }));
+  const j = await getJson(`${SRC.off()}/cgi/search.pl?search_terms=${enc(q)}&search_simple=1&json=1&page_size=12&fields=product_name,product_name_th,brands,quantity,image_front_url,code`);
+  return (j.products || []).filter((p) => p.image_front_url).map((p) => ({ url: p.image_front_url, thumb: p.image_front_url.replace(/\.(\d+)\.jpg$/, '.400.jpg'),
+    title: [p.brands && p.brands.split(',')[0], p.product_name_th || p.product_name, p.quantity].filter(Boolean).join(' '), names: [p.product_name_th, p.product_name].filter(Boolean), source: 'Open Food Facts', kind: 'product' }));
+}
+// DuckDuckGo image search (no key): real product photos and shop/promo pictures from across the web.
+// It needs a short-lived "vqd" token from the search page first.
+async function ddgImages(q, region = 'wt-wt') {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 9000);
+  try {
+    const hdr = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36', 'Accept-Language': region === 'th-th' ? 'th,en;q=0.8' : 'en,th;q=0.8' };
+    const page = await fetch(`${SRC.ddg()}/?q=${enc(q)}&iax=images&ia=images`, { headers: hdr, signal: ctl.signal }).then((r) => r.text());
+    const vqd = (/vqd=["']?([\d-]+)["'&]/.exec(page) || [])[1];
+    if (!vqd) throw new Error('ไม่ได้รับโทเคนค้นหา');
+    const r = await fetch(`${SRC.ddg()}/i.js?l=${region}&o=json&q=${enc(q)}&vqd=${vqd}&f=,,,,,&p=1`, { headers: { ...hdr, Referer: SRC.ddg() + '/', Accept: 'application/json' }, signal: ctl.signal });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    return (j.results || []).filter((x) => x.image && /^https?:/i.test(x.image)).slice(0, 24)
+      .map((x) => ({ url: x.image, thumb: x.thumbnail || x.image, title: x.title || '', source: 'เว็บ · ' + (x.source || (x.url ? new URL(x.url).hostname.replace(/^www\./, '') : '')), kind: 'product', note: 'ตรวจสอบสิทธิ์การใช้รูปจากเว็บต้นทาง' }));
+  } finally { clearTimeout(t); }
 }
 async function serperImages(q, key) {
   const j = await getJson(`${SRC.serper()}/images`, { method: 'POST', headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' }, body: JSON.stringify({ q, num: 20 }) });
@@ -117,13 +137,46 @@ async function wikiImages(q) {
   return Object.values((j.query && j.query.pages) || {}).map((p) => p.imageinfo && p.imageinfo[0]).filter(Boolean).map((i) => ({ url: i.url, thumb: i.thumburl || i.url, title: '', source: 'Wikimedia Commons', kind: 'promo' }));
 }
 
+// Bing Images (no key): the result page carries each image as an HTML-escaped JSON attribute m="{murl, turl, t, purl}".
+async function bingImages(q, market = 'th-TH') {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 9000);
+  try {
+    const r = await fetch(`${SRC.bing()}/images/async?q=${enc(q)}&first=0&count=35&mmasync=1&setmkt=${market}&setlang=${market.slice(0, 2)}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36', 'Accept-Language': market === 'th-TH' ? 'th,en;q=0.8' : 'en' }, signal: ctl.signal });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const html = await r.text();
+    const unesc = (v) => v.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    const out = [];
+    for (const m of html.matchAll(/\sm="(\{[^"]*\})"/g)) {
+      try {
+        const j = JSON.parse(unesc(m[1]));
+        if (j.murl && /^https?:/i.test(j.murl)) out.push({ url: j.murl, thumb: j.turl || j.murl, title: j.t || '', source: 'เว็บ · ' + (j.purl ? new URL(j.purl).hostname.replace(/^www\./, '') : 'Bing'), kind: 'product', note: 'ตรวจสอบสิทธิ์การใช้รูปจากเว็บต้นทาง' });
+      } catch { /* skip a malformed entry */ }
+      if (out.length >= 24) break;
+    }
+    return out;
+  } finally { clearTimeout(t); }
+}
+
 // Search every available source in parallel; product shots first, then promotional photos. Failures of one source are reported, never fatal.
 export async function findImages({ productQueries = [], promoQueries = [], keys = {} }) {
   const pq = [...new Set(productQueries.filter(Boolean))].slice(0, 3);
   const sq = [...new Set(promoQueries.filter(Boolean))].slice(0, 3);
   const jobs = [];
-  for (const q of pq) { jobs.push(['Open Food Facts', offImages(q)]); if (keys.serper) jobs.push(['Google Images', serperImages(q, keys.serper)]); jobs.push(['Wikimedia', wikiImages(q)]); }
-  for (const q of sq) { if (keys.pexels) jobs.push(['Pexels', pexelsImages(q, keys.pexels)]); jobs.push(['Openverse', openverseImages(q)]); if (keys.serper) jobs.push(['Google Images', serperImages(q, keys.serper)]); }
+  pq.forEach((q, i) => {
+    jobs.push(['Open Food Facts', offImages(q)]);
+    if (i < 2) { jobs.push(['เว็บ (DuckDuckGo)', ddgImages(q, 'th-th')]); jobs.push(['เว็บ (Bing)', bingImages(q, 'th-TH')]); }
+    if (i === 0) { jobs.push(['เว็บ (DuckDuckGo)', ddgImages(q, 'wt-wt')]); jobs.push(['เว็บ (Bing)', bingImages(q, 'en-US')]); }
+    if (keys.serper) jobs.push(['Google Images', serperImages(q, keys.serper)]);
+    jobs.push(['Wikimedia', wikiImages(q)]);
+  });
+  sq.forEach((q, i) => {
+    if (keys.pexels) jobs.push(['Pexels', pexelsImages(q, keys.pexels)]);
+    jobs.push(['Openverse', openverseImages(q)]);
+    if (i === 0) { jobs.push(['เว็บ (DuckDuckGo)', ddgImages(q, 'wt-wt').then((l) => l.map((im) => ({ ...im, kind: 'promo' })))]); jobs.push(['เว็บ (Bing)', bingImages(q + ' food photography', 'en-US').then((l) => l.map((im) => ({ ...im, kind: 'promo' })))]); }
+    if (keys.serper) jobs.push(['Google Images', serperImages(q, keys.serper)]);
+  });
   const settled = await Promise.allSettled(jobs.map(([, p]) => p));
   const errors = [], buckets = { product: [], promo: [] };
   settled.forEach((s, i) => { if (s.status === 'fulfilled') for (const im of s.value) buckets[im.kind === 'product' ? 'product' : 'promo'].push(im); else errors.push(`${jobs[i][0]}: ${s.reason && s.reason.name === 'AbortError' ? 'หมดเวลา' : s.reason && s.reason.message}`); });
@@ -134,7 +187,32 @@ export async function findImages({ productQueries = [], promoQueries = [], keys 
     for (const im of list) { const k = im.source.split(' · ')[0]; if (!bySrc.has(k)) bySrc.set(k, []); bySrc.get(k).push(im); }
     for (let i = 0, more = true; more; i++) { more = false; for (const arr of bySrc.values()) if (arr[i]) { more = true; if (!seen.has(arr[i].url) && /^https?:\/\//i.test(arr[i].url)) { seen.add(arr[i].url); out.push(arr[i]); } } }
   }
-  return { images: out.slice(0, 48), errors: [...new Set(errors)] };
+  const titles = [...buckets.product, ...buckets.promo].flatMap((im) => [im.title, ...(im.names || [])]).filter(Boolean);
+  return { images: out.slice(0, 60), titles, errors: [...new Set(errors)] };
+}
+
+// Product names without AI: mine the titles of shop listings / product pages that the searches found.
+// Shop titles are often full Thai names ("มาม่าเกาหลี ซัมยัง บูลดัก คาโบนาร่า 130 กรัม"), so this gives many real names.
+const JUNK = /(shopee|lazada|amazon|aliexpress|ebay|alibaba|walmart|tiktok|facebook|instagram|youtube|wikipedia|pinterest|stock photo|ภาพสต็อก|รูปภาพ|ดาวน์โหลด|download|vector|png|jpe?g|ส่งฟรี|ลดราคา|ราคาถูก|โปรโมชั่น|review|รีวิว|วิธีทำ|recipe)/i;
+export function mineNames(titles, queryWords = []) {
+  const qw = queryWords.map((w) => w.toLowerCase()).filter((w) => w.length >= 2);
+  const count = new Map();
+  for (const raw of titles) {
+    for (let part of String(raw).split(/\s+[|｜\-–—:]\s+|\s*[|｜]\s*/)) {
+      part = part.replace(/\[[^\]]*\]|【[^】]*】|\([^)]*(ราคา|ฟรี|แท้|ของแท้|ส่ง)[^)]*\)/g, ' ')
+        .replace(/[฿$]\s?\d[\d,.]*|\d[\d,.]*\s?(บาท|baht|thb)/gi, ' ')
+        // \b does not work for Thai, so match marketing words between spaces / ends
+        .replace(/(^|\s)(ราคา\S*|ของแท้|แท้\S*|พร้อมส่ง\S*|ขายดี\S*|สินค้าใหม่|ล็อตใหม่|best seller|official store|official|ร้าน\S*|จำนวน\s?\d+\s?ชิ้น)(?=\s|$)/gi, ' ')
+        .replace(/[\u{1F300}-\u{1FAFF}\u2600-\u27BF]/gu, ' ')
+        .replace(/[!?*#~^_=+<>{}"“”]/g, ' ').replace(/\s+/g, ' ').trim().replace(/^[,.\-\s]+|[,.\-\s]+$/g, '');
+      if (part.length < 4 || part.length > 64 || JUNK.test(part) || /^\d+$/.test(part)) continue;
+      const k = part.toLowerCase();
+      count.set(k, { name: part, n: ((count.get(k) || {}).n || 0) + 1 });
+    }
+  }
+  const score = (x) => x.n * 2 + qw.filter((w) => x.name.toLowerCase().includes(w)).length * 3 + (/[\u0E00-\u0E7F]/.test(x.name) ? 1 : 0);
+  // every title already came back for this search, so query overlap only ranks (Thai shop titles rarely repeat the English words)
+  return [...count.values()].sort((a, b) => score(b) - score(a)).map((x) => x.name).slice(0, 24);
 }
 
 // names without AI: variants of what we know
@@ -142,4 +220,17 @@ export function basicNames(base = [], { brand = '', size = '' } = {}) {
   const out = [];
   for (const n of base.filter(Boolean)) { out.push(n); if (brand && !n.includes(brand)) out.push(`${brand} ${n}`); if (size && !n.includes(size)) out.push(`${n} ${size}`); }
   return [...new Set(out.map((s) => s.replace(/\s+/g, ' ').trim()).filter(Boolean))];
+}
+
+// shorter / cleaner versions of found names (no pack size, without a generic prefix) — shops like short menu names
+export function nameVariants(list) {
+  const out = [];
+  const SIZE = /\s*\(?\d+([.,]\d+)?\s?(กรัม|ก\.|g|gm|กก\.|kg|มล\.|ml|ลิตร|l|ซอง|ชิ้น|pcs|แพ็ค|pack)\)?\.?$/i;
+  for (const n of list.filter(Boolean)) {
+    out.push(n);
+    const noSize = n.replace(SIZE, '').trim();
+    if (noSize && noSize !== n) out.push(noSize);
+    for (const pre of ['มาม่าเกาหลี', 'บะหมี่กึ่งสำเร็จรูป', 'บะหมี่เกาหลี', 'ราเมงเกาหลี']) if (noSize.startsWith(pre + ' ')) out.push(noSize.slice(pre.length + 1));
+  }
+  return [...new Set(out.map((s) => s.replace(/\s+/g, ' ').trim()).filter((s) => s.length >= 3))];
 }

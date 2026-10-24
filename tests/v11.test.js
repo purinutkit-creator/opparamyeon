@@ -268,7 +268,7 @@ test('ผู้ช่วยเพิ่มสินค้า: บาร์โค
   } finally { delete process.env.LOOKUP_ALLOW_PRIVATE; delete process.env.LOOKUP_OFF_URL; delete process.env.LOOKUP_UPC_URL; mock.close(); }
 });
 
-test('ผู้ช่วยเพิ่มสินค้า + AI: รูปสินค้าไม่มีบาร์โค้ด → Claude ระบุสินค้า ตั้งชื่อไทย/อังกฤษหลายชื่อ, รูปจากหลายแหล่ง; ไม่มีคีย์ก็ยังใช้ชื่อสินค้าได้', async () => {
+test('ผู้ช่วยเพิ่มสินค้า: ไม่ใช้ AI ก็ค้นชื่อ (ไทย/อังกฤษ) และรูปจากเว็บได้เอง; ใส่คีย์ AI (ไม่บังคับ) แล้วดูรูปที่ไม่มีตัวหนังสือได้', async () => {
   const http = await import('node:http');
   const seen = [];
   let mode = 'ok';
@@ -292,19 +292,39 @@ test('ผู้ช่วยเพิ่มสินค้า + AI: รูปส�
     if (u.pathname === '/w/api.php') return json({ query: { pages: { 1: { imageinfo: [{ url: base + '/wk/1.jpg', thumburl: base + '/wk/1t.jpg' }] } } } });
     if (u.pathname === '/v1/search') return json({ photos: [{ src: { large2x: base + '/px/1.jpg', medium: base + '/px/1m.jpg' }, alt: 'bowl', photographer: 'P' }] });
     if (u.pathname === '/images') return json({ images: [{ imageUrl: base + '/gg/1.jpg', thumbnailUrl: base + '/gg/1t.jpg', title: 'Buldak', source: 'shop.com' }] });
+    if (u.pathname === '/' && u.searchParams.get('iax') === 'images') { res.writeHead(200, { 'content-type': 'text/html' }); return res.end('<script>vqd="4-12345678";</script>'); }
+    if (u.pathname === '/images/async') {
+      const m = (o) => ' m="' + JSON.stringify(o).replace(/"/g, '&quot;') + '"';
+      res.writeHead(200, { 'content-type': 'text/html' });
+      return res.end('<div><a class="iusc"' + m({ murl: base + '/bg/1.jpg', turl: base + '/bg/1t.jpg', t: 'ซัมยัง บะหมี่กึ่งสำเร็จรูป รสไก่เผ็ดคาโบนาร่า 130g', purl: 'https://www.makro.pro/p' }) + '></a><a' + m({ murl: base + '/bg/2.jpg', t: 'x' }) + '></a></div>');
+    }
+    if (u.pathname === '/i.js') {
+      assert.equal(u.searchParams.get('vqd'), '4-12345678');
+      return json({ results: [
+        { image: base + '/dd/1.jpg', thumbnail: base + '/dd/1t.jpg', title: 'มาม่าเกาหลี ซัมยัง บูลดัก คาโบนาร่า 130 กรัม ราคา 59 บาท | Shopee Thailand', source: 'Bing', url: 'https://shopee.co.th/x' },
+        { image: base + '/dd/2.jpg', thumbnail: base + '/dd/2t.jpg', title: '[ของแท้] บูลดักคาโบนาร่า ซองชมพู พร้อมส่ง', url: 'https://www.lazada.co.th/y' },
+        { image: base + '/dd/3.jpg', thumbnail: base + '/dd/3t.jpg', title: 'Samyang Buldak Carbonara Hot Chicken Ramen - Amazon.com', url: 'https://amazon.com/z' }] });
+    }
     res.writeHead(404); res.end();
   });
   await new Promise((r) => mock.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${mock.address().port}`;
-  Object.assign(process.env, { ANTHROPIC_BASE_URL: base, LOOKUP_OFF_URL: base, LOOKUP_UPC_URL: base, LOOKUP_OPENVERSE_URL: base, LOOKUP_WIKI_URL: base, LOOKUP_PEXELS_URL: base, LOOKUP_SERPER_URL: base });
+  Object.assign(process.env, { ANTHROPIC_BASE_URL: base, LOOKUP_OFF_URL: base, LOOKUP_UPC_URL: base, LOOKUP_OPENVERSE_URL: base, LOOKUP_WIKI_URL: base, LOOKUP_PEXELS_URL: base, LOOKUP_SERPER_URL: base, LOOKUP_DDG_URL: base, LOOKUP_BING_URL: base });
   const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
   try {
     // without an AI key: a photo with no barcode cannot be identified, but a typed name still searches
     const noKey = (await S.call('POST', '/api/products/identify', { image: PNG }, { token: owner })).body;
-    assert.equal(noKey.need_ai, true);
+    assert.equal(noKey.need_text, true, 'ไม่มีคีย์และไม่มีคำค้นหา → ขอให้พิมพ์ชื่อ (หน้าเว็บอ่านชื่อจากซองให้ก่อน)');
+    // no AI at all: the words read from the pack are searched on the web; names come from shop/product titles
     const typed = (await S.call('POST', '/api/products/identify', { text: 'Buldak Carbonara' }, { token: owner })).body;
     assert.ok(typed.names.includes('Buldak Carbonara'));
-    assert.ok(typed.images.length >= 2, 'รูปจาก Open Food Facts / Openverse / Wikimedia แม้ไม่มีคีย์');
+    assert.ok(typed.names.includes('มาม่าเกาหลี ซัมยัง บูลดัก คาโบนาร่า 130 กรัม'), 'ชื่อไทยจากชื่อสินค้าในเว็บร้านค้า: ' + typed.names.join(' / '));
+    assert.ok(typed.names.includes('ซัมยัง บูลดัก คาโบนาร่า'), 'ชื่อสั้น (ตัดขนาดและคำนำหน้า)');
+    assert.ok(!typed.names.some((n) => /ราคา|Shopee|บาท/.test(n)), 'ตัดคำโฆษณา/ราคา/ชื่อเว็บออก');
+    assert.ok(typed.images.some((i) => i.source.startsWith('เว็บ')), 'รูปจากการค้นหาเว็บ (ไม่ต้องใช้คีย์)');
+    assert.ok(typed.images.some((i) => i.source === 'เว็บ · makro.pro' && i.url === base + '/bg/1.jpg'), 'รูปจาก Bing Images');
+    assert.ok(typed.names.includes('ซัมยัง บะหมี่กึ่งสำเร็จรูป รสไก่เผ็ดคาโบนาร่า'), 'ชื่อจาก Bing (ตัดขนาด 130g)');
+    assert.ok(typed.images.length >= 5, 'รูปจากหลายแหล่งแม้ไม่มีคีย์');
     assert.ok(!typed.images.some((i) => i.source.startsWith('Pexels')), 'ไม่มีคีย์ Pexels ก็ไม่เรียก Pexels');
     // keys: only staff with settings permission can set them, and they never come back in full
     const cashierTok = await S.login('0002', '2222', 'pos1');
@@ -345,7 +365,7 @@ test('ผู้ช่วยเพิ่มสินค้า + AI: รูปส�
     assert.equal((await S.call('POST', '/api/products/identify', { image: PNG }, { token: cashierTok })).status, 403);
   } finally {
     await S.call('PUT', '/api/assistant/config', { clear: ['anthropic_api_key', 'pexels_api_key', 'serper_api_key'] }, { token: owner });
-    for (const k of ['ANTHROPIC_BASE_URL', 'LOOKUP_OFF_URL', 'LOOKUP_UPC_URL', 'LOOKUP_OPENVERSE_URL', 'LOOKUP_WIKI_URL', 'LOOKUP_PEXELS_URL', 'LOOKUP_SERPER_URL']) delete process.env[k];
+    for (const k of ['ANTHROPIC_BASE_URL', 'LOOKUP_OFF_URL', 'LOOKUP_UPC_URL', 'LOOKUP_OPENVERSE_URL', 'LOOKUP_WIKI_URL', 'LOOKUP_PEXELS_URL', 'LOOKUP_SERPER_URL', 'LOOKUP_DDG_URL', 'LOOKUP_BING_URL']) delete process.env[k];
     mock.close();
   }
 });

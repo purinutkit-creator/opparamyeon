@@ -3,7 +3,7 @@ import { db, J, S } from '../db.js';
 import { ah, id, now, bad, notFound, conflict, audit, emit, getSettings, setSetting, getSecret, setSecret, rateLimit } from '../lib/util.js';
 import { enqueue } from '../lib/print.js';
 import { lookupBarcode, suggestCategory, fetchImage } from '../lib/productlookup.js';
-import { aiKeys, identifyWithClaude, findImages, basicNames, AiError, AI_MODEL } from '../lib/productai.js';
+import { aiKeys, identifyWithClaude, findImages, basicNames, mineNames, nameVariants, AiError, AI_MODEL } from '../lib/productai.js';
 import { saveFile } from './system.js';
 import { labelCfg, labelRowDots } from '../../public/shared/labels.js';
 import { isEan13, ean13Check } from '../../public/shared/core.js';
@@ -297,19 +297,25 @@ r.post('/products/identify', staffAuth('manage_menu'), ah(async (req, res) => {
     const has = await existsFor(barcode); if (has) return res.json({ barcode, exists: has, ai });
   }
   if (!ai && !info.found && !text) {
-    return res.json({ need_ai: !keys.anthropic, ai_error: aiError, barcode, names: [], images: [], errors: info.errors || [] });
+    return res.json({ need_text: true, ai_error: aiError, barcode, names: [], images: [], errors: info.errors || [] });
   }
+  // without AI the words come from the pack (read in the browser) or what staff typed
+  const latin = (t) => (t.match(/[A-Za-z][A-Za-z0-9'&.-]+/g) || []).join(' ');
+  const words = [...new Set([text, ...(info.names || [])].join(' ').split(/\s+/).filter((w) => w.length >= 2))];
+  const productQueries = ai ? ai.image_queries_product : [...new Set([text, [info.brand, info.names[0]].filter(Boolean).join(' ')].filter(Boolean))];
+  const promoQueries = ai ? ai.image_queries_promo : [latin(text) || latin(info.names.join(' ')) || text].filter(Boolean);
+  const found = await findImages({ productQueries, promoQueries, keys });
   const names = [...new Set([
     ...(ai ? [ai.product_name_th, ...(ai.names_th || []), ...(ai.names_mixed || []), ai.product_name_en, ...(ai.names_en || [])] : []),
+    ...nameVariants([...(info.names || []), ...mineNames(found.titles, words)]),
     ...basicNames([...(info.names || []), text], { brand: info.brand, size: info.quantity }),
-  ].map((n) => String(n || '').replace(/\s+/g, ' ').trim()).filter(Boolean))].slice(0, 30);
-  const productQueries = ai ? ai.image_queries_product : [[info.brand, info.names[0]].filter(Boolean).join(' ') || text];
-  const promoQueries = ai ? ai.image_queries_promo : [info.names.find((n) => /^[\x00-\x7F]+$/.test(n)) || text];
-  const found = await findImages({ productQueries, promoQueries, keys });
+  ].map((n) => String(n || '').replace(/\s+/g, ' ').trim()).filter((n) => n && !/^[a-z]{1,6}$/.test(n)))]
+    // Thai menu names first (stable order within each language)
+    .map((n, i) => ({ n, i, th: /[\u0E00-\u0E7F]/.test(n) })).sort((a, b) => (b.th - a.th) || (a.i - b.i)).map((x) => x.n).slice(0, 30);
   const images = [...(info.images || []).map((u) => ({ url: u, thumb: u, source: info.source, kind: 'product' })), ...found.images].filter((im, i, a) => a.findIndex((x) => x.url === im.url) === i);
   const hintByName = ai && ai.category_hint ? cats.find((c) => c.name === ai.category_hint || ai.category_hint.includes(c.name)) : null;
   const taken = barcode ? await db.get('SELECT id FROM products WHERE code = ?', [barcode]) : null;
-  res.json({ barcode, found: !!ai || info.found, source: ai ? (ai.identified ? 'AI (Claude)' : 'AI (ไม่แน่ใจ)') : info.source, identified: ai ? !!ai.identified : info.found,
+  res.json({ barcode, query: text, found: !!ai || info.found || names.length > 0, source: ai ? (ai.identified ? 'AI (Claude)' : 'AI (ไม่แน่ใจ)') : info.found ? info.source : 'ค้นหาจากเว็บ', identified: ai ? !!ai.identified : info.found || names.length > 1,
     product_type: ai ? ai.product_type : '', brand: (ai && ai.brand) || info.brand || '', quantity: (ai && ai.size) || info.quantity || '', flavor: ai ? ai.flavor : '',
     names, images, suggested_category_id: (hintByName && hintByName.id) || suggestCategory({ names, categories: info.categories || [], brand: info.brand }, cats),
     suggested_code: barcode && !taken ? barcode : '', ai_error: aiError, errors: [...(info.errors || []), ...found.errors], sources: { ai: !!keys.anthropic, pexels: !!keys.pexels, serper: !!keys.serper } });
