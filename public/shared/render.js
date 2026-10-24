@@ -183,7 +183,17 @@ export async function renderDoc(tpl, data, opts = {}) {
               if (e.show_options !== false) {
                 // choices (noodle, spice...) readable; add-ons printed as black bands so the kitchen can't miss them
                 for (const o of (it.options || []).filter((x) => !isAddon(x))) text(`• ${o.group ? o.group + ': ' : ''}${o.name}`, e, { size: Math.round(size * (e.option_ratio || 0.68)), weight: 700, x0: margin + qtyW, w: inner - qtyW });
-                for (const o of (it.options || []).filter(isAddon)) { text(`+ เพิ่ม ${o.name}`, e, { size: Math.round(size * (e.addon_ratio || 0.78)), weight: 800, x0: margin + qtyW, w: inner - qtyW, invert: e.addon_invert !== false }); y += 2; }
+                // add-ons get a mark: a black box with a white "+" in front (not just heavier text)
+                const asz = Math.round(size * (e.addon_ratio || 0.68));
+                for (const o of (it.options || []).filter(isAddon)) {
+                  const box = Math.round(asz * SC * 1.05), bx = margin + qtyW, by = y + Math.round((lh(asz) - box) / 2);
+                  if (draw) {
+                    ctx.fillStyle = '#000'; ctx.fillRect(bx, by, box, box);
+                    ctx.fillStyle = '#fff'; const bar = Math.max(2, Math.round(box * 0.16)), arm = Math.round(box * 0.62);
+                    ctx.fillRect(bx + (box - arm) / 2, by + (box - bar) / 2, arm, bar); ctx.fillRect(bx + (box - bar) / 2, by + (box - arm) / 2, bar, arm);
+                  }
+                  text(`เพิ่ม ${o.name}`, e, { size: asz, weight: 700, x0: bx + box + 8, w: inner - qtyW - box - 8 });
+                }
               }
               if (e.show_note !== false && it.note) text(`⚠ ${it.note}`, e, { size: Math.round(size * 0.62), weight: 800, x0: margin + qtyW, w: inner - qtyW, invert: true });
               if (y === y0) y += lh(size);

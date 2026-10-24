@@ -245,10 +245,10 @@ function optionsDialog(p, editLine = null) {
           draw();
         } }, big ? [chosen.get(g.id).has(o.id) ? h('span', { class: 'tick' }, '✓') : null, h('b', {}, o.name), h('small', {}, o.price ? `+${baht(o.price)} ฿` : 'ไม่เพิ่มราคา')]
           : [o.name, o.price ? ` +${baht(o.price)}` : '']))))),
-      h('div', { class: 'row', style: { marginBottom: '.8em' } }, h('div', { class: 'seg', style: { flex: 1 } },
-        h('button', { class: dine === 'dine_in' ? 'on' : '', onclick: () => { dine = 'dine_in'; draw(); } }, 'ทานที่ร้าน'),
-        h('button', { class: dine === 'takeaway' ? 'on takeaway' : '', onclick: () => { dine = 'takeaway'; draw(); } }, 'กลับบ้าน')),
-      h('div', { class: 'qty' }, h('button', { onclick: () => { qty = Math.max(1, qty - 1); draw(); } }, '−'), h('span', {}, qty), h('button', { onclick: () => { qty++; draw(); } }, '+'))),
+      // dine-in/takeaway comes from the bill (top of the cart); change a single line with its chip in the cart
+      h('div', { class: 'row', style: { marginBottom: '.8em', justifyContent: 'space-between' } },
+        h('span', { class: 'dine-note ' + dine }, dine === 'takeaway' ? '🥡 กลับบ้าน' : '🍽️ ทานที่ร้าน', h('small', {}, ' ตามบิล')),
+        h('div', { class: 'qty' }, h('button', { onclick: () => { qty = Math.max(1, qty - 1); draw(); } }, '−'), h('span', {}, qty), h('button', { onclick: () => { qty++; draw(); } }, '+'))),
       showNote ? h('label', { class: 'field' }, 'หมายเหตุ (ไม่บังคับ)', note)
         : h('button', { class: 'chip', style: { marginBottom: '.6em' }, onclick: () => { showNote = true; draw(); setTimeout(() => note.focus(), 30); } }, '📝 เพิ่มหมายเหตุ (ไม่บังคับ)'),
       h('div', { class: 'bigsum' }, baht(price * qty), ' ฿'));
