@@ -14,7 +14,8 @@ export async function settingsPage() {
   const sale = form([{ k: 'tax_rate', label: 'VAT %', type: 'number' }, { k: 'tax_inclusive', label: 'ราคารวม VAT แล้ว', type: 'bool' }, { k: 'packaging_fee', label: 'ค่าบรรจุภัณฑ์กลับบ้าน (บาท)', type: 'money' },
     { k: 'packaging_mode', label: 'คิดค่าบรรจุภัณฑ์', type: 'select', options: [['per_bowl', 'ต่อชามกลับบ้าน'], ['per_order', 'ต่อออเดอร์ที่มีกลับบ้าน']] },
     { k: 'kitchen_send', label: 'ส่งครัว', type: 'select', options: [['after_payment', 'อัตโนมัติหลังรับชำระ'], ['manual', 'พนักงานกดส่งครัวก่อนชำระได้ (ที่ยังไม่ส่งจะส่งตอนชำระ)']] },
-    { k: 'auto_lock_minutes', label: 'ล็อกหน้าจออัตโนมัติ (นาที, 0=ปิด)', type: 'number' }], s.sale);
+    { k: 'auto_lock_minutes', label: 'ล็อกหน้าจออัตโนมัติ (นาที, 0=ปิด)', type: 'number' },
+    { k: 'count_unit', label: 'ชื่อหน่วยที่นับ (แทนคำว่า "ชาม")', placeholder: 'ชาม / จาน / ที่ / แก้ว', hint: 'ใช้ในหน้าขาย ใบครัว ใบเสร็จ จอลูกค้า และรายงาน' }], s.sale);
   const pm = s.sale.payment_methods.map((m) => ({ ...m }));
   const pmBox = h('div', {}, pm.map((m) => { const cb = h('input', { type: 'checkbox', checked: m.enabled }); const n = h('input', { class: 'input', value: m.name, style: { maxWidth: '220px' } }); cb.onchange = () => (m.enabled = cb.checked); n.oninput = () => (m.name = n.value);
     return h('div', { class: 'row', style: { marginBottom: '.3em' } }, h('label', { class: 'switch' }, cb, m.id), n); }), h('button', { class: 'btn sm', onclick: () => { const id = prompt('รหัสช่องทาง (ภาษาอังกฤษ) เช่น truemoney'); if (id) { pm.push({ id, name: id, enabled: true }); reload(); } } }, '+ ช่องทางอื่น'));
@@ -26,6 +27,7 @@ export async function settingsPage() {
     { k: 'reset', label: 'รีเซ็ตเลขคิว', type: 'select', options: [['business_day', 'ทุกวันขาย'], ['shift', 'ทุกรอบการขาย'], ['manual', 'สั่งรีเซ็ตเอง']] }], s.queue);
   const sound = form([{ k: 'enabled', label: 'เปิดเสียง', type: 'bool' }, { k: 'volume', label: 'ระดับเสียง (0-1)', type: 'number', step: '0.1' }, { k: 'count', label: 'จำนวนครั้ง ติ๊ด', type: 'number' },
     { k: 'output', label: 'เสียงออกที่', type: 'multi', options: [['kitchen', 'อุปกรณ์ครัว'], ['pos', 'เครื่อง POS']], hint: 'buzzer ของเครื่องพิมพ์ตั้งที่หน้าเครื่องพิมพ์' },
+    { k: 'docs', label: 'เสียงบนอุปกรณ์ดังเมื่อพิมพ์', type: 'select', options: [['all', 'ทุกเอกสาร (ใบเสร็จ ใบครัว ฯลฯ)'], ['kitchen', 'เฉพาะใบครัว']] },
     { k: 'on', label: 'ดังเมื่อ', type: 'select', options: [['sent', 'เครื่องพิมพ์รับงานแล้ว หรือยืนยันพิมพ์สำเร็จ'], ['printed', 'เฉพาะเมื่อเครื่องยืนยันพิมพ์สำเร็จ']] },
     { k: 'file', label: 'ไฟล์เสียงพิมพ์สำเร็จ (เว้นว่าง = ติ๊ด ๆ ๆ ๆ)', type: 'image', kind: 'audio', accept: 'audio/*' }, { k: 'new_order_file', label: 'ไฟล์เสียงออเดอร์ใหม่', type: 'image', kind: 'audio', accept: 'audio/*' },
     { k: 'error_file', label: 'ไฟล์เสียงพิมพ์ผิดพลาด', type: 'image', kind: 'audio', accept: 'audio/*' }], s.sound);
@@ -59,6 +61,7 @@ export async function settingsPage() {
     card(h('h3', {}, 'ข้อมูลร้าน'), store, saveBtn('บันทึกข้อมูลร้าน', () => saveKey('store', store.value()))),
     card(h('h3', {}, 'การขาย'), sale, h('h4', {}, 'ช่องทางชำระเงิน'), pmBox, h('h4', {}, 'สิทธิ์ส่วนลดตามบทบาท'), disc,
       saveBtn('บันทึกการขาย', () => saveKey('sale', { ...sale.value(), payment_methods: pm, max_discount_pct: disc.value() }))),
+    printOrderCard(s),
     card(h('h3', {}, 'เลขคิว'), h('p', { class: 'small muted' }, 'เลขคิวเริ่มใหม่ได้ตามรอบ แต่เลขบิลไม่ซ้ำเสมอ'), queue, h('div', { class: 'row' }, saveBtn('บันทึกเลขคิว', () => saveKey('queue', queue.value())),
       can('reset_queue') ? h('button', { class: 'btn danger', onclick: async () => { const reason = prompt('เหตุผลการรีเซ็ตคิว'); if (reason) { await api.post('/queue/reset', { reason }); toast('รีเซ็ตเลขคิวแล้ว', 'ok'); } } }, 'รีเซ็ตเลขคิวตอนนี้') : null)),
     card(h('h3', {}, 'เวลาเปลี่ยนวันขาย'), h('p', {}, `วันขายปัจจุบัน: ${rules.today}`), table([{ t: 'เริ่มใช้', k: 'effective_from' }, { t: 'ตัดวันเวลา', k: 'cutoff' }, { t: 'เขตเวลา', k: 'timezone' }], rules.rules),
@@ -73,19 +76,44 @@ export async function settingsPage() {
     card(h('h3', {}, 'รายงาน'), (() => { const f = form([{ k: 'week_start', label: 'วันเริ่มสัปดาห์', type: 'select', options: [[1, 'จันทร์'], [0, 'อาทิตย์'], [6, 'เสาร์']] }], { week_start: s.week_start }); return h('div', {}, f, saveBtn('บันทึก', () => saveKey('week_start', Number(f.value().week_start)))); })()));
 }
 
+function printOrderCard(s) {
+  const P = { order: ['receipt', 'kitchen', 'merchant', 'queue'], ...s.print };
+  const names = { receipt: 'ใบเสร็จลูกค้า', kitchen: 'ใบครัว', merchant: 'ใบสรุปร้านค้า', queue: 'ใบเลขคิว' };
+  const order = [...new Set([...(P.order || []), 'receipt', 'kitchen', 'merchant', 'queue'])];
+  const list = h('div');
+  const draw = () => list.replaceChildren(...order.map((d, i) => h('div', { class: 'el-row' }, h('strong', {}, `${i + 1}.`), h('span', {}, names[d]),
+    h('div', { class: 'row' }, h('button', { class: 'btn sm', disabled: i === 0, onclick: () => { order.splice(i - 1, 0, order.splice(i, 1)[0]); draw(); } }, '↑'),
+      h('button', { class: 'btn sm', disabled: i === order.length - 1, onclick: () => { order.splice(i + 1, 0, order.splice(i, 1)[0]); draw(); } }, '↓')))));
+  draw();
+  const f = form([{ k: 'auto_receipt', label: 'พิมพ์ใบเสร็จลูกค้าอัตโนมัติหลังชำระ', type: 'bool' }, { k: 'auto_merchant', label: 'พิมพ์ใบสรุปร้านค้าอัตโนมัติ (มีบาร์โค้ดเลขบิล + QR รายละเอียด)', type: 'bool' },
+    { k: 'auto_queue', label: 'พิมพ์ใบเลขคิวอัตโนมัติ', type: 'bool' }], P);
+  return card(h('h3', {}, 'ลำดับและเอกสารที่พิมพ์หลังชำระเงิน'),
+    h('p', { class: 'small muted' }, 'ถ้าใช้เครื่องพิมพ์เครื่องเดียว เอกสารจะออกตามลำดับนี้ · ใบครัวพิมพ์ทุกครั้งที่มีรายการใหม่ (กดส่งครัว หรือชำระเงิน) ไปยังเครื่องที่ติ๊ก "ใบครัว"'),
+    list, f, saveBtn('บันทึกการพิมพ์', () => saveKey('print', { ...f.value(), order })));
+}
+
 export async function paymentsPage() {
   const s = await api.get('/settings');
   const pp = form([{ k: 'promptpay_type', label: 'ประเภทพร้อมเพย์', type: 'select', options: [['phone', 'เบอร์โทรศัพท์'], ['national_id', 'เลขบัตรประชาชน/เลขผู้เสียภาษี 13 หลัก'], ['ewallet', 'e-Wallet ID 15 หลัก']] },
     { k: 'promptpay_id', label: 'หมายเลขพร้อมเพย์' }, { k: 'promptpay_name', label: 'ชื่อผู้รับเงิน (แสดงให้ลูกค้าตรวจสอบ)' }, { k: 'slip_upload', label: 'ให้ลูกค้าแนบสลิปส่งให้พนักงานตรวจ', type: 'bool' },
     { k: 'mock_enabled', label: 'โหมดทดสอบ Mock Gateway (ห้ามเปิดตอนใช้งานจริง)', type: 'bool' }], s.payment);
   const beamCfg = (s.payment.providers || {}).beam || {};
+  const keys = await api.get('/payments/providers/beam');
+  const kf = form([{ k: 'merchant_id', label: 'Merchant ID' }, { k: 'api_key', label: 'API Key', type: 'password', placeholder: keys.api_key_set ? `บันทึกแล้ว (${keys.api_key_hint}) — เว้นว่างเพื่อใช้ค่าเดิม` : 'วาง API Key จาก Beam Lighthouse' },
+    { k: 'webhook_secret', label: 'Webhook HMAC Key (base64)', type: 'password', placeholder: keys.webhook_secret_set ? `บันทึกแล้ว (${keys.webhook_secret_hint}) — เว้นว่างเพื่อใช้ค่าเดิม` : 'วาง HMAC Key ของ webhook' }], { merchant_id: keys.merchant_id });
+  const testOut = h('span', { class: 'small' });
+  const keysBox = h('div', { class: 'card', style: { background: 'var(--surface2)', margin: '.8em 0' } }, h('h4', {}, 'ข้อมูลเชื่อมต่อ (กรอกเอง)'),
+    h('p', { class: 'small muted' }, 'นำค่าจาก Beam Lighthouse → Developers มาวาง · เก็บที่เซิร์ฟเวอร์เท่านั้น ไม่แสดงกลับมาที่หน้านี้'), kf,
+    h('div', { class: 'row' }, saveBtn('บันทึกคีย์ Beam', async () => { await api.put('/payments/providers/beam', kf.value()); }),
+      h('button', { class: 'btn', onclick: async () => { testOut.textContent = 'กำลังทดสอบ…'; const r = await api.post('/payments/providers/beam/test').catch((e) => ({ message: e.message })); testOut.textContent = (r.ok ? '✅ ' : '⚠️ ') + r.message; } }, 'ทดสอบการเชื่อมต่อ'),
+      h('button', { class: 'btn ghost', onclick: async () => { if (confirm('ลบคีย์ Beam ทั้งหมด?')) { await api.put('/payments/providers/beam', { clear: true }); reload(); } } }, 'ลบคีย์'), testOut),
+    keys.from_env ? h('p', { class: 'small muted' }, 'ขณะนี้ใช้คีย์จาก Environment ของเซิร์ฟเวอร์') : null);
   const beam = form([{ k: 'enabled', label: 'เปิดใช้ Beam Checkout', type: 'bool' }, { k: 'mode', label: 'โหมด', type: 'select', options: [['playground', 'ทดสอบ (playground)'], ['live', 'ใช้งานจริง']] }], beamCfg);
   return page('การรับชำระเงิน',
     card(h('h3', {}, 'พร้อมเพย์ของร้าน'), pp, h('p', { class: 'small', style: { color: 'var(--warn)' } }, '⚠️ การตั้งเลขพร้อมเพย์อย่างเดียวไม่ทำให้ระบบรู้ว่าได้รับเงินจริง — การกด "โอนแล้ว" หรือส่งสลิปของลูกค้าจะไม่เปลี่ยนเป็นชำระแล้ว จนกว่าพนักงานตรวจสอบยอดเงินเข้าและกดยืนยัน'),
       saveBtn('บันทึก', () => saveKey('payment', pp.value()))),
     card(h('h3', {}, 'Payment Gateway: Beam Checkout'), beam,
-      h('p', {}, 'ข้อมูลลับเก็บที่ฝั่งเซิร์ฟเวอร์เท่านั้น (ตั้งใน Render → Environment): ', h('code', {}, 'BEAM_MERCHANT_ID'), ', ', h('code', {}, 'BEAM_API_KEY'), ', ', h('code', {}, 'BEAM_WEBHOOK_SECRET'),
-        ' — สถานะ: ', beamCfg.secret_set ? h('span', { class: 'badge ok' }, 'ตั้งค่าแล้ว') : h('span', { class: 'badge warn' }, 'ยังไม่ตั้ง')),
+      keysBox,
       h('p', {}, 'Webhook URL สำหรับตั้งใน Beam Lighthouse: ', h('code', {}, location.origin + '/api/webhooks/beam')),
       h('p', { class: 'small muted' }, 'ระบบตรวจลายเซ็น X-Beam-Signature (HMAC-SHA256) → กัน webhook ซ้ำ → สอบถามสถานะจาก Beam API อีกครั้ง → ตรวจยอดเงินและเลขอ้างอิงก่อนเปลี่ยนเป็นชำระแล้ว · ทดสอบใน playground และตรวจรายละเอียดฟิลด์กับเอกสาร Beam ล่าสุดก่อนเปิดใช้จริง'),
       saveBtn('บันทึก', () => saveKey('payment', { providers: { beam: beam.value() } }))));
@@ -169,21 +197,36 @@ export async function fontsPage() {
 export async function printersPage() {
   const [printers, tpl, cat, terms, jobs] = await Promise.all([api.get('/printers'), api.get('/templates'), api.get('/catalog?all=1'), api.get('/terminals'), api.get('/print/jobs')]);
   const open = (p) => {
-    const roles = [['receipt', 'ใบเสร็จ'], ['kitchen', 'ใบครัว'], ['queue', 'ใบเลขคิว'], ['mobile_qr', 'ใบ Mobile Ordering'], ['refund', 'ใบยกเลิก/คืนเงิน'], ['shift', 'สรุปรอบ'], ['redeem', 'หลักฐานแลกรางวัล']];
+    const roles = [['receipt', 'ใบเสร็จ'], ['kitchen', 'ใบครัว'], ['merchant', 'ใบสรุปร้านค้า'], ['queue', 'ใบเลขคิว'], ['mobile_qr', 'ใบ Mobile Ordering'], ['refund', 'ใบยกเลิก/คืนเงิน'], ['shift', 'สรุปรอบ'], ['redeem', 'หลักฐานแลกรางวัล']];
     const f = form([{ k: 'name', label: 'ชื่อเครื่อง' }, { k: 'conn', label: 'ช่องทาง', type: 'select', options: [['usb', 'USB (WebUSB)'], ['lan', 'LAN (IP:Port)'], ['bluetooth', 'Bluetooth'], ['serial', 'Serial/COM'], ['agent_usb', 'USB ผ่าน Print Agent'], ['browser', 'เบราว์เซอร์ (A4/ทั่วไป)']] },
       { k: 'address', label: 'IP / Path' }, { k: 'port', label: 'Port', type: 'number' }, { k: 'paper', label: 'กระดาษ', type: 'select', options: [[80, '80 มม.'], [58, '58 มม.']] }, { k: 'margin', label: 'ระยะขอบ (จุด)', type: 'number' },
       { k: 'copies', label: 'จำนวนสำเนา', type: 'number' }, { k: 'cut_mode', label: 'การตัด', type: 'select', options: [['full', 'ตัดเต็ม'], ['partial', 'ตัดบางส่วน (ถ้ารองรับ)'], ['none', 'ไม่ตัด']] },
       { k: 'feed_before', label: 'ป้อนกระดาษก่อนตัด (บรรทัด)', type: 'number' }, { k: 'feed_after', label: 'ป้อนกระดาษหลังพิมพ์ (บรรทัด)', type: 'number' },
-      { k: 'buzzer', label: 'ใช้ buzzer ของเครื่อง (ใบครัว)', type: 'bool' }, { k: 'beep_count', label: 'จำนวนครั้ง buzzer', type: 'number' },
+      { k: 'beep_count', label: 'จำนวนครั้งเสียง buzzer', type: 'number' },
       { k: 'roles', label: 'งานที่รับผิดชอบ', type: 'multi', options: roles, wide: true }, { k: 'station_ids', label: 'จุดครัวที่รับ (ไม่เลือก = ทุกจุด)', type: 'multi', options: cat.stations.map((s) => [s.id, s.name]), wide: true },
-      { k: 'host_terminal_id', label: 'อุปกรณ์ที่เชื่อมเครื่องพิมพ์', type: 'select', options: [['', '- อุปกรณ์ใดก็ได้ที่จับคู่ -'], ...terms.map((t) => [t.id, t.name])] }, { k: 'active', label: 'ใช้งาน', type: 'bool' }], p || { active: true, paper: 80, port: 9100, copies: 1, feed_before: 3, feed_after: 1, cut_mode: 'full', roles: ['receipt'] });
+      { k: 'host_terminal_id', label: 'อุปกรณ์ที่เชื่อมเครื่องพิมพ์', type: 'select', options: [['', '- อุปกรณ์ใดก็ได้ที่จับคู่ -'], ...terms.map((t) => [t.id, t.name])] }, { k: 'active', label: 'ใช้งาน', type: 'bool' }], p || { active: true, paper: 80, port: 9100, copies: 1, feed_before: 3, feed_after: 1, cut_mode: 'full', roles: ['receipt', 'kitchen', 'refund', 'shift'], beep_count: 3 });
+    const po = (p && p.options) || {};
+    const of = form([
+      { k: 'density', label: 'ความเข้มการพิมพ์ (80 จาง – 230 เข้ม)', type: 'number', hint: 'ค่าเริ่มต้น 160' }, { k: 'scale', label: 'ขยาย/ย่อตัวอักษรทั้งใบ (0.7–1.5)', type: 'number', step: '0.05' },
+      { k: 'width_dots', label: 'ความกว้างพื้นที่พิมพ์ (จุด, 0 = อัตโนมัติ)', type: 'number', hint: '58 มม. = 384 · 80 มม. = 576 · บางรุ่น 80 มม. = 512' },
+      { k: 'top_feed', label: 'เว้นบรรทัดก่อนเริ่มพิมพ์', type: 'number' },
+      { k: 'buzzer_mode', label: 'เสียงจากเครื่องพิมพ์ (buzzer)', type: 'select', options: [['all', 'ดังทุกครั้งที่พิมพ์'], ['kitchen', 'เฉพาะใบครัว'], ['receipt', 'เฉพาะใบเสร็จ'], ['off', 'ปิดเสียง']] },
+      { k: 'beep_duration', label: 'ความยาวเสียงแต่ละครั้ง (1–9)', type: 'number' },
+      { k: 'cash_drawer', label: 'เปิดลิ้นชักเงินสดเมื่อรับเงินสด', type: 'bool' }, { k: 'drawer_pin', label: 'ขาลิ้นชัก', type: 'select', options: [[0, 'Pin 2 (ทั่วไป)'], [1, 'Pin 5']] },
+      { k: 'print_logo', label: 'พิมพ์โลโก้/รูปภาพ', type: 'bool' }, { k: 'reprint_mark', label: 'พิมพ์คำว่า "สำเนา/พิมพ์ซ้ำ" เมื่อพิมพ์ซ้ำ', type: 'bool' },
+    ], { density: 160, scale: 1, width_dots: 0, top_feed: 0, buzzer_mode: 'all', beep_duration: 2, print_logo: true, reprint_mark: true, ...po, drawer_pin: po.drawer_pin || 0 });
+    const copyIn = Object.fromEntries(roles.map(([r]) => [r, h('input', { class: 'input', type: 'number', min: 0, max: 9, placeholder: 'ตามแม่แบบ', value: po.copies_by_doc && po.copies_by_doc[r] !== undefined ? po.copies_by_doc[r] : '' })]));
     const tsel = Object.fromEntries(roles.map(([r, t]) => [r, h('select', { class: 'input' }, h('option', { value: '' }, 'ค่าเริ่มต้น'), tpl.templates.filter((x) => x.doc_type === r).map((x) => h('option', { value: x.id, selected: p && p.templates[r] === x.id }, x.name)))]));
-    modal(p ? 'ตั้งค่าเครื่องพิมพ์' : 'เพิ่มเครื่องพิมพ์', h('div', {}, f, h('h4', {}, 'แม่แบบที่ใช้กับเครื่องนี้'), h('div', { class: 'form-grid' }, roles.map(([r, t]) => h('label', { class: 'field' }, t, tsel[r]))),
+    modal(p ? 'ตั้งค่าเครื่องพิมพ์' : 'เพิ่มเครื่องพิมพ์', h('div', {}, h('h4', {}, 'การเชื่อมต่อและงาน'), f,
+      h('h4', {}, 'คุณภาพการพิมพ์ เสียง และลิ้นชัก'), of,
+      h('h4', {}, 'จำนวนสำเนาแยกตามเอกสาร (0 = ไม่พิมพ์ที่เครื่องนี้)'), h('div', { class: 'form-grid' }, roles.map(([r, t]) => h('label', { class: 'field' }, t, copyIn[r]))),
+      h('h4', {}, 'แม่แบบที่ใช้กับเครื่องนี้'), h('div', { class: 'form-grid' }, roles.map(([r, t]) => h('label', { class: 'field' }, t, tsel[r]))),
       h('p', { class: 'small muted' }, 'การค้นหา/จับคู่และทดสอบพิมพ์ต้องทำที่อุปกรณ์หน้างาน (POS → 🖨️ อุปกรณ์) เพราะต้องเข้าถึงฮาร์ดแวร์จริง สถานะจะรายงานกลับมาที่หน้านี้')), { wide: true, actions: [
       p ? { label: 'ปิดใช้งาน', class: 'danger', onClick: async () => { await api.del('/printers/' + p.id); reload(); } } : null,
       p ? { label: 'ส่งหน้าทดสอบไปที่อุปกรณ์', close: false, onClick: async () => { const r = await api.post('/print/test', { printer_id: p.id }); toast(r.jobs.length ? 'ส่งงานทดสอบแล้ว' : 'ไม่ได้สร้างงาน', 'ok'); } } : null,
       { label: 'บันทึก', class: 'primary', onClick: async () => {
-        const v = { ...f.value(), paper: Number(f.value().paper), templates: Object.fromEntries(Object.entries(tsel).filter(([, s]) => s.value).map(([r, s]) => [r, s.value])) };
+        const v = { ...f.value(), paper: Number(f.value().paper), templates: Object.fromEntries(Object.entries(tsel).filter(([, s]) => s.value).map(([r, s]) => [r, s.value])),
+          options: { ...of.value(), drawer_pin: Number(of.value().drawer_pin), copies_by_doc: Object.fromEntries(Object.entries(copyIn).filter(([, i]) => i.value !== '').map(([r, i]) => [r, Number(i.value)])) } };
         if (p) await api.put('/printers/' + p.id, v); else await api.post('/printers', v); reload();
       } }].filter(Boolean) });
   };

@@ -66,11 +66,28 @@ function onState(s) {
 function renderAll() {
   const d = settings.display;
   const active = state.phase && state.phase !== 'idle';
-  const wrap = h('div', { class: `disp ${d.layout === 'full' ? 'full' : 'split'}${active ? ' active' : ''}` }, h('div', { class: 'promo', id: 'promo' }), h('div', { class: 'panel', id: 'panel' }));
+  const paying = state.phase === 'pay';
+  // while paying, the payment panel (total + QR) replaces the promotion half — order list stays on the other half
+  const wrap = h('div', { class: `disp ${d.layout === 'full' && !paying ? 'full' : 'split'}${active ? ' active' : ''}${paying ? ' paying' : ''}` },
+    h('div', { class: 'promo', id: 'promo' }), h('div', { class: 'panel', id: 'panel' }));
   const old = $('.disp');
-  if (old && old.className === wrap.className) { renderPanel(); return renderDone(); }
+  if (old && old.className === wrap.className) { renderPanel(); if (paying) renderPay(); return renderDone(); }
   root.replaceChildren(wrap);
-  renderPromo(); renderPanel(); renderDone(); renderPrompt();
+  if (paying) renderPay(); else renderPromo();
+  renderPanel(); renderDone(); renderPrompt();
+}
+function renderPay() {
+  const el = $('#promo'); if (!el) return;
+  clearTimeout(slideTimer);
+  const s = state;
+  const showQr = s.qr && settings.display.show_qr !== false;
+  el.replaceChildren(h('div', { class: 'paybox' },
+    h('div', { class: 'payhead' }, h('div', { class: 'lbl' }, 'ราคารวม'), h('div', { class: 'amt' }, baht(s.total)), s.bowls ? h('div', { class: 'lbl' }, `${s.bowls} ${settings.sale.count_unit || 'ชาม'}`) : null),
+    showQr ? h('div', { class: 'qrcard' }, h('div', { class: 'qrtitle' }, 'THAI QR PAYMENT · พร้อมเพย์'), h('img', { src: '/api/qr.svg?d=' + encodeURIComponent(s.qr), alt: 'QR พร้อมเพย์' }),
+      h('div', { class: 'qracc' }, 'บัญชี: ', settings.payment.promptpay_name || '-'), h('div', { class: 'qracc' }, 'สแกนเพื่อจ่าย ', baht(s.total), ' บาท'))
+      : h('div', { class: 'paymethod' }, s.received ? h('div', {}, h('div', { class: 'lbl' }, 'รับเงิน'), h('div', { class: 'big' }, baht(s.received))) : h('div', { class: 'big' }, 'กรุณาชำระเงินที่พนักงาน'),
+        s.change ? h('div', { style: { marginTop: '2vh' } }, h('div', { class: 'lbl' }, 'เงินทอน'), h('div', { class: 'big accent' }, baht(s.change))) : null),
+    h('div', { class: 'paystatus' }, '● รอชำระเงิน')));
 }
 function renderPromo() {
   const d = settings.display;
@@ -100,15 +117,14 @@ function renderPanel() {
   p.replaceChildren(
     h('div', { class: 'dine' + (s.dine_type === 'takeaway' ? ' takeaway' : '') }, s.dine_type === 'takeaway' ? '🥡 กลับบ้าน' : s.dine_type === 'mixed' ? '🍽️ ทานที่ร้าน + 🥡 กลับบ้าน' : '🍽️ ทานที่ร้าน', s.table ? ` · โต๊ะ ${s.table}` : ''),
     s.member ? h('div', { class: 'member' }, `⭐ สมาชิก ${s.member.name}`, s.member.tier ? ` · ${s.member.tier}` : '', ` · ${s.member.points} แต้ม`) : null,
+    h('div', { class: 'items-title' }, 'รายการอาหาร'),
     h('div', { class: 'items' }, (s.lines || []).slice(-12).map((l) => h('div', { class: 'it' }, h('div', {}, `${l.qty} × ${l.name}`, l.dine_type === 'takeaway' && s.dine_type === 'mixed' ? ' (กลับบ้าน)' : '',
       l.options && l.options.length ? h('small', {}, l.options.join(', ')) : null), h('strong', {}, baht(l.price))))),
     h('div', { class: 'sum' },
       r('รวม', baht(s.items_total)), s.discount ? r('ส่วนลด', '-' + baht(s.discount)) : null, s.packaging ? r('ค่าบรรจุภัณฑ์', baht(s.packaging)) : null, s.tax ? r('VAT', baht(s.tax)) : null,
-      r(`ยอดชำระ · ${s.bowls || 0} ชาม`, h('span', { class: 'total' }, baht(s.total) + ' ฿')),
+      r(`ยอดชำระ · ${s.bowls || 0} ${settings.sale.count_unit || 'ชาม'}`, h('span', { class: 'total' }, baht(s.total) + ' ฿')),
       s.phase === 'pay' && s.received ? r('รับเงิน', baht(s.received)) : null, s.phase === 'pay' && s.change ? r('เงินทอน', h('strong', {}, baht(s.change))) : null),
-    s.phase === 'pay' && s.qr && settings.display.show_qr !== false ? h('div', {}, h('img', { class: 'qr', src: '/api/qr.svg?d=' + encodeURIComponent(s.qr), alt: 'QR พร้อมเพย์' }),
-      h('div', { style: { textAlign: 'center' } }, `สแกนจ่าย พร้อมเพย์ ${settings.payment.promptpay_name || ''} · ${baht(s.total)} บาท`)) : null,
-    s.phase === 'pay' ? h('div', { style: { textAlign: 'center', opacity: .8 } }, 'สถานะ: รอชำระเงิน') : null);
+  );
 }
 const r = (a, b) => h('div', { class: 'r' }, h('span', {}, a), h('span', {}, b));
 function renderDone() {

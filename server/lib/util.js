@@ -40,11 +40,11 @@ export const DEFAULT_SETTINGS = {
   sale: { tax_rate: 0, tax_inclusive: true, packaging_fee: 0, packaging_mode: 'per_bowl', service_charge: 0,
     payment_methods: [{ id: 'cash', name: 'เงินสด', enabled: true }, { id: 'promptpay', name: 'QR พร้อมเพย์/โอน', enabled: true },
       { id: 'card', name: 'บัตร', enabled: true }, { id: 'other', name: 'อื่น ๆ', enabled: false }],
-    kitchen_send: 'after_payment', auto_lock_minutes: 5, max_discount_pct: { cashier: 10, manager: 50, owner: 100 } },
+    kitchen_send: 'after_payment', auto_lock_minutes: 5, count_unit: 'ชาม', max_discount_pct: { cashier: 10, manager: 50, owner: 100 } },
   queue: { enabled: true, digits: 3, start: 1, prefix: '', dine_in_prefix: 'D', takeaway_prefix: 'T', separate: true, mixed_series: 'dine_in',
     scope: 'shared', reset: 'business_day', epoch: 0 },
   bill: { prefix: 'B' },
-  sound: { enabled: true, volume: 0.8, count: 4, file: '', error_file: '', new_order_file: '', output: ['kitchen', 'pos'], on: 'sent' },
+  sound: { enabled: true, volume: 0.8, count: 4, file: '', error_file: '', new_order_file: '', output: ['kitchen', 'pos'], on: 'sent', docs: 'all' },
   display: { layout: 'split', bg: '#111827', color: '#ffffff', accent: '#ef4444', logo: '', welcome: 'ยินดีต้อนรับสู่ Oppa Ramyeon', thanks: 'ขอบคุณค่ะ 감사합니다',
     media: [], image_seconds: 8, video_muted: true, video_volume: 0.5, fit: 'cover', show_qr: true, pairing_minutes: 10, member_prompt_seconds: 90 },
   fonts: { global: 'Sarabun', pos: '', display: '', member: '', mobile: '', admin: '', reports: '', receipt: '', kitchen: '', fallback: 'Sarabun, Noto Sans Thai, sans-serif',
@@ -60,8 +60,20 @@ export const DEFAULT_SETTINGS = {
   points: { enabled: true, rate_baht: 25, rounding: 'floor', base: 'after_discount', include_tax: false, include_packaging: false, min_spend: 0,
     excluded_products: [], expire_days: 365, claim_qr: true, claim_enabled: true, claim_hours: 72, refund_policy: 'negative_allowed',
     tier_mode: 'auto' },
+  // what prints automatically after payment, and in which order (same printer = printed in this order)
+  print: { order: ['receipt', 'kitchen', 'merchant', 'queue'], auto_receipt: true, auto_merchant: false, auto_queue: false, kitchen_every_order: true },
   week_start: 1,
 };
+
+// ---------- server-side secrets (payment gateway keys). Never returned to any browser. ----------
+export async function getSecret(key) {
+  const r = await db.get('SELECT value FROM secrets WHERE key = ?', [key]);
+  return r ? r.value : null;
+}
+export async function setSecret(key, value) {
+  if (value === null || value === '') return db.run('DELETE FROM secrets WHERE key = ?', [key]);
+  await db.run('INSERT INTO secrets(key, value, updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at', [key, String(value), new Date().toISOString()]);
+}
 
 let cache = null;
 export async function getSettings() {

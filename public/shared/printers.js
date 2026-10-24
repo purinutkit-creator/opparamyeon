@@ -6,7 +6,7 @@
 //  - Android native bridge: window.OppaBridge (when the POS runs inside the Android wrapper app)
 //  - Browser: system print dialog (A4/regular printers)
 import { store } from './api.js';
-import { buildJob, statusQuery, parseStatus, concat, init, feed, cut as cutCmd, beep as beepCmd } from './escpos.js';
+import { buildJob, statusQuery, parseStatus, concat, init, feed, cut as cutCmd, beep as beepCmd, drawer as drawerCmd } from './escpos.js';
 import { renderDoc, testTemplate } from './render.js';
 import { playSound } from './sound.js';
 
@@ -176,14 +176,20 @@ export async function printDocument(printer, template, data, docType) {
   const t = await transportFor(printer);
   if (!t) throw new Error('เครื่องนี้ยังไม่ได้เชื่อมต่อเครื่องพิมพ์ ' + printer.name);
   let bytes;
+  const o = printer.options || {};
+  // printer beeper: every document ("มีเสียงทุกครั้งที่พิมพ์"), only kitchen tickets, only receipts, or off
+  const mode = o.buzzer_mode || (printer.buzzer ? 'kitchen' : 'off');
+  const buzz = mode === 'all' || (mode === 'kitchen' && docType === 'kitchen') || (mode === 'receipt' && docType === 'receipt');
   if (docType === 'cut') bytes = concat([init(), feed(printer.feed_before || 3), cutCmd(printer.cut_mode || 'full')]);
+  else if (docType === 'drawer') { if (t.kind === 'browser') return { status: 'sent', note: 'เครื่องพิมพ์ผ่านเบราว์เซอร์เปิดลิ้นชักไม่ได้' }; bytes = concat([init(), drawerCmd(o.drawer_pin)]); }
   else {
     const tpl = docType === 'test' ? testTemplate(printer.paper, template && template.font) : { ...template, paper: printer.paper || template.paper };
     if (printer.margin) tpl.margin = printer.margin;
-    const r = await renderDoc(tpl, data, {});
+    if (o.width_dots) tpl.width_dots = o.width_dots;
+    const r = await renderDoc(tpl, data, { scale: o.scale, noLogo: o.print_logo === false, reprintMark: o.reprint_mark });
     if (t.kind === 'browser') { await browserPrint(r.canvas); return { status: 'sent', note: 'ส่งไปยังหน้าต่างพิมพ์ของเบราว์เซอร์' }; }
     bytes = buildJob(r.canvas, { cuts: r.cuts, feedBefore: printer.feed_before ?? 3, feedAfter: printer.feed_after ?? 1, cutMode: printer.cut_mode || 'full',
-      buzzer: !!printer.buzzer && docType === 'kitchen', beepCount: printer.beep_count || 4 });
+      buzzer: buzz, beepCount: printer.beep_count || 4, beepDuration: o.beep_duration || 2, threshold: o.density || 160, topFeed: o.top_feed || 0 });
   }
   if (t.kind === 'browser') return { status: 'sent' };
   await t.write(bytes, { status: true });
@@ -241,7 +247,7 @@ export class PrintHost {
           const r = await printDocument(p, job.template, job.payload.data, job.doc_type);
           await this.api.post(`/print/jobs/${job.id}/report`, { status: r.status, error: r.status === 'sent' ? r.note : null });
           this.push(p, job, r.status, r.note);
-          if (job.doc_type === 'kitchen' && (r.status === 'printed' || this.settings.sound.on === 'sent')) playSound(this.settings.sound, 'printed', this.device);
+          if ((job.doc_type === 'kitchen' || (this.settings.sound.docs === 'all' && !['drawer', 'cut'].includes(job.doc_type))) && (r.status === 'printed' || this.settings.sound.on === 'sent')) playSound(this.settings.sound, 'printed', this.device);
           this.api.post(`/printers/${pid}/status`, { status: 'ok' }).catch(() => {});
         } catch (e) {
           await this.api.post(`/print/jobs/${job.id}/report`, { status: 'failed', error: e.message }).catch(() => {});
@@ -261,6 +267,7 @@ export class PrintHost {
 export async function testPrint(printer, what = 'all') {
   const data = { store_name: 'Oppa Ramyeon', dine_type: 'takeaway', dine_label: 'กลับบ้าน', datetime: new Date().toLocaleString('th-TH'), logo: '' };
   if (what === 'cut') return printDocument(printer, null, {}, 'cut');
-  if (what === 'beep') { const t = await transportFor(printer); await t.write(concat([init(), beepCmd(printer.beep_count || 4)])); return { status: 'sent' }; }
+  if (what === 'beep') { const t = await transportFor(printer); await t.write(concat([init(), beepCmd(printer.beep_count || 4, (printer.options || {}).beep_duration || 2)])); return { status: 'sent' }; }
+  if (what === 'drawer') return printDocument(printer, null, {}, 'drawer');
   return printDocument(printer, { font: what.font }, data, 'test');
 }

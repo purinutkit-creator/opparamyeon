@@ -10,6 +10,7 @@ const ss = { get: (k, d) => { try { return JSON.parse(sessionStorage.getItem(k))
 let info, menu, settings, cat = 'all', view = 'menu';
 let cart = ss.get('m_cart_' + token, []);
 let checkout = ss.get('m_checkout_' + token, { mode: null, table_id: null, customer_name: '', customer_phone: '', note: '', pay_mode: 'cashier' });
+const U = () => (settings && settings.sale.count_unit) || 'ชาม';
 const saveCart = () => { ss.set('m_cart_' + token, cart); ss.set('m_checkout_' + token, checkout); drawBar(); };
 
 async function boot() {
@@ -41,7 +42,7 @@ function drawBar() {
   if (view !== 'menu' || !cart.length) { bar.replaceChildren(); bar.style.display = 'none'; return; }
   bar.style.display = '';
   const t = totals();
-  bar.replaceChildren(h('button', { class: 'btn primary big block', onclick: () => { view = 'cart'; render(); } }, `ดูตะกร้า ${cart.reduce((s, l) => s + l.qty, 0)} รายการ · ${t.bowls} ชาม · ${baht(t.total)} ฿`));
+  bar.replaceChildren(h('button', { class: 'btn primary big block', onclick: () => { view = 'cart'; render(); } }, `ดูตะกร้า ${cart.reduce((s, l) => s + l.qty, 0)} รายการ · ${t.bowls} ${U()} · ${baht(t.total)} ฿`));
 }
 const totals = () => computeTotals(cart.map((l) => ({ ...l, cost_unit: 0, dine_type: checkout.mode === 'table' ? 'dine_in' : 'takeaway' })), settings.sale);
 
@@ -113,7 +114,7 @@ function drawCart() {
       h('div', { class: 'row' }, h('button', { class: 'btn sm', onclick: () => { l.qty--; if (l.qty <= 0) cart = cart.filter((x) => x !== l); saveCart(); drawCart(); } }, '−'), h('strong', {}, l.qty),
         h('button', { class: 'btn sm', onclick: () => { l.qty++; saveCart(); drawCart(); } }, '+')), h('strong', { style: { minWidth: '70px', textAlign: 'right' } }, baht(lineTotal(l)))))
       : h('div', { class: 'empty' }, 'ตะกร้าว่าง'),
-    h('div', { class: 'row between', style: { marginTop: '.6em' } }, h('span', {}, `จำนวนชาม ${t.bowls}`), h('strong', { style: { fontSize: '1.4em' } }, 'รวม ', baht(t.total), ' ฿')),
+    h('div', { class: 'row between', style: { marginTop: '.6em' } }, h('span', {}, `จำนวน${U()} ${t.bowls}`), h('strong', { style: { fontSize: '1.4em' } }, 'รวม ', baht(t.total), ' ฿')),
     t.packaging ? h('div', { class: 'small muted' }, `รวมค่าบรรจุภัณฑ์ ${baht(t.packaging)}`) : null),
     modeBox, payBox, h('label', { class: 'field', style: { marginTop: '.6em' } }, 'หมายเหตุออเดอร์', note),
     h('p', { class: 'small muted' }, 'ยอดเงินสุดท้ายคำนวณโดยร้านจากราคาปัจจุบัน'),
@@ -153,7 +154,7 @@ async function drawOrders() {
         h('span', { class: 'badge ' + (o.status === 'paid' ? 'ok' : o.status === 'pending_payment' ? 'warn' : 'bad') }, o.status === 'pending_payment' ? (o.pay_mode === 'cashier' ? 'รอชำระที่แคชเชียร์' : o.verify_status === 'pending' ? 'รอร้านตรวจสอบการโอน' : 'รอชำระ') : STATUS_TH[o.status])),
       o.status !== 'void' && o.status !== 'expired' ? h('div', { class: 'steps' }, steps.map((s, i) => h('span', { class: steps.indexOf(o.prep_status) >= i && (o.prep_status !== 'none' || i === 0) ? 'on' : '' }, PREP_TH[s]))) : null,
       h('div', { class: 'small' }, (o.items || []).map((i) => `${i.qty}× ${i.name}`).join(', ')),
-      h('div', { class: 'row between' }, h('span', {}, `${o.bowls} ชาม`), h('strong', {}, baht(o.total), ' ฿')),
+      h('div', { class: 'row between' }, h('span', {}, `${o.bowls} ${U()}`), h('strong', {}, baht(o.total), ' ฿')),
       o.status === 'pending_payment' && o.pay_mode === 'online' ? h('button', { class: 'btn primary block', onclick: () => payOnline(o.id) }, 'ชำระเงินออนไลน์') : null,
       o.status === 'pending_payment' && o.verify_status === 'rejected' ? h('p', { class: 'badge bad' }, 'การโอนยังไม่ผ่านการตรวจสอบ กรุณาติดต่อพนักงาน') : null,
       o.status === 'pending_payment' && o.expires_at ? h('p', { class: 'small muted' }, 'ยกเลิกอัตโนมัติหากไม่ชำระภายใน ', new Date(o.expires_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })) : null)),

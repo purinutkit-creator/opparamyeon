@@ -42,15 +42,20 @@ export function parseStatus(n, byte) {
   return { known: true, online: !(byte & 0x08) };
 }
 
+// ESC p m t1 t2: pulse the cash drawer (pin 2 or pin 5)
+export const drawer = (pin = 0) => Uint8Array.from([ESC, 0x70, pin ? 1 : 0, 25, 250]);
+
 // Build the full byte stream for one document: segments split at template "cut" points
-export function buildJob(canvas, { cuts = [], feedBefore = 3, feedAfter = 1, cutMode = 'full', buzzer = false, beepCount = 4 } = {}) {
+
+export function buildJob(canvas, { cuts = [], feedBefore = 3, feedAfter = 1, cutMode = 'full', buzzer = false, beepCount = 4, beepDuration = 2, threshold = 160, topFeed = 0 } = {}) {
   const parts = [init()];
+  if (topFeed) parts.push(feed(topFeed));
   const bounds = [0, ...cuts.filter((y) => y > 0 && y < canvas.height), canvas.height];
   for (let i = 0; i < bounds.length - 1; i++) {
-    parts.push(rasterFromCanvas(canvas, { y0: bounds[i], y1: bounds[i + 1] }));
+    parts.push(rasterFromCanvas(canvas, { y0: bounds[i], y1: bounds[i + 1], threshold }));
     parts.push(feed(feedBefore), cut(cutMode));
   }
   if (feedAfter) parts.push(feed(feedAfter));
-  if (buzzer) parts.push(beep(beepCount));
+  if (buzzer) parts.push(beep(beepCount, beepDuration));
   return concat(parts);
 }

@@ -8,6 +8,7 @@ import { playSound, unlock } from '/shared/sound.js';
 const api = makeApi({ tokenKey: 'kitchen_token', onUnauthorized: () => { store.del('kitchen_token'); location.reload(); } });
 const app = $('#app');
 let settings, staff, tickets = [], stations = [], station = store.get('kitchen_station', 'all'), sock, host;
+const U = () => (settings && settings.sale.count_unit) || 'ชาม';
 const deviceId = store.get('kitchen_device') || (store.set('kitchen_device', 'kitchen-' + uid().slice(0, 8)), store.get('kitchen_device'));
 
 async function boot() {

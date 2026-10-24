@@ -8,6 +8,7 @@ import { membersPage, memberDetail, resetsPage, tiersPage, rewardsPage } from '.
 import { settingsPage, displayPage, fontsPage, printersPage, devicesPage, auditPage, paymentsPage } from './settings.js';
 import { designerPage } from './designer.js';
 
+const U = () => (ctx.settings && ctx.settings.sale.count_unit) || 'ชาม';
 const app = $('#app');
 let sock = null;
 const ROUTES = [
@@ -53,10 +54,15 @@ async function route() {
   const [, r0, arg] = location.hash.split('/');
   const first = ROUTES.flatMap(([, i]) => i).find(([, , p]) => can(p));
   const r = r0 || (can('view_sales') ? 'dashboard' : first ? first[0] : 'dashboard');
+  document.querySelectorAll('.modal-back').forEach((m) => m.remove()); // navigating closes open dialogs
   sock.off('sales:changed'); sock.off('connect'); sock.off('disconnect');
   shell(r, h('div', { class: 'empty' }, 'กำลังโหลด…'));
   const set = (node) => { const c = $('#content'); if (c) c.replaceChildren(node); };
   try {
+    if (r === 'bill' && arg) { // from the QR on the merchant copy
+      const found = await api.get('/orders/by-bill/' + encodeURIComponent(decodeURIComponent(arg)));
+      location.hash = '#/bills'; setTimeout(() => billDetail(found.id), 300); return;
+    }
     const pages = { dashboard, bills: billsPage, reports: reportsPage, menu: menuPage, stock: stockPage, tables: tablesPage, staff: staffPage, members: arg ? () => memberDetail(arg) : membersPage,
       resets: resetsPage, tiers: tiersPage, rewards: rewardsPage, settings: settingsPage, payments: paymentsPage, designer: designerPage, fonts: fontsPage, display: displayPage,
       printers: printersPage, devices: devicesPage, audit: auditPage };
@@ -78,7 +84,7 @@ async function dashboard() {
       h('div', { class: 'cards' },
         kpi('ยอดขายสุทธิวันนี้', money(d.net_sales), `ยอดขาย ${baht(d.gross_sales)} − ยกเลิก/คืน ${baht(d.voids.amount + d.refunds.amount)}`, true),
         kpi('บิลที่ชำระสำเร็จ', d.bills_paid.toLocaleString(), `ยกเลิก ${d.bills_voided} บิล`, true),
-        kpi('จำนวนชามสุทธิ', d.bowls_net.toLocaleString(), `ขาย ${d.bowls_sold} · ยกเลิก/คืน ${d.bowls_cancelled}`, true),
+        kpi(('จำนวน' + U() + 'สุทธิ'), d.bowls_net.toLocaleString(), `ขาย ${d.bowls_sold} · ยกเลิก/คืน ${d.bowls_cancelled}`, true),
         d.cost !== undefined ? kpi('ต้นทุนขาย', money(d.cost), 'ต้นทุน ณ เวลาขาย') : null,
         d.gross_profit !== undefined ? kpi('กำไรขั้นต้น', money(d.gross_profit), `อัตรากำไร ${d.margin_pct}% · ยังไม่หักค่าใช้จ่ายร้าน`) : null,
         kpi('ส่วนลด', money(d.discount)), kpi('คืนเงิน', money(d.refunds.amount), `${d.refunds.count} ครั้ง`), kpi('บิลยกเลิก', money(d.voids.amount), `${d.voids.count} บิล`),
@@ -86,7 +92,7 @@ async function dashboard() {
       card(h('h3', {}, 'ยอดรับเงินจริงแยกช่องทาง'), table([{ t: 'ช่องทาง', f: (p) => names[p.method] || p.method }, { t: 'รับ', r: 1, f: (p) => baht(p.amount) }, { t: 'คืน', r: 1, f: (p) => baht(p.refunded) }, { t: 'สุทธิ', r: 1, f: (p) => baht(p.net) }, { t: 'รายการ', r: 1, k: 'count' }], d.payments)),
       card(h('h3', {}, 'ยอดขายรายชั่วโมง (บาท)'), barChart(Object.entries(d.by_hour).sort().map(([k, v]) => ({ x: k + ':00', short: k, y: v / 100 })), { fmt: (v) => Math.round(v).toLocaleString() })),
       card(h('h3', {}, 'บิลล่าสุด'), table([{ t: 'เวลา', f: (o) => fmtTime(o.paid_at) }, { t: 'บิล', k: 'bill_no' }, { t: 'คิว', k: 'queue_no' }, { t: 'ที่มา', f: (o) => SOURCE_TH[o.source] },
-        { t: 'ประเภท', f: (o) => dineLabel(o.dine_type) }, { t: 'สถานะ', f: (o) => STATUS_TH[o.status] }, { t: 'ชาม', r: 1, k: 'bowls' }, { t: 'ยอด', r: 1, f: (o) => baht(o.total) }], d.recent, { onRow: (o) => billDetail(o.id) })),
+        { t: 'ประเภท', f: (o) => dineLabel(o.dine_type) }, { t: 'สถานะ', f: (o) => STATUS_TH[o.status] }, { t: (U()), r: 1, k: 'bowls' }, { t: 'ยอด', r: 1, f: (o) => baht(o.total) }], d.recent, { onRow: (o) => billDetail(o.id) })),
       h('p', { class: 'small muted' }, `วันขาย ${fmtDateOnly(d.business_date)} · ช่วงเวลาจริง ${d.range.start} ถึงก่อน ${d.range.end} (${d.range.timezone})`, d.profit_note ? ' · ' + d.profit_note : ''));
   };
   const drawStatus = () => status.replaceChildren(
@@ -125,7 +131,7 @@ async function billsPage() {
     res.replaceChildren(h('p', { class: 'small muted' }, `${rows.length} บิล`), table([{ t: 'เวลา', f: (o) => fmtTime(o.paid_at || o.created_at) }, { t: 'บิล', k: 'bill_no' }, { t: 'คิว', k: 'queue_no' },
       { t: 'สถานะ', f: (o) => h('span', { class: 'badge ' + (o.status === 'paid' ? 'ok' : o.status === 'void' ? 'bad' : 'warn') }, STATUS_TH[o.status]) }, { t: 'ที่มา', f: (o) => SOURCE_TH[o.source] },
       { t: 'ประเภท', f: (o) => dineLabel(o.dine_type) }, { t: 'โต๊ะ/ลูกค้า', f: (o) => [o.table_name, o.customer_name].filter(Boolean).join(' · ') }, { t: 'พนักงาน', k: 'staff_name' }, { t: 'เครื่อง', k: 'terminal_name' },
-      { t: 'ชาม', r: 1, k: 'bowls' }, { t: 'ยอด', r: 1, f: (o) => baht(o.total) }, { t: 'คืน', r: 1, f: (o) => (o.refunded_amount ? baht(o.refunded_amount) : '') }], rows, { onRow: (o) => billDetail(o.id, load) }));
+      { t: (U()), r: 1, k: 'bowls' }, { t: 'ยอด', r: 1, f: (o) => baht(o.total) }, { t: 'คืน', r: 1, f: (o) => (o.refunded_amount ? baht(o.refunded_amount) : '') }], rows, { onRow: (o) => billDetail(o.id, load) }));
   };
   load();
   return page('ประวัติบิล', h('div', { class: 'bar' }, q, sel('preset', [['today', 'วันนี้'], ['yesterday', 'เมื่อวาน'], ['last7', '7 วัน'], ['month', 'เดือนนี้']]), from, to,
@@ -147,13 +153,13 @@ export async function billDetail(id, after) {
     h('p', {}, h('span', { class: 'badge' }, STATUS_TH[o.status]), ' ', SOURCE_TH[o.source], ' · ', dineLabel(o.dine_type), o.table_name ? ` · โต๊ะ ${o.table_name}` : '', ' · คิว ', o.queue_no || '-'),
     h('p', { class: 'small muted' }, `สร้าง ${fmtTime(o.created_at)} · ชำระ ${fmtTime(o.paid_at)} · วันขาย ${o.paid_business_date || o.business_date} · พนักงาน ${o.staff_name || '-'}${o.member ? ' · สมาชิก ' + o.member.member_no : ''}`),
     table([{ t: 'รายการ', f: (i) => h('div', {}, i.name, h('div', { class: 'small muted' }, i.options.map((x) => x.name).join(', '), i.note ? ' · ' + i.note : '')) }, { t: 'ประเภท', f: (i) => dineLabel(i.dine_type) },
-      { t: 'ชาม', f: (i) => (i.bowl_group ? 'ชามที่ ' + i.bowl_group : '') }, { t: 'จำนวน', r: 1, f: (i) => i.qty - i.void_qty }, { t: 'คืน', r: 1, k: 'refunded_qty' }, { t: 'ยอด', r: 1, f: (i) => baht(i.line_total) },
+      { t: (U()), f: (i) => (i.bowl_group ? (U() + 'ที่ ') + i.bowl_group : '') }, { t: 'จำนวน', r: 1, f: (i) => i.qty - i.void_qty }, { t: 'คืน', r: 1, k: 'refunded_qty' }, { t: 'ยอด', r: 1, f: (i) => baht(i.line_total) },
       can('view_cost') ? { t: 'ต้นทุน/หน่วย', r: 1, f: (i) => baht(i.cost_unit) } : null].filter(Boolean), o.items),
-    h('div', { class: 'cards', style: { marginTop: '1em' } }, kpi('ยอดสุทธิ', money(o.total)), kpi('ส่วนลด', money(o.discount)), kpi('ภาษี', money(o.tax)), kpi('จำนวนชาม', o.bowls), o.refunded_amount ? kpi('คืนเงิน', money(o.refunded_amount), `${o.refunded_bowls} ชาม`) : null,
+    h('div', { class: 'cards', style: { marginTop: '1em' } }, kpi('ยอดสุทธิ', money(o.total)), kpi('ส่วนลด', money(o.discount)), kpi('ภาษี', money(o.tax)), kpi(('จำนวน' + U()), o.bowls), o.refunded_amount ? kpi('คืนเงิน', money(o.refunded_amount), `${o.refunded_bowls} ${U()}`) : null,
       can('view_cost') && o.cost_total !== undefined ? kpi('ต้นทุน', money(o.cost_total)) : null),
     h('h4', {}, 'การชำระเงิน'), table([{ t: 'ช่องทาง', f: (p) => names[p.method] || p.method }, { t: 'สถานะ', k: 'status' }, { t: 'ยอด', r: 1, f: (p) => baht(p.amount) }, { t: 'รับ', r: 1, f: (p) => baht(p.received) }, { t: 'ทอน', r: 1, f: (p) => baht(p.change_amount) }, { t: 'เวลา', f: (p) => fmtTime(p.created_at) }], o.payments),
     o.refunds.length ? h('div', {}, h('h4', {}, 'ประวัติยกเลิก/คืนเงิน'), table([{ t: 'เวลา', f: (r) => fmtTime(r.created_at) }, { t: 'ประเภท', f: (r) => (r.kind === 'void' ? 'ยกเลิกบิล' : 'คืนเงิน') }, { t: 'เหตุผล', k: 'reason' },
-      { t: 'รายการ', f: (r) => r.items.map((i) => `${i.name}×${i.qty}`).join(', ') }, { t: 'ยอด', r: 1, f: (r) => baht(r.amount) }, { t: 'ชาม', r: 1, k: 'bowls' }], o.refunds)) : null,
+      { t: 'รายการ', f: (r) => r.items.map((i) => `${i.name}×${i.qty}`).join(', ') }, { t: 'ยอด', r: 1, f: (r) => baht(r.amount) }, { t: (U()), r: 1, k: 'bowls' }], o.refunds)) : null,
     h('h4', {}, 'ใบครัวและงานพิมพ์'), table([{ t: 'เวลา', f: (j) => fmtTime(j.created_at) }, { t: 'เอกสาร', k: 'doc_type' }, { t: 'สถานะ', k: 'status' }, { t: 'ครั้ง', k: 'attempts' }, { t: 'ข้อผิดพลาด', k: 'error' }], o.print_jobs)), { wide: true, actions: acts });
 }
 function refundDialog(o, after) {
@@ -200,17 +206,17 @@ async function reportsPage() {
     out.replaceChildren(
       h('p', { class: 'small muted' }, `${d.range.label}: วันขาย ${fmtDateOnly(d.range.from)} – ${fmtDateOnly(d.range.to)} · ช่วงเวลาจริง ${d.range.start} ถึงก่อน ${d.range.end} (${d.range.timezone})`),
       h('div', { class: 'cards' }, kpi('ยอดขายสุทธิ', money(s.net_sales), null, true), kpi('ยอดรับเงิน (สุทธิ)', money(s.payments.reduce((a, x) => a + x.net, 0))), kpi('จำนวนบิล', s.bills_paid, `ยกเลิก ${s.bills_voided}`, true),
-        kpi('จำนวนชามสุทธิ', s.bowls_net, `ขาย ${s.bowls_sold} · ยกเลิก/คืน ${s.bowls_cancelled}`, true), s.cost !== undefined ? kpi('ต้นทุนขาย', money(s.cost)) : null,
+        kpi(('จำนวน' + U() + 'สุทธิ'), s.bowls_net, `ขาย ${s.bowls_sold} · ยกเลิก/คืน ${s.bowls_cancelled}`, true), s.cost !== undefined ? kpi('ต้นทุนขาย', money(s.cost)) : null,
         s.gross_profit !== undefined ? kpi('กำไรขั้นต้น', money(s.gross_profit), `${s.margin_pct}%`) : null, kpi('ส่วนลด', money(s.discount)), kpi('คืนเงิน', money(s.refunds.amount)), kpi('ยกเลิก', money(s.voids.amount))),
       s.profit_note ? h('p', { class: 'small muted' }, s.profit_note) : null,
       card(h('div', { class: 'row between' }, h('h3', {}, 'ยอดขายสุทธิ (บาท)'), h('div', { class: 'tabs' }, [['daily', 'รายวัน'], ['monthly', 'รายเดือน']].map(([k, t]) => h('button', { class: 'tab' + (mode === k ? ' active' : ''), onclick: () => { mode = k; load(); } }, t)))),
         barChart(series, { fmt: (v) => Math.round(v).toLocaleString() }),
-        h('details', {}, h('summary', {}, 'ดูเป็นตาราง'), table([{ t: mode === 'daily' ? 'วัน' : 'เดือน', f: (x) => x.day || x.month }, { t: 'ยอดสุทธิ', r: 1, f: (x) => baht(x.net) }, { t: 'บิล', r: 1, k: 'bills' }, { t: 'ชาม', r: 1, k: 'bowls' }], mode === 'daily' ? d.daily : d.monthly))),
+        h('details', {}, h('summary', {}, 'ดูเป็นตาราง'), table([{ t: mode === 'daily' ? 'วัน' : 'เดือน', f: (x) => x.day || x.month }, { t: 'ยอดสุทธิ', r: 1, f: (x) => baht(x.net) }, { t: 'บิล', r: 1, k: 'bills' }, { t: (U()), r: 1, k: 'bowls' }], mode === 'daily' ? d.daily : d.monthly))),
       h('div', { class: 'grid2' },
         card(h('h3', {}, 'ทานที่ร้าน vs กลับบ้าน'), table([{ t: 'ประเภท', f: (x) => dineLabel(x.dine_type) }, { t: 'จำนวน', r: 1, k: 'qty' }, { t: 'ยอด', r: 1, f: (x) => baht(x.amount) }], d.by_dine)),
         card(h('h3', {}, 'ช่องทางชำระ'), table([{ t: 'ช่องทาง', f: (x) => names[x.method] || x.method }, { t: 'รับ', r: 1, f: (x) => baht(x.amount) }, { t: 'คืน', r: 1, f: (x) => baht(x.refunded) }, { t: 'สุทธิ', r: 1, f: (x) => baht(x.net) }], s.payments)),
-        card(h('h3', {}, 'แหล่งที่มา'), table([{ t: 'แหล่ง', f: (x) => SOURCE_TH[x.source] || x.source }, { t: 'บิล', r: 1, k: 'bills' }, { t: 'ชาม', r: 1, k: 'bowls' }, { t: 'ยอด', r: 1, f: (x) => baht(x.amount) }], d.by_source)),
-        card(h('h3', {}, 'พนักงาน'), table([{ t: 'ชื่อ', k: 'name' }, { t: 'บิล', r: 1, k: 'bills' }, { t: 'ชาม', r: 1, k: 'bowls' }, { t: 'ยอด', r: 1, f: (x) => baht(x.amount) }], d.by_staff))),
+        card(h('h3', {}, 'แหล่งที่มา'), table([{ t: 'แหล่ง', f: (x) => SOURCE_TH[x.source] || x.source }, { t: 'บิล', r: 1, k: 'bills' }, { t: (U()), r: 1, k: 'bowls' }, { t: 'ยอด', r: 1, f: (x) => baht(x.amount) }], d.by_source)),
+        card(h('h3', {}, 'พนักงาน'), table([{ t: 'ชื่อ', k: 'name' }, { t: 'บิล', r: 1, k: 'bills' }, { t: (U()), r: 1, k: 'bowls' }, { t: 'ยอด', r: 1, f: (x) => baht(x.amount) }], d.by_staff))),
       card(h('h3', {}, 'ยอดขายแยกหมวดหมู่'), table([{ t: 'หมวด', k: 'name' }, { t: 'จำนวน', r: 1, k: 'qty' }, { t: 'ยอด', r: 1, f: (x) => baht(x.amount) }, can('view_cost') ? { t: 'ต้นทุน', r: 1, f: (x) => baht(x.cost) } : null].filter(Boolean), d.by_category)),
       card(h('h3', {}, 'ยอดขายแยกสินค้า'), table([{ t: 'สินค้า', k: 'name' }, { t: 'จำนวนสุทธิ', r: 1, k: 'qty' }, { t: 'ยอด', r: 1, f: (x) => baht(x.amount) }, can('view_cost') ? { t: 'ต้นทุน', r: 1, f: (x) => baht(x.cost) } : null,
         can('view_cost') ? { t: 'กำไรขั้นต้น', r: 1, f: (x) => baht(x.amount - x.cost) } : null].filter(Boolean), d.by_product)),

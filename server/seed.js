@@ -7,8 +7,15 @@ export async function seed({ demo = process.env.SEED_DEMO !== 'false' } = {}) {
   await seedStaff();
   if (!(await db.get('SELECT id FROM business_day_rules LIMIT 1')))
     await db.run('INSERT INTO business_day_rules(id, effective_from, cutoff, timezone, created_at) VALUES(?,?,?,?,?)', [id(), '1970-01-01', process.env.DAY_CUTOFF || '00:00', 'Asia/Bangkok', now()]);
+  if (!(await db.get('SELECT id FROM templates LIMIT 1'))) await db.run("INSERT INTO settings(key, value) VALUES('seed_v11', 'true') ON CONFLICT(key) DO NOTHING");
   for (const t of Object.keys(DOC_TYPES)) if (!(await db.get('SELECT id FROM templates WHERE doc_type = ?', [t])))
     await db.run('INSERT INTO templates(id, doc_type, name, data, is_default, updated_at) VALUES(?,?,?,?,1,?)', [id(), t, 'ค่าเริ่มต้น', S(DEFAULT_TEMPLATES[t]), now()]);
+  // v1.1: new kitchen-ticket style becomes the default once (existing custom templates are kept)
+  if (!(await db.get("SELECT key FROM settings WHERE key = 'seed_v11'"))) {
+    await db.run('UPDATE templates SET is_default = 0 WHERE doc_type = ?', ['kitchen']);
+    await db.run('INSERT INTO templates(id, doc_type, name, data, is_default, updated_at) VALUES(?,?,?,?,1,?)', [id(), 'kitchen', 'ใบครัวแบบใหม่ (ตัวใหญ่)', S(DEFAULT_TEMPLATES.kitchen), now()]);
+    await db.run("INSERT INTO settings(key, value) VALUES('seed_v11', 'true') ON CONFLICT(key) DO NOTHING");
+  }
   if (!(await db.get('SELECT id FROM terminals LIMIT 1'))) await db.run('INSERT INTO terminals(id, name, created_at) VALUES(?,?,?)', ['pos1', 'เครื่องขาย 1', now()]);
   if (!(await db.get('SELECT id FROM tiers LIMIT 1'))) {
     const tiers = [['member', 'Member', '#64748b', 0, 0, 1, 0], ['silver', 'Silver', '#94a3b8', 150000, 5, 1.2, 0], ['gold', 'Gold', '#eab308', 500000, 15, 1.5, 5], ['vip', 'VIP', '#dc2626', 1500000, 40, 2, 10]];

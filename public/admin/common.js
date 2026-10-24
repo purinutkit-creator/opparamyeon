@@ -45,7 +45,7 @@ export async function upload(file, kind = 'image') {
   const fd = new FormData(); fd.append('file', file); fd.append('kind', kind);
   return api.post('/files', fd);
 }
-export const page = (title, ...kids) => h('div', {}, h('h2', {}, title), ...kids);
+export const page = (title, ...kids) => h('div', {}, h('div', { class: 'page-head' }, h('h2', {}, title)), ...kids);
 export const card = (...kids) => h('div', { class: 'card', style: { marginBottom: '1em' } }, ...kids);
 export const kpi = (label, value, sub, hero) => h('div', { class: 'card kpi' + (hero ? ' hero' : '') }, h('div', { class: 'lbl' }, label), h('div', { class: 'val' }, value), sub ? h('div', { class: 'sub' }, sub) : null);
 export const money = (v) => baht(v) + ' ฿';

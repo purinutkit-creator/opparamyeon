@@ -8,12 +8,13 @@ export const paperDots = (paper) => (Number(paper) === 58 ? 384 : 576);
 export const FIELD_LABELS = {
   store_name: 'ชื่อร้าน', branch: 'สาขา', address: 'ที่อยู่', phone: 'เบอร์โทร', tax_id: 'เลขผู้เสียภาษี', bill_no: 'เลขบิล', queue_no: 'เลขคิว', table: 'โต๊ะ',
   customer: 'ชื่อลูกค้า', member: 'สมาชิก', staff: 'พนักงาน', datetime: 'วันเวลา', dine_type: 'ทานที่ร้าน/กลับบ้าน', order_note: 'หมายเหตุออเดอร์', bowls: 'จำนวนชาม',
-  ticket_kind: 'ประเภทใบ (ใหม่/เพิ่ม/ยกเลิก)', ticket_part: 'ใบที่/ชามที่', station: 'จุดครัว', reason: 'เหตุผล', refund_amount: 'ยอดคืน', mobile_target: 'โต๊ะ/Pick Up',
+  ticket_kind: 'ประเภทใบ (ใหม่/เพิ่ม/ยกเลิก)', received_time: 'เวลารับออเดอร์', print_time: 'เวลาพิมพ์', table_or_type: 'โต๊ะ หรือ ทานที่ร้าน/กลับบ้าน (ตัวใหญ่)',
+  pay_methods: 'ช่องทางชำระ', ticket_part: 'ใบที่/ชามที่', station: 'จุดครัว', reason: 'เหตุผล', refund_amount: 'ยอดคืน', mobile_target: 'โต๊ะ/Pick Up',
   mobile_ref: 'เลขอ้างอิง QR', mobile_expires: 'วันหมดอายุ QR', reward_name: 'ชื่อรางวัล', coupon_code: 'โค้ดคูปอง', points_used: 'แต้มที่ใช้',
 };
 export const ELEMENT_TYPES = { logo: 'โลโก้', field: 'ข้อมูลจากระบบ', text: 'ข้อความอิสระ', items: 'รายการสินค้า', totals: 'ยอดรวม', payments: 'การชำระเงิน', divider: 'เส้นคั่น',
   space: 'ช่องว่าง', image: 'รูปภาพ', barcode: 'บาร์โค้ด', qr: 'QR Code', cut: 'จุดตัดกระดาษ', shift_summary: 'สรุปรอบการขาย' };
-export const VARS = ['queue_number', 'bill_no', 'table_name', 'customer_name', 'member_name', 'total', 'store_name', 'datetime', 'staff', 'claim_url', 'mobile_url', 'footer', 'phone'];
+export const VARS = ['detail_url', 'queue_number', 'bill_no', 'table_name', 'customer_name', 'member_name', 'total', 'store_name', 'datetime', 'staff', 'claim_url', 'mobile_url', 'footer', 'phone'];
 
 const imgCache = new Map();
 function loadImage(src) {
@@ -52,7 +53,8 @@ export function wrap(ctx, text, maxW) {
 function valueOf(field, d) {
   switch (field) {
     case 'dine_type': return d.dine_label || dineLabel(d.dine_type);
-    case 'bowls': return d.bowls ? `${d.bowls} ชาม` : '';
+    case 'bowls': return d.bowls ? `${d.bowls} ${d.count_unit || 'ชาม'}` : '';
+    case 'print_time': return d.print_time_now || d.print_time || '';
     case 'refund_amount': return d.refund_amount ? `${d.refund_amount} บาท` : '';
     default: return d[field] ?? '';
   }
@@ -67,17 +69,20 @@ export async function renderDoc(tpl, data, opts = {}) {
   await Promise.all([...families].map((f) => loadFont(f)));
   const vars = { ...data, queue_number: data.queue_no, table_name: data.table_name ?? data.table, customer_name: data.customer_name ?? data.customer, member_name: data.member_name ?? data.member,
     total: data.total ?? (data.totals ? baht(data.totals.total) : '') };
+  data = { ...data, print_time_now: data.print_time_now || new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', year: '2-digit', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) };
   const warnings = [];
   const images = new Map();
   for (const e of tpl.elements) {
-    if (e.type === 'logo') images.set(e, await loadImage(data.logo));
+    // logo element: the shop logo, or any picture uploaded for this template (e.src)
+    if (e.type === 'logo' && !opts.noLogo) images.set(e, await loadImage(e.src || data.logo));
     if (e.type === 'image') images.set(e, await loadImage(e.src));
     if (e.type === 'qr') { const v = fillVars(e.value, vars); if (v) images.set(e, await qrMatrix(v)); }
   }
   const run = (ctx, draw) => {
     let y = margin;
-    const font = (e, size, weight) => { ctx.font = `${e.italic ? 'italic ' : ''}${weight || e.weight || 400} ${size}px ${familyCss(e.font || baseFamily)}`; };
-    const lh = (size) => Math.round(size * (tpl.line_height || 1.3));
+    const SC = Number(opts.scale) || 1; // per-printer enlarge/reduce
+    const font = (e, size, weight) => { ctx.font = `${e.italic ? 'italic ' : ''}${weight || e.weight || 400} ${Math.round(size * SC)}px ${familyCss(e.font || baseFamily)}`; };
+    const lh = (size) => Math.round(size * SC * (tpl.line_height || 1.3));
     const text = (str, e, { size = e.size || tpl.size || 24, weight, align = e.align || 'left', x0 = margin, w = inner, invert = false } = {}) => {
       font(e, size, weight);
       const lines = wrap(ctx, str, w - (invert ? 12 : 0));
@@ -101,7 +106,7 @@ export async function renderDoc(tpl, data, opts = {}) {
         y += lh(size);
       });
     };
-    if (data.reprint) text('** สำเนา / พิมพ์ซ้ำ **', { align: 'center' }, { size: 24, weight: 700 });
+    if (data.reprint && opts.reprintMark !== false) text('** สำเนา / พิมพ์ซ้ำ **', { align: 'center' }, { size: 24, weight: 700 });
     for (const e of tpl.elements) {
       if (e.hidden) continue;
       if (e.when && !data[e.when]) continue;
@@ -142,6 +147,24 @@ export async function renderDoc(tpl, data, opts = {}) {
           const items = data.items || [];
           const mixed = new Set(items.map((i) => i.dine_type)).size > 1;
           let lastGroup;
+          if (e.style === 'kitchen') {
+            // big "qty   item" rows like a kitchen printer: qty column on the left, options/notes indented under the name
+            const qtyW = Math.round(size * SC * 1.6);
+            items.forEach((it, idx) => {
+              if (e.group_by_bowl && it.bowl_label && it.bowl_label !== lastGroup) { text(`[ ${it.bowl_label} ]`, e, { size: Math.round(size * 0.6), weight: 800 }); lastGroup = it.bowl_label; }
+              const y0 = y;
+              font(e, size, e.weight || 700);
+              if (draw) { ctx.fillStyle = '#000'; ctx.textBaseline = 'top'; ctx.fillText(String(it.qty), margin, y + (lh(size) - size * SC) / 2); }
+              const take = e.show_dine && it.dine_type === 'takeaway' && data.dine_type !== 'takeaway' ? ' (กลับบ้าน)' : '';
+              text(it.name + take, e, { size, weight: e.weight || 700, x0: margin + qtyW, w: inner - qtyW });
+              if (e.show_options !== false) for (const o of it.options || []) text(`• ${o.group ? o.group + ': ' : ''}${o.name}`, e, { size: Math.round(size * 0.6), weight: 600, x0: margin + qtyW, w: inner - qtyW });
+              if (e.show_note !== false && it.note) text(`⚠ ${it.note}`, e, { size: Math.round(size * 0.62), weight: 800, x0: margin + qtyW, w: inner - qtyW, invert: true });
+              if (y === y0) y += lh(size);
+              if (e.item_divider && idx < items.length - 1 && draw) { ctx.fillStyle = '#000'; for (let x = margin; x < margin + inner; x += 14) ctx.fillRect(x, y + 6, 8, 2); }
+              if (e.item_divider && idx < items.length - 1) y += 14;
+            });
+            break;
+          }
           for (const it of items) {
             if (e.group_by_bowl && it.bowl_label && it.bowl_label !== lastGroup) { text(`[ ${it.bowl_label} ]`, e, { size: Math.round(size * 0.85), weight: 800 }); lastGroup = it.bowl_label; }
             const price = e.show_price !== false && it.line_total !== null && it.line_total !== undefined ? baht(it.line_total) : '';

@@ -11,6 +11,7 @@ const st = {
   settings: null, staff: null, terminal: null, shift: null, catalog: null, cat: 'all', q: '',
   cart: null, sock: null, host: null, pending: { mobile: 0, verify: 0 }, bc: null, lastActivity: Date.now(), locked: false,
 };
+const U = () => (st.settings && st.settings.sale.count_unit) || 'ชาม'; // unit name (ชาม/จาน/ที่…) set by the shop
 const can = (p) => st.staff && st.staff.perms.includes(p);
 const newCart = () => ({ cart_id: uid(), order_id: null, version: null, lines: [], dine_type: 'dine_in', table_id: null, customer_name: '', note: '', member: null, discount: null, idem: uid() });
 
@@ -75,7 +76,7 @@ async function connect() {
   s.on('mobile:new_order', (o) => {
     st.pending.mobile++; renderTop();
     playSound(st.settings.sound, 'new_order', 'pos');
-    toast(`📱 ออเดอร์ใหม่ ${o.customer_name || o.table_name || ''} · ${baht(o.total)} บาท · ${o.bowls} ชาม · ${o.pay_mode === 'cashier' ? 'รอชำระที่แคชเชียร์' : 'ชำระออนไลน์'}`, 'warn', 8000);
+    toast(`📱 ออเดอร์ใหม่ ${o.customer_name || o.table_name || ''} · ${baht(o.total)} บาท · ${o.bowls} ${U()} · ${o.pay_mode === 'cashier' ? 'รอชำระที่แคชเชียร์' : 'ชำระออนไลน์'}`, 'warn', 8000);
   });
   s.on('mobile:slip', (o) => { st.pending.mobile++; renderTop(); playSound(st.settings.sound, 'new_order', 'pos'); toast(`🧾 ลูกค้าส่งสลิปโอนเงิน บิล ${o.bill_no} รอตรวจสอบ`, 'warn', 8000); });
   s.on('mobile:paid', (o) => toast(`✅ รับชำระออนไลน์แล้ว บิล ${o.bill_no}`, 'ok'));
@@ -129,11 +130,23 @@ function renderTop() {
     h('button', { class: 'btn', onclick: shiftDialog }, '💰 รอบการขาย'),
     h('button', { class: 'btn', onclick: devicesDialog }, '🖨️ อุปกรณ์'),
     can('cut_paper') && h('button', { class: 'btn', onclick: manualCut }, '✂️ ตัดกระดาษ'),
-    h('a', { class: 'btn', href: '/guide/', target: '_blank' }, '📖 คู่มือ'),
-    (can('view_sales') || can('settings')) && h('a', { class: 'btn', href: '/admin/', target: '_blank' }, '📊 จัดการร้าน'),
-    h('button', { class: 'btn', onclick: lockNow, title: 'ล็อกหน้าจอ' }, '🔒'),
-    h('button', { class: 'btn ghost', onclick: logout }, 'ออก'),
+    h('button', { class: 'btn', onclick: moreMenu, 'aria-label': 'เมนูเพิ่มเติม' }, '⋯'),
     h('span', { class: 'version' }, 'v' + VERSION));
+}
+
+// secondary actions live in a small menu so the top bar stays readable on tablets
+function moreMenu(e) {
+  e.stopPropagation();
+  const old = $('.menu-pop'); if (old) return old.remove();
+  const pop = h('div', { class: 'menu-pop', role: 'menu' },
+    h('a', { href: '/guide/', target: '_blank' }, '📖 คู่มือการใช้งาน'),
+    (can('view_sales') || can('settings')) && h('a', { href: '/admin/', target: '_blank' }, '📊 เว็บไซต์จัดการร้าน'),
+    h('a', { href: '/kitchen/', target: '_blank' }, '👩‍🍳 จอครัว'),
+    h('button', { onclick: () => { pop.remove(); lockNow(); } }, '🔒 ล็อกหน้าจอ'),
+    h('button', { onclick: logout }, '🚪 ออกจากระบบ / สลับผู้ใช้'),
+    h('div', { class: 'version', style: { padding: '.4em .8em' } }, `${st.staff.name} · ${st.terminal.name} · เวอร์ชัน ${VERSION}`));
+  document.body.append(pop);
+  setTimeout(() => document.addEventListener('click', () => pop.remove(), { once: true }));
 }
 
 function renderMenu() {
@@ -165,7 +178,7 @@ function renderGrid() {
   g.replaceChildren(...(list.length ? list.map((p) => h('button', { class: 'prod' + (p.sold_out ? ' out' : ''), onclick: () => pickProduct(p), oncontextmenu: (e) => { e.preventDefault(); soldOutToggle(p); } },
     h('div', { class: 'img', style: p.image ? { backgroundImage: `url(${p.image})` } : {} }, p.image ? '' : '🍜'),
     h('div', { class: 'nm' }, p.name, p.sold_out ? h('span', { class: 'badge bad' }, ' หมด') : null),
-    h('div', { class: 'pr' }, baht(p.price) + ' ฿', p.bowl_count ? h('span', { class: 'muted small' }, ` · ${p.bowl_count} ชาม`) : null))) : [h('div', { class: 'empty' }, 'ไม่พบสินค้า')]));
+    h('div', { class: 'pr' }, baht(p.price) + ' ฿', p.bowl_count ? h('span', { class: 'muted small' }, ` · ${p.bowl_count} ${U()}`) : null))) : [h('div', { class: 'empty' }, 'ไม่พบสินค้า')]));
 }
 async function soldOutToggle(p) {
   if (!(await confirmBox(p.sold_out ? 'เปิดขาย' : 'ตั้งเป็นสินค้าหมด', `${p.name}`, 'ยืนยัน'))) return;
@@ -268,12 +281,12 @@ function renderCart() {
       t.discount ? row('ส่วนลด' + (t.tierAmt ? ' (รวมสิทธิ์ Tier)' : ''), '-' + baht(t.discount)) : null,
       t.packaging ? row('ค่าบรรจุภัณฑ์', baht(t.packaging)) : null,
       t.tax ? row(st.settings.sale.tax_inclusive ? 'VAT (รวมในราคา)' : 'VAT', baht(t.tax)) : null,
-      row(h('span', {}, 'จำนวนชาม ', h('strong', {}, t.bowls)), h('span', { class: 'grand num' }, baht(t.total) + ' ฿'))),
+      row(h('span', {}, ('จำนวน' + U() + ' '), h('strong', {}, t.bowls)), h('span', { class: 'grand num' }, baht(t.total) + ' ฿'))),
     h('div', { class: 'actions' },
       h('button', { class: 'btn', onclick: () => saveOrder('hold'), disabled: !cart.lines.length }, '⏸ พักบิล'),
       h('button', { class: 'btn', onclick: () => saveOrder('send'), disabled: !cart.lines.length }, '🔥 ส่งครัว'),
       h('button', { class: 'btn', onclick: discountDialog, disabled: !cart.lines.length || !can('discount') }, '％ ส่วนลด'),
-      h('button', { class: 'btn', onclick: bowlPicker }, `🥣 ชาม ${st.activeBowl || '-'}`),
+      h('button', { class: 'btn', onclick: bowlPicker }, `🥣 ${U()} ${st.activeBowl || '-'}`),
       h('button', { class: 'btn primary pay', onclick: payDialog, disabled: !cart.lines.length }, `ชำระเงิน ${baht(t.total)} ฿`)));
 }
 const row = (a, b) => h('div', { class: 'r' }, h('span', {}, a), h('span', { class: 'num' }, b));
@@ -290,7 +303,7 @@ function lineView(l) {
     h('div', { class: 'ctl' },
       h('div', { class: 'qty' }, h('button', { onclick: () => setQty(l.qty - 1), 'aria-label': 'ลด' }, '−'), h('span', {}, l.qty), h('button', { onclick: () => setQty(l.qty + 1), 'aria-label': 'เพิ่ม' }, '+')),
       h('button', { class: 'chip' + (l.dine_type === 'takeaway' ? ' takeaway' : ''), disabled: !!sent, onclick: () => { l.dine_type = l.dine_type === 'takeaway' ? 'dine_in' : 'takeaway'; saveCart(); renderCart(); } }, l.dine_type === 'takeaway' ? 'กลับบ้าน' : 'ทานที่ร้าน'),
-      h('button', { class: 'chip bowl', disabled: !!sent, onclick: () => assignBowl(l) }, l.bowl_group ? `ชามที่ ${l.bowl_group}` : 'ไม่ระบุชาม'),
+      h('button', { class: 'chip bowl', disabled: !!sent, onclick: () => assignBowl(l) }, l.bowl_group ? `${U()}ที่ ${l.bowl_group}` : ('ไม่ระบุ' + U())),
       !sent && product(l.product_id) && product(l.product_id).option_groups.length ? h('button', { class: 'chip', onclick: () => optionsDialog(product(l.product_id), l) }, 'แก้ไข') : null,
       !sent ? h('button', { class: 'chip', onclick: async () => { const v = await promptBox('หมายเหตุรายการ', { value: l.note, required: false }); if (v !== null) { l.note = v; saveCart(); renderCart(); } } }, 'หมายเหตุ') : null,
       sent ? h('span', { class: 'chip sent' }, `ส่งครัวแล้ว ${sent}`) : null,
@@ -299,13 +312,13 @@ function lineView(l) {
 async function assignBowl(l) {
   const max = nextBowlGroup();
   const opts = [null, ...Array.from({ length: max }, (_, i) => i + 1)];
-  const body = h('div', { class: 'row' }, opts.map((g) => h('button', { class: 'btn big', onclick: () => { l.bowl_group = g; saveCart(); renderCart(); m.close(); } }, g ? `ชามที่ ${g}${g === max ? ' (ใหม่)' : ''}` : 'ไม่ระบุ')));
-  const m = modal('จัดเข้าชาม: ' + l.name, h('div', {}, h('p', { class: 'muted' }, 'สินค้าในชามเดียวกันนับเป็น 1 ชาม และพิมพ์อยู่ในใบครัวเดียวกัน'), body));
+  const body = h('div', { class: 'row' }, opts.map((g) => h('button', { class: 'btn big', onclick: () => { l.bowl_group = g; saveCart(); renderCart(); m.close(); } }, g ? `${U()}ที่ ${g}${g === max ? ' (ใหม่)' : ''}` : 'ไม่ระบุ')));
+  const m = modal(('จัดเข้า' + U() + ': ') + l.name, h('div', {}, h('p', { class: 'muted' }, ('สินค้าใน' + U() + 'เดียวกันนับเป็น 1 ' + U() + ' และพิมพ์อยู่ในใบครัวเดียวกัน')), body));
 }
 function bowlPicker() {
   const max = nextBowlGroup();
-  const m = modal('ชามที่กำลังเพิ่มท็อปปิ้ง', h('div', {}, h('p', { class: 'muted' }, 'ท็อปปิ้งที่แตะเพิ่มหลังจากนี้จะถูกจัดเข้าชามที่เลือก'),
-    h('div', { class: 'row' }, [null, ...Array.from({ length: max - 1 }, (_, i) => i + 1)].map((g) => h('button', { class: 'btn big', onclick: () => { st.activeBowl = g; renderCart(); m.close(); } }, g ? `ชามที่ ${g}` : 'ไม่ระบุ')))));
+  const m = modal((U() + 'ที่กำลังเพิ่มท็อปปิ้ง'), h('div', {}, h('p', { class: 'muted' }, ('ท็อปปิ้งที่แตะเพิ่มหลังจากนี้จะถูกจัดเข้า' + U() + 'ที่เลือก')),
+    h('div', { class: 'row' }, [null, ...Array.from({ length: max - 1 }, (_, i) => i + 1)].map((g) => h('button', { class: 'btn big', onclick: () => { st.activeBowl = g; renderCart(); m.close(); } }, g ? `${U()}ที่ ${g}` : 'ไม่ระบุ')))));
 }
 async function pickTable() {
   st.tables = await api.get('/tables');
@@ -383,21 +396,23 @@ function payDialog() {
   const pays = []; // {method, amount, received}
   let method = 'cash';
   const amt = h('input', { class: 'input', inputmode: 'decimal', style: { fontSize: '1.6em', textAlign: 'right' } });
-  const printReceipt = h('input', { type: 'checkbox', checked: true });
-  const printQueue = h('input', { type: 'checkbox' });
+  const printReceipt = h('input', { type: 'checkbox', checked: (st.settings.print || {}).auto_receipt !== false });
+  const printQueue = h('input', { type: 'checkbox', checked: !!(st.settings.print || {}).auto_queue });
+  const P = st.settings.print || {};
   const printMobile = h('input', { type: 'checkbox', disabled: !can('print_mobile_qr') });
+  const printMerchant = h('input', { type: 'checkbox', checked: !!P.auto_merchant });
   const right = h('div'); const left = h('div');
   const paid = () => pays.reduce((s, p) => s + p.amount, 0);
   const remaining = () => Math.max(0, t.total - paid());
   const drawLeft = () => {
     const rem = remaining();
     left.replaceChildren(h('div', { class: 'muted' }, 'ยอดชำระ'), h('div', { class: 'bigsum num' }, baht(t.total), ' ฿'),
-      h('div', { class: 'muted small', style: { textAlign: 'center' } }, `${t.bowls} ชาม · ${dineLabel(orderDineType(st.cart.lines))}`),
+      h('div', { class: 'muted small', style: { textAlign: 'center' } }, `${t.bowls} ${U()} · ${dineLabel(orderDineType(st.cart.lines))}`),
       pays.length ? h('div', { class: 'card', style: { margin: '.6em 0' } }, pays.map((p, i) => row(h('span', {}, methods.find((m) => m.id === p.method).name, ' ', h('button', { class: 'chip', onclick: () => { pays.splice(i, 1); drawLeft(); drawRight(); } }, 'ลบ')),
         baht(p.method === 'cash' ? p.received : p.amount))), row('คงเหลือ', baht(rem))) : null,
       h('div', { class: 'pay-methods' }, methods.map((m) => h('button', { class: 'btn big' + (method === m.id ? ' on' : ''), onclick: () => { method = m.id; amt.value = (remaining() / 100).toFixed(2); drawLeft(); drawRight(); } }, m.name))),
       h('div', { style: { marginTop: '1em' } }, h('label', { class: 'switch' }, printReceipt, 'พิมพ์ใบเสร็จ'), ' ', h('label', { class: 'switch' }, printQueue, 'พิมพ์ใบเลขคิว'), ' ',
-        h('label', { class: 'switch' }, printMobile, 'พิมพ์ใบ Mobile Ordering')));
+        h('label', { class: 'switch' }, printMerchant, 'พิมพ์ใบสรุปร้านค้า'), ' ', h('label', { class: 'switch' }, printMobile, 'พิมพ์ใบ Mobile Ordering')));
   };
   const drawRight = () => {
     const rem = remaining();
@@ -434,7 +449,7 @@ function payDialog() {
         else { if (v < rem) { toast('ยอดไม่ครบ กรุณาเพิ่มช่องทางชำระ', 'warn'); return false; } list.push({ method, amount: rem }); }
       }
       const payload = { idempotency_key: idem, order_id: st.cart.order_id, cart: cartPayload(), payments: list.map((p) => ({ ...p, amount: p.amount, received: p.received })),
-        print: { receipt: printReceipt.checked, queue: printQueue.checked, mobile_qr: printMobile.checked }, approver: st.cart.approver };
+        print: { receipt: printReceipt.checked, queue: printQueue.checked, merchant: printMerchant.checked, mobile_qr: printMobile.checked }, approver: st.cart.approver };
       try {
         const o = await api.post('/orders/checkout', payload);
         done(o);
@@ -451,7 +466,7 @@ function done(o) {
   modal('ชำระเงินสำเร็จ', h('div', { style: { textAlign: 'center' } }, h('div', { class: 'muted' }, 'เลขคิว'), h('div', { class: 'qbig' }, o.queue_no || '-'),
     h('div', { class: 'badge ' + (o.dine_type === 'takeaway' ? 'takeaway' : 'info'), style: { fontSize: '1.2em' } }, dineLabel(o.dine_type)),
     change ? h('div', { class: 'bigsum', style: { color: 'var(--ok)', marginTop: '.4em' } }, 'เงินทอน ', baht(change), ' ฿') : null,
-    h('p', { class: 'muted' }, `บิล ${o.bill_no} · ${o.bowls} ชาม`), o.claim_token ? h('p', { class: 'small muted' }, 'ใบเสร็จมี QR ให้ลูกค้าสมัครสมาชิก/รับแต้มย้อนหลัง') : null),
+    h('p', { class: 'muted' }, `บิล ${o.bill_no} · ${o.bowls} ${U()}`), o.claim_token ? h('p', { class: 'small muted' }, 'ใบเสร็จมี QR ให้ลูกค้าสมัครสมาชิก/รับแต้มย้อนหลัง') : null),
   { onClose: () => setTimeout(() => pushDisplay({ phase: 'idle' }), 6000), actions: [{ label: 'บิลถัดไป', class: 'primary big', onClick: () => {} }] });
   st.cart = newCart(); st.activeBowl = null; saveCart(); renderCart();
   st.shift && api.get('/shifts/current').then((s) => { st.shift = s; }).catch(() => {});
@@ -563,7 +578,7 @@ async function ordersDialog() {
       h('div', {}, h('div', {}, h('span', { class: 'badge ' + (o.status === 'paid' ? 'ok' : o.status === 'void' ? 'bad' : 'warn') }, STATUS_TH[o.status]), ' ',
         h('span', { class: 'badge' }, SOURCE_TH[o.source] || o.source), ' ', h('span', { class: 'badge ' + (o.dine_type === 'takeaway' ? 'takeaway' : 'info') }, dineLabel(o.dine_type)),
         o.verify_status === 'pending' ? h('span', { class: 'badge warn' }, ' มีสลิปรอตรวจ') : null, o.pay_mode === 'cashier' && o.status === 'pending_payment' ? h('span', { class: 'badge warn' }, ' รอชำระที่แคชเชียร์') : null),
-        h('div', { class: 'small' }, [o.table_name && 'โต๊ะ ' + o.table_name, o.customer_name, `${o.bowls} ชาม`, fmtTime(o.created_at), o.prep_status !== 'none' && PREP_TH[o.prep_status]].filter(Boolean).join(' · '))),
+        h('div', { class: 'small' }, [o.table_name && 'โต๊ะ ' + o.table_name, o.customer_name, `${o.bowls} ${U()}`, fmtTime(o.created_at), o.prep_status !== 'none' && PREP_TH[o.prep_status]].filter(Boolean).join(' · '))),
       h('div', { class: 'row end' }, h('strong', { class: 'num' }, baht(o.total)), h('button', { class: 'btn primary', onclick: () => openOrder(o.id, dlg) }, 'เปิด')))) : [h('div', { class: 'empty' }, 'ไม่มีรายการ')]));
   };
   const dlg = modal('บิลและออเดอร์', body, { wide: true });
@@ -577,7 +592,8 @@ async function openOrder(id, parent) {
   if (o.status === 'pending_payment' && o.verify_status === 'pending' && can('verify_payment')) acts.push({ label: '✓ สลิปถูกต้อง รับชำระ', class: 'ok', onClick: async () => { await api.post(`/orders/${o.id}/verify-slip`, { approve: true }); toast('ยืนยันรับเงินแล้ว', 'ok'); parent && parent.close(); } },
     { label: 'สลิปไม่ถูกต้อง', onClick: async () => { const reason = await promptBox('เหตุผล', { label: 'แจ้งลูกค้า' }); if (reason) await api.post(`/orders/${o.id}/verify-slip`, { approve: false, reason }); } });
   if (o.status === 'paid') {
-    acts.push({ label: '🖨 พิมพ์ใบเสร็จซ้ำ', close: false, onClick: async () => { await api.post(`/orders/${o.id}/print`, { doc: 'receipt' }); toast('ส่งพิมพ์ซ้ำแล้ว (ใช้เลขคิวเดิม)', 'ok'); } });
+    acts.push({ label: '🖨 พิมพ์ใบเสร็จซ้ำ', close: false, onClick: async () => { await api.post(`/orders/${o.id}/print`, { doc: 'receipt' }); toast('ส่งพิมพ์ซ้ำแล้ว (ใช้เลขคิวเดิม)', 'ok'); } },
+      { label: '🧾 ใบสรุปร้านค้า', close: false, onClick: async () => { await api.post(`/orders/${o.id}/print`, { doc: 'merchant' }); toast('ส่งพิมพ์ใบสรุปร้านค้าแล้ว', 'ok'); } });
     if (can('print_mobile_qr')) acts.push({ label: '📱 พิมพ์ใบ Mobile Ordering', close: false, onClick: async () => { await api.post(`/orders/${o.id}/print`, { doc: 'mobile_qr' }); toast('ส่งพิมพ์ใบ QR แล้ว', 'ok'); } });
     acts.push({ label: 'คืนเงิน', onClick: () => refundDialog(o) }, { label: 'ยกเลิกบิล', class: 'danger', onClick: () => voidDialog(o) });
     if (o.source === 'mobile_pickup' && o.prep_status !== 'done') acts.push({ label: 'ลูกค้ารับอาหารแล้ว', class: 'ok', onClick: async () => { await api.post(`/orders/${o.id}/complete`); toast('ปิดรายการ Pick Up แล้ว', 'ok'); } });
@@ -586,7 +602,7 @@ async function openOrder(id, parent) {
     h('p', {}, h('span', { class: 'badge' }, STATUS_TH[o.status]), ' ', h('span', { class: 'badge' }, SOURCE_TH[o.source]), ' ', dineLabel(o.dine_type), o.table_name ? ` · โต๊ะ ${o.table_name}` : '', o.customer_name ? ` · ${o.customer_name}` : ''),
     h('table', { class: 'table' }, h('tbody', {}, o.items.map((i) => h('tr', {}, h('td', {}, `${i.qty - i.void_qty} x ${i.name}`, h('div', { class: 'small muted' }, i.options.map((x) => x.name).join(', '), i.refunded_qty ? ` · คืนแล้ว ${i.refunded_qty}` : '', i.void_qty ? ` · ยกเลิก ${i.void_qty}` : '')),
       h('td', { class: 'r num' }, baht(i.line_total)))))),
-    row('ยอดสุทธิ', baht(o.total)), o.refunded_amount ? row('คืนเงินแล้ว', '-' + baht(o.refunded_amount)) : null, row('จำนวนชาม', o.bowls),
+    row('ยอดสุทธิ', baht(o.total)), o.refunded_amount ? row('คืนเงินแล้ว', '-' + baht(o.refunded_amount)) : null, row(('จำนวน' + U()), o.bowls),
     o.payments.length ? h('p', { class: 'small' }, 'ชำระ: ', o.payments.map((p) => `${p.method} ${baht(p.amount)}${p.status !== 'paid' ? ' (' + p.status + ')' : ''}`).join(', ')) : null,
     o.payments.some((p) => p.slip_file) ? h('p', {}, o.payments.filter((p) => p.slip_file).map((p) => h('a', { href: p.slip_file, target: '_blank' }, 'ดูสลิป'))) : null,
     h('details', {}, h('summary', {}, 'ประวัติการส่งครัว/พิมพ์'), h('ul', { class: 'small' }, o.print_jobs.map((j) => h('li', {}, `${fmtTime(j.created_at)} · ${j.doc_type} · ${JOB_TH[j.status] || j.status}${j.error ? ' · ' + j.error : ''} `,
@@ -613,7 +629,7 @@ function refundDialog(o) {
   const restock = h('input', { type: 'checkbox', checked: true });
   const idem = uid();
   modal('คืนเงินบางรายการ · ' + o.bill_no, h('div', {}, h('table', { class: 'table' }, h('tbody', {}, rows)), h('label', { class: 'field' }, 'เหตุผล', reason),
-    h('label', { class: 'switch' }, restock, 'คืนสต็อก/วัตถุดิบ'), h('p', { class: 'small muted' }, 'ระบบคำนวณยอดคืนจากราคาในบิล (หักส่วนลดตามสัดส่วน) และปรับจำนวนชาม แต้มสมาชิก ให้อัตโนมัติ')), { actions: [
+    h('label', { class: 'switch' }, restock, 'คืนสต็อก/วัตถุดิบ'), h('p', { class: 'small muted' }, ('ระบบคำนวณยอดคืนจากราคาในบิล (หักส่วนลดตามสัดส่วน) และปรับจำนวน' + U() + ' แต้มสมาชิก ให้อัตโนมัติ'))), { actions: [
     { label: 'ยกเลิก', onClick: () => {} },
     { label: 'คืนเงิน', class: 'danger', onClick: async () => {
       const items = [...qty.entries()].filter(([, q]) => q > 0).map(([item_id, q]) => ({ item_id, qty: q }));
@@ -621,7 +637,7 @@ function refundDialog(o) {
       const body = { items, reason: reason.value, restock: restock.checked, idempotency_key: idem };
       if (!can('refund')) { const ap = await approverDialog('refund'); if (!ap) return false; body.approver = ap; }
       const r = await api.post(`/orders/${o.id}/refund`, body);
-      toast(`คืนเงิน ${baht(r.amount)} บาท · ${r.bowls} ชาม`, 'ok');
+      toast(`คืนเงิน ${baht(r.amount)} บาท · ${r.bowls} ${U()}`, 'ok');
     } }] });
 }
 
@@ -659,7 +675,7 @@ async function shiftDialog() {
   const diffEl = h('div', { class: 'bigsum' });
   counted.addEventListener('input', () => { const d = toSatang(counted.value) - s.expected_cash; diffEl.textContent = counted.value ? (d === 0 ? 'ตรงพอดี' : d > 0 ? `เกิน ${baht(d)}` : `ขาด ${baht(-d)}`) : ''; diffEl.style.color = d === 0 ? 'var(--ok)' : 'var(--bad)'; });
   const body = h('div', { class: 'pay-grid' }, h('div', {},
-    row('เปิดรอบ', fmtTime(s.opened_at)), row('เงินสดเริ่มต้น', baht(s.opening_cash)), row('จำนวนบิล', s.bills), row('จำนวนชามสุทธิ', s.net_bowls), row('ยอดขายสุทธิ', baht(s.net_sales)),
+    row('เปิดรอบ', fmtTime(s.opened_at)), row('เงินสดเริ่มต้น', baht(s.opening_cash)), row('จำนวนบิล', s.bills), row(('จำนวน' + U() + 'สุทธิ'), s.net_bowls), row('ยอดขายสุทธิ', baht(s.net_sales)),
     row('ส่วนลด', baht(s.discount)), row('ยกเลิก', `${s.voids.count} บิล ${baht(s.voids.amount)}`), row('คืนเงิน', `${s.refunds.count} ครั้ง ${baht(s.refunds.amount)}`), h('hr'),
     ...s.payments.map((p) => row(names[p.method] || p.method, baht(p.amount))), row('เงินเข้าลิ้นชัก', baht(s.cash_in)), row('เงินออกลิ้นชัก', baht(s.cash_out)),
     h('div', { class: 'r', style: { display: 'flex', justifyContent: 'space-between', fontWeight: 800 } }, h('span', {}, 'เงินสดที่ควรมี'), h('span', {}, baht(s.expected_cash))),
@@ -694,7 +710,8 @@ async function devicesDialog() {
       h('div', { class: 'row' }, h('button', { class: 'btn sm primary', onclick: async () => { try { const r = await pairPrinter(p); await api.put(`/printers/${p.id}`, { host_terminal_id: st.terminal.id }); toast('เชื่อมต่อแล้ว: ' + r.name, 'ok'); st.host.reload(); draw(); reportDevice(); } catch (e) { errToast(e); } } }, isLinkedHere(p.id) ? 'เชื่อมต่อใหม่' : 'ค้นหา/เชื่อมต่อ'),
         isLinkedHere(p.id) && h('button', { class: 'btn sm', onclick: () => testPrint(p, 'all').then((r) => toast('ทดสอบ: ' + (JOB_TH[r.status] || r.status), 'ok')).catch(errToast) }, 'ทดสอบไทย/โลโก้/QR'),
         isLinkedHere(p.id) && h('button', { class: 'btn sm', onclick: () => testPrint(p, 'cut').then(() => toast('สั่งตัดกระดาษแล้ว', 'ok')).catch(errToast) }, 'ทดสอบตัด'),
-        isLinkedHere(p.id) && p.buzzer ? h('button', { class: 'btn sm', onclick: () => testPrint(p, 'beep').catch(errToast) }, 'ทดสอบ buzzer') : null,
+        isLinkedHere(p.id) ? h('button', { class: 'btn sm', onclick: () => testPrint(p, 'beep').then(() => toast('ส่งคำสั่งเสียงแล้ว — ถ้าไม่ดัง แสดงว่ารุ่นนี้ไม่มี buzzer', 'ok', 5000)).catch(errToast) }, '🔔 ทดสอบเสียงเครื่องพิมพ์') : null,
+        isLinkedHere(p.id) && p.options && p.options.cash_drawer ? h('button', { class: 'btn sm', onclick: () => testPrint(p, 'drawer').catch(errToast) }, '💵 เปิดลิ้นชัก') : null,
         isLinkedHere(p.id) && h('button', { class: 'btn sm ghost', onclick: () => { unpairPrinter(p.id); draw(); } }, 'ยกเลิกเชื่อมต่อ'))))),
     can('manage_printers') && h('button', { class: 'btn', onclick: () => addPrinterDialog(() => devicesDialog()) }, '+ เพิ่มเครื่องพิมพ์'),
     h('div', { class: 'row', style: { marginTop: '.5em' } }, h('button', { class: 'btn sm', onclick: () => playSound({ ...st.settings.sound, enabled: true, output: ['pos'] }, 'printed', 'pos') }, '🔊 ทดสอบเสียงพิมพ์สำเร็จ'),
@@ -713,11 +730,12 @@ function addPrinterDialog(after) {
   const addr = h('input', { class: 'input', placeholder: '192.168.1.100 หรือ /dev/usb/lp0' });
   const port = h('input', { class: 'input', value: '9100', type: 'number' });
   const paper = h('select', { class: 'input' }, h('option', { value: 80 }, '80 มม.'), h('option', { value: 58 }, '58 มม.'));
-  const roles = ['receipt', 'kitchen', 'queue', 'mobile_qr', 'refund', 'shift', 'redeem'].map((r) => [r, h('input', { type: 'checkbox', checked: r !== 'kitchen' })]);
+  // one printer does everything by default (receipt, kitchen ticket, …) so kitchen tickets print on every order
+  const roles = ['receipt', 'kitchen', 'merchant', 'queue', 'mobile_qr', 'refund', 'shift', 'redeem'].map((r) => [r, h('input', { type: 'checkbox', checked: !['queue', 'merchant'].includes(r) })]);
   modal('เพิ่มเครื่องพิมพ์', h('div', {}, h('label', { class: 'field' }, 'ชื่อ', name), h('label', { class: 'field' }, 'การเชื่อมต่อ', conn), h('label', { class: 'field' }, 'IP / Path', addr), h('label', { class: 'field' }, 'Port', port),
-    h('label', { class: 'field' }, 'ขนาดกระดาษ', paper), h('div', { class: 'row' }, roles.map(([r, cb]) => h('label', { class: 'switch' }, cb, { receipt: 'ใบเสร็จ', kitchen: 'ใบครัว', queue: 'ใบคิว', mobile_qr: 'ใบ Mobile', refund: 'ใบยกเลิก/คืนเงิน', shift: 'สรุปรอบ', redeem: 'แลกรางวัล' }[r]))),
+    h('label', { class: 'field' }, 'ขนาดกระดาษ', paper), h('div', { class: 'row' }, roles.map(([r, cb]) => h('label', { class: 'switch' }, cb, { receipt: 'ใบเสร็จ', kitchen: 'ใบครัว', merchant: 'ใบสรุปร้านค้า', queue: 'ใบคิว', mobile_qr: 'ใบ Mobile', refund: 'ใบยกเลิก/คืนเงิน', shift: 'สรุปรอบ', redeem: 'แลกรางวัล' }[r]))),
     h('p', { class: 'small muted' }, 'ตั้งค่าละเอียด (สำเนา ระยะขอบ การตัด จุดครัว แม่แบบ) ได้ที่เว็บไซต์จัดการร้าน > เครื่องพิมพ์')), { actions: [{ label: 'บันทึก', class: 'primary', onClick: async () => {
-    await api.post('/printers', { name: name.value, conn: conn.value, address: addr.value, port: Number(port.value), paper: Number(paper.value), roles: roles.filter(([, cb]) => cb.checked).map(([r]) => r), host_terminal_id: st.terminal.id });
+    await api.post('/printers', { name: name.value, conn: conn.value, address: addr.value, port: Number(port.value), paper: Number(paper.value), roles: roles.filter(([, cb]) => cb.checked).map(([r]) => r), host_terminal_id: st.terminal.id, options: { buzzer_mode: 'all' } });
     toast('เพิ่มแล้ว กด "ค้นหา/เชื่อมต่อ" เพื่อจับคู่กับเครื่องจริง', 'ok'); after && after();
   } }] });
 }
@@ -770,7 +788,10 @@ function setupScanner() {
       if (buf.length >= 4 && !inField) {
         e.preventDefault();
         const code = buf; buf = '';
-        if (!addByCode(code)) { if (/^[A-Z0-9]{8,12}$/i.test(code) && can('redeem')) couponDialog(code.toUpperCase()); else toast('ไม่พบสินค้าจากบาร์โค้ด ' + code, 'error'); }
+        if (addByCode(code)) return;
+        // bill barcode from the merchant copy / receipt → open that bill
+        if (/^[A-Z]+\d{6}-\d{4}$/i.test(code)) { api.get('/orders/by-bill/' + encodeURIComponent(code)).then((r) => openOrder(r.id)).catch(errToast); return; }
+        if (/^[A-Z0-9]{8,12}$/i.test(code) && can('redeem')) couponDialog(code.toUpperCase()); else toast('ไม่พบสินค้าจากบาร์โค้ด ' + code, 'error');
       }
       return;
     }

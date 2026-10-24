@@ -23,6 +23,12 @@ r.get('/orders', staffAuth(), ah(async (req, res) => {
     ORDER BY o.created_at DESC LIMIT 200`, st);
   res.json(rows);
 }));
+// bill barcode on the merchant copy / receipt → look the bill up
+r.get('/orders/by-bill/:billNo', staffAuth(), ah(async (req, res) => {
+  const o = await db.get('SELECT id FROM orders WHERE bill_no = ?', [String(req.params.billNo).trim().toUpperCase()]);
+  if (!o) throw notFound('ไม่พบบิล ' + req.params.billNo);
+  res.json({ id: o.id });
+}));
 r.get('/orders/:id', staffAuth(), ah(async (req, res) => {
   const o = await orderFull(req.params.id);
   if (!can(req.staff, 'view_cost')) { delete o.cost_total; delete o.refunded_cost; o.items.forEach((i) => delete i.cost_unit); }
@@ -87,7 +93,7 @@ r.post('/orders/:id/print', staffAuth(), ah(async (req, res) => {
     const { issueMobileForOrder } = await import('./mobile.js');
     return res.json(await issueMobileForOrder(o.id, req.staff, req.body.mobile || {}));
   }
-  if (!['receipt', 'queue'].includes(doc)) throw bad('ประเภทเอกสารไม่ถูกต้อง');
+  if (!['receipt', 'queue', 'merchant'].includes(doc)) throw bad('ประเภทเอกสารไม่ถูกต้อง');
   const prev = await db.get('SELECT id FROM print_jobs WHERE ref_id = ? AND doc_type = ? ORDER BY seq LIMIT 1', [o.id, doc]);
   if (prev) {
     requirePerm(req.staff, 'reprint');

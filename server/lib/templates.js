@@ -1,7 +1,7 @@
 // Default document templates. The same JSON is rendered by public/shared/render.js for preview and printing.
 export const DOC_TYPES = {
   receipt: 'ใบเสร็จลูกค้า', kitchen: 'ใบครัว', queue: 'ใบเลขคิว', mobile_qr: 'ใบ Mobile Ordering', refund: 'ใบยกเลิก/คืนเงิน',
-  shift: 'ใบสรุปเปิด/ปิดรอบ', redeem: 'หลักฐานการแลกรางวัล',
+  shift: 'ใบสรุปเปิด/ปิดรอบ', redeem: 'หลักฐานการแลกรางวัล', merchant: 'ใบสรุปร้านค้า (สำเนาร้าน)',
 };
 
 const base = (elements, extra = {}) => ({ paper: 80, margin: 8, line_height: 1.3, section_gap: 6, font: 'Sarabun', size: 24, copies: 1, feed_after: 4, cut: 'full', elements, ...extra });
@@ -33,23 +33,23 @@ export const DEFAULT_TEMPLATES = {
     { type: 'qr', value: '{claim_url}', size_mm: 30, align: 'center', when: 'claim_available', caption: 'สแกนเพื่อสมัครสมาชิกและรับแต้มจากบิลนี้' },
     { type: 'text', text: '{footer}', align: 'center', size: 22 },
   ]),
+  // Kitchen ticket (style: staff / received / print time → big table → big "qty  item" rows)
   kitchen: base([
-    { type: 'field', field: 'ticket_kind', align: 'center', size: 32, weight: 800, invert: true },
-    { type: 'field', field: 'queue_no', label: 'คิว ', align: 'center', size: 64, weight: 800 },
-    { type: 'field', field: 'dine_type', align: 'center', size: 40, weight: 800, invert_if: 'takeaway' },
-    { type: 'field', field: 'table', label: 'โต๊ะ ', size: 30, weight: 700 },
-    { type: 'field', field: 'customer', label: 'ชื่อ ', size: 26 },
-    { type: 'field', field: 'station', label: 'จุด ', size: 24 },
-    { type: 'field', field: 'ticket_part', size: 26, weight: 700 },
-    { type: 'field', field: 'bill_no', label: 'บิล ', size: 22 },
-    { type: 'field', field: 'datetime', size: 22 },
-    { type: 'field', field: 'staff', label: 'พนักงาน ', size: 22 },
-    { type: 'divider', style: 'solid' },
-    { type: 'items', show_options: true, show_note: true, show_price: false, show_dine: true, size: 32, weight: 700, col_qty: 16, group_by_bowl: true },
-    { type: 'divider', style: 'solid' },
-    { type: 'field', field: 'order_note', label: 'หมายเหตุ: ', size: 30, weight: 800, invert: true },
-    { type: 'field', field: 'bowls', label: 'ชาม: ', size: 26 },
-  ], { feed_after: 3 }),
+    { type: 'field', field: 'ticket_kind', align: 'center', size: 26, weight: 800, invert: true, when: 'not_new' },
+    { type: 'field', field: 'staff', label: 'Staff Name:  ', size: 22 },
+    { type: 'field', field: 'received_time', label: 'Received Time:  ', size: 22 },
+    { type: 'field', field: 'print_time', label: 'Print Time:  ', size: 22 },
+    { type: 'divider', style: 'dash' },
+    { type: 'field', field: 'table_or_type', align: 'center', size: 46, weight: 700, invert_if: 'takeaway' },
+    { type: 'field', field: 'queue_no', label: 'คิว ', align: 'center', size: 34, weight: 800 },
+    { type: 'field', field: 'customer', label: 'ลูกค้า: ', align: 'center', size: 24 },
+    { type: 'divider', style: 'dash' },
+    { type: 'items', style: 'kitchen', show_options: true, show_note: true, show_price: false, show_dine: true, size: 40, weight: 700, group_by_bowl: true, item_divider: true },
+    { type: 'field', field: 'order_note', label: 'หมายเหตุ: ', size: 28, weight: 800, invert: true },
+    { type: 'field', field: 'ticket_part', align: 'center', size: 22 },
+    { type: 'field', field: 'bill_no', label: 'บิล ', align: 'center', size: 20 },
+    { type: 'field', field: 'reason', align: 'center', size: 20 },
+  ], { feed_after: 3, section_gap: 4 }),
   queue: base([
     { type: 'field', field: 'store_name', align: 'center', size: 28, weight: 700 },
     { type: 'text', text: 'เลขคิวของคุณ', align: 'center', size: 26 },
@@ -87,6 +87,21 @@ export const DEFAULT_TEMPLATES = {
     { type: 'field', field: 'ticket_kind', align: 'center', size: 30, weight: 800 },
     { type: 'shift_summary', size: 24 },
   ]),
+  // Short merchant copy: total, time, staff + bill barcode (scan at POS to look the bill up) + small QR (full details)
+  merchant: base([
+    { type: 'field', field: 'store_name', align: 'center', size: 28, weight: 800 },
+    { type: 'text', text: 'สำเนาร้านค้า', align: 'center', size: 22 },
+    { type: 'divider', style: 'dash' },
+    { type: 'field', field: 'queue_no', label: 'คิว ', align: 'center', size: 40, weight: 800 },
+    { type: 'field', field: 'bill_no', label: 'เลขบิล ', size: 22 },
+    { type: 'field', field: 'datetime', label: 'เวลา ', size: 22 },
+    { type: 'field', field: 'staff', label: 'พนักงาน ', size: 22 },
+    { type: 'field', field: 'pay_methods', label: 'ชำระ ', size: 22 },
+    { type: 'totals', show: ['total'], size: 24, total_size: 40 },
+    { type: 'divider', style: 'dash' },
+    { type: 'barcode', value: '{bill_no}', height: 70, module: 2 },
+    { type: 'qr', value: '{detail_url}', size_mm: 18, align: 'center', caption: 'สแกนดูรายละเอียดบิล (สำหรับพนักงาน)', caption_size: 18 },
+  ], { feed_after: 3 }),
   redeem: base([
     { type: 'field', field: 'store_name', align: 'center', size: 30, weight: 700 },
     { type: 'text', text: 'หลักฐานการแลกรางวัล', align: 'center', size: 30, weight: 800 },

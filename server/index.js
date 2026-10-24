@@ -19,6 +19,7 @@ import payments, { webhookRouter } from './routes/payments.js';
 import members from './routes/members.js';
 import customer, { expireCoupons } from './routes/customer.js';
 import reports from './routes/reports.js';
+import importer from './routes/importer.js';
 import { VERSION } from '../public/shared/core.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -37,12 +38,12 @@ export async function createApp(opts = {}) {
   });
   // webhooks need the raw body for signature checks
   app.use('/api', webhookRouter);
-  app.use(express.json({ limit: '2mb' }));
+  app.use(express.json({ limit: '8mb' }));
   app.get('/healthz', async (req, res) => { await db.get('SELECT 1 AS ok'); res.json({ ok: true, version: VERSION, db: db.kind, time: now() }); });
   app.get('/api/version', (req, res) => res.json({ version: VERSION, db: db.kind }));
   app.get('/files/:id', (req, res, next) => serveFile(req, res).catch(next));
   app.get('/api/qr.svg', (req, res, next) => qrSvg(req, res).catch(next));
-  for (const r of [staff, catalogR, orders, system, display, mobile, payments, members, customer, reports]) app.use('/api', r);
+  for (const r of [staff, catalogR, orders, system, display, mobile, payments, members, customer, reports, importer]) app.use('/api', r);
   app.use('/api', (req, res) => res.status(404).json({ error: 'ไม่พบ API นี้' }));
   app.use(express.static(PUBLIC, { extensions: ['html'], setHeaders: (res, p) => { if (/\.(html|js|css)$/.test(p)) res.setHeader('Cache-Control', 'no-cache'); } }));
   app.get('/', (req, res) => res.sendFile(path.join(PUBLIC, 'index.html')));

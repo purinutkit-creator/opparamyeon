@@ -10,7 +10,7 @@ export async function menuPage(set) {
   const box = h('div');
   const reload = async () => { Object.assign(cat, await api.get('/catalog?all=1')); draw(); };
   const draw = () => {
-    const tabs = h('div', { class: 'tabs', style: { marginBottom: '1em' } }, [['products', 'สินค้า/เมนู'], ['categories', 'หมวดหมู่'], ['options', 'ตัวเลือก/ท็อปปิ้ง'], ['ingredients', 'วัตถุดิบ'], ['stations', 'จุดครัวและการแบ่งใบ']].map(([k, t]) =>
+    const tabs = h('div', { class: 'tabs', style: { marginBottom: '1em' } }, [['products', 'สินค้า/เมนู'], ['categories', 'หมวดหมู่'], ['options', 'ตัวเลือก/ท็อปปิ้ง'], ['ingredients', 'วัตถุดิบ'], ['stations', 'จุดครัวและการแบ่งใบ'], ['import', '📥 นำเข้าจาก Google Sheet']].map(([k, t]) =>
       h('button', { class: 'tab' + (tab === k ? ' active' : ''), onclick: () => { tab = k; draw(); } }, t)));
     let body;
     if (tab === 'products') {
@@ -25,6 +25,8 @@ export async function menuPage(set) {
       cat.products.filter((p) => !filter || p.name.includes(filter) || p.code.includes(filter) || p.barcodes.some((b) => b.includes(filter))), { onRow: (p) => productDialog(p, cat, ingredients, reload) }));
       drawList();
       body = h('div', {}, h('div', { class: 'bar' }, q, h('button', { class: 'btn primary', onclick: () => productDialog(null, cat, ingredients, reload) }, '+ เพิ่มเมนู')), list);
+    } else if (tab === 'import') {
+      body = importBox(reload);
     } else if (tab === 'categories') {
       body = simpleList('categories', cat.categories, [{ k: 'name', label: 'ชื่อหมวด' }, { k: 'sort', label: 'ลำดับ', type: 'number' }, { k: 'color', label: 'สี', type: 'color' }, { k: 'active', label: 'แสดง', type: 'bool' }], reload);
     } else if (tab === 'options') {
@@ -160,4 +162,51 @@ export async function tablesPage() {
   };
   return page('โต๊ะ', h('p', { class: 'muted' }, 'ถ้าไม่มีโต๊ะ Mobile Ordering จะแสดง Pick Up เป็นตัวเลือกหลัก'), h('button', { class: 'btn primary', onclick: () => open(null) }, '+ เพิ่มโต๊ะ'),
     card(table([{ t: 'โต๊ะ', k: 'name' }, { t: 'โซน', k: 'zone' }, { t: 'ที่นั่ง', r: 1, k: 'seats' }, { t: 'สถานะ', f: (t) => h('span', { class: 'badge ' + (!t.active ? 'bad' : t.status === 'free' ? 'ok' : 'warn') }, !t.active ? 'ปิดใช้งาน' : { free: 'ว่าง', occupied: 'มีลูกค้า', disabled: 'ปิดใช้งาน' }[t.status]) }], rows, { onRow: open })));
+}
+
+// ---------------- Google Sheets / CSV import ----------------
+function importBox(reload) {
+  const url = h('input', { class: 'input', placeholder: 'https://docs.google.com/spreadsheets/d/…/edit#gid=0' });
+  const file = h('input', { type: 'file', accept: '.csv,text/csv' });
+  const dl = h('input', { type: 'checkbox', checked: true });
+  const out = h('div');
+  const download = async (path, name) => {
+    const r = await fetch('/api' + path, { headers: { Authorization: 'Bearer ' + JSON.parse(localStorage.getItem('opp.admin_token')) } });
+    if (!r.ok) return toast('ดาวน์โหลดไม่ได้', 'error');
+    const a = h('a', { href: URL.createObjectURL(await r.blob()), download: name }); a.click();
+  };
+  const source = async () => (file.files[0] ? { csv: await file.files[0].text() } : url.value.trim() ? { url: url.value.trim() } : null);
+  const run = async (dry) => {
+    const src = await source();
+    if (!src) return toast('วางลิงก์ Google Sheet หรือเลือกไฟล์ CSV', 'warn');
+    out.replaceChildren(h('div', { class: 'empty' }, dry ? 'กำลังอ่านข้อมูล…' : 'กำลังนำเข้า…'));
+    try {
+      const r = await api.post('/import/products', { ...src, dry_run: dry, download_images: dl.checked });
+      if (dry) {
+        out.replaceChildren(h('p', {}, h('strong', {}, `พบ ${r.count} รายการ`), ` · สร้างใหม่ ${r.preview.filter((p) => p.action === 'create').length} · อัปเดต ${r.preview.filter((p) => p.action === 'update').length}`),
+          r.errors.length ? h('div', { class: 'card', style: { background: 'var(--warn-soft)' } }, r.errors.map((e) => h('div', { class: 'small' }, `แถว ${e.row}: ${e.error}`))) : null,
+          table([{ t: 'แถว', k: 'row' }, { t: '', f: (p) => h('span', { class: 'badge ' + (p.action === 'create' ? 'ok' : 'info') }, p.action === 'create' ? 'ใหม่' : 'อัปเดต') }, { t: 'รหัส', k: 'code' }, { t: 'ชื่อ', k: 'name' },
+            { t: 'หมวด', f: (p) => [p.category, p.new_category ? ' (ใหม่)' : ''].join('') }, { t: 'ราคา', r: 1, f: (p) => baht(p.price) }, { t: 'จุดครัว', f: (p) => [p.station, p.new_station ? ' (ใหม่)' : ''].join('') },
+            { t: 'รูป', f: (p) => (p.image_url ? '🖼️' : '') }], r.preview),
+          h('button', { class: 'btn primary big', style: { marginTop: '1em' }, onclick: () => run(false) }, `ยืนยันนำเข้า ${r.count} รายการ`));
+      } else {
+        out.replaceChildren(h('div', { class: 'card', style: { background: 'var(--ok-soft)' } }, h('h3', {}, '✅ นำเข้าสำเร็จ'), h('p', {}, `สร้างใหม่ ${r.created} · อัปเดต ${r.updated} · บันทึกรูป ${r.images}`),
+          ...r.errors.map((e) => h('div', { class: 'small' }, `แถว ${e.row}: ${e.error}`))));
+        reload();
+      }
+    } catch (e) { out.replaceChildren(h('div', { class: 'card', style: { background: 'var(--bad-soft)' } }, '⚠️ ', e.message)); }
+  };
+  return h('div', {},
+    h('div', { class: 'card', style: { marginBottom: '1em' } }, h('h3', {}, '1. ดาวน์โหลดไฟล์ต้นแบบ'),
+      h('p', { class: 'muted' }, 'ไฟล์ต้นแบบมีคอลัมน์ รหัส ชื่อ หมวดหมู่ ราคา ต้นทุน หน่วย จำนวนหน่วยที่นับ จุดครัว บาร์โค้ด ลิงก์รูป คำอธิบาย กลุ่มตัวเลือก สถานะ และสต็อก พร้อมตัวอย่าง'),
+      h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => download('/import/template.csv', 'oppa-products-template.csv') }, '⬇ ไฟล์ต้นแบบ (CSV)'),
+        h('button', { class: 'btn', onclick: () => download('/import/export.csv', 'oppa-products.csv') }, '⬇ เมนูปัจจุบันทั้งหมด (แก้แล้วนำเข้ากลับได้)'))),
+    h('div', { class: 'card', style: { marginBottom: '1em' } }, h('h3', {}, '2. เปิดใน Google Sheets'),
+      h('ol', { class: 'small' }, h('li', {}, 'ไปที่ ', h('a', { href: 'https://sheets.new', target: '_blank' }, 'sheets.new'), ' → ไฟล์ → นำเข้า → อัปโหลดไฟล์ต้นแบบ'),
+        h('li', {}, 'กรอกสินค้า 1 แถวต่อ 1 รายการ (ห้ามแก้หัวตาราง) · หมวดหมู่/จุดครัวที่ยังไม่มี ระบบสร้างให้อัตโนมัติ · กลุ่มตัวเลือกต้องตรงกับชื่อที่มีในระบบ'),
+        h('li', {}, 'รูปภาพ: ใส่ลิงก์รูป หรือลิงก์ Google Drive (ตั้งแชร์ไฟล์เป็น "ทุกคนที่มีลิงก์")'),
+        h('li', {}, 'กด แชร์ → ทั่วไป → "ทุกคนที่มีลิงก์" เป็นผู้ดู แล้วคัดลอกลิงก์มาวางด้านล่าง'))),
+    h('div', { class: 'card' }, h('h3', {}, '3. นำเข้า'), h('label', { class: 'field' }, 'ลิงก์ Google Sheet', url), h('label', { class: 'field' }, 'หรือเลือกไฟล์ CSV', file),
+      h('label', { class: 'switch' }, dl, 'คัดลอกรูปภาพเข้ามาเก็บในระบบ (แนะนำ — รูปไม่หายถ้าลิงก์เดิมถูกลบ)'),
+      h('div', { class: 'row', style: { marginTop: '.8em' } }, h('button', { class: 'btn primary', onclick: () => run(true) }, 'ตรวจสอบและดูตัวอย่างก่อนนำเข้า')), out));
 }

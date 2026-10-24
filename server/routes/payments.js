@@ -2,10 +2,10 @@ import { Router } from 'express';
 import express from 'express';
 import multer from 'multer';
 import { db, J, S } from '../db.js';
-import { ah, id, now, bad, notFound, conflict, forbidden, emit, getSettings, rateLimit, audit } from '../lib/util.js';
+import { ah, id, now, bad, notFound, conflict, forbidden, emit, getSettings, rateLimit, audit, getSecret, setSecret } from '../lib/util.js';
 import { staffAuth } from '../lib/auth.js';
 import { getOrder, payOrder, idemRetry } from '../lib/orders.js';
-import { GATEWAYS } from '../lib/gateways.js';
+import { GATEWAYS, beamCreds } from '../lib/gateways.js';
 import { saveFile } from './system.js';
 import { promptPayPayload } from '../../public/shared/core.js';
 
@@ -59,7 +59,7 @@ r.post('/m/orders/:id/gateway', ah(async (req, res) => {
   const pid = (s.payment.providers.beam || {}).enabled ? 'beam' : s.payment.mock_enabled ? 'mock' : null;
   if (!pid) throw bad('ร้านยังไม่ได้เปิดชำระออนไลน์');
   const gw = GATEWAYS[pid];
-  if (!gw.configured()) throw bad('ยังไม่ได้ตั้งค่าข้อมูลเชื่อมต่อผู้ให้บริการบนเซิร์ฟเวอร์');
+  if (!(await gw.configured())) throw bad('ยังไม่ได้ตั้งค่าข้อมูลเชื่อมต่อผู้ให้บริการบนเซิร์ฟเวอร์');
   const existing = await db.get("SELECT * FROM payment_intents WHERE order_id = ? AND provider = ? AND status = 'pending' AND amount = ?", [o.id, pid, o.total]);
   if (existing) return res.json({ url: existing.url, provider: pid });
   const c = await gw.createCharge(o, { mode: (s.payment.providers.beam || {}).mode, redirectUrl: `${process.env.PUBLIC_URL || ''}/m/#${req.headers['x-mobile-token']}`, expiresAt: o.expires_at });
@@ -76,7 +76,7 @@ webhookRouter.post('/webhooks/:provider', express.raw({ type: '*/*', limit: '1mb
   const s = await getSettings();
   if (gw.id === 'mock' && !s.payment.mock_enabled) return res.status(404).end();
   const raw = req.body instanceof Buffer ? req.body : Buffer.from('');
-  if (!gw.verifyWebhook(raw, req.headers)) { await logEvent(gw.id, null, raw, 'bad_signature'); return res.status(401).json({ error: 'bad signature' }); }
+  if (!(await gw.verifyWebhook(raw, req.headers))) { await logEvent(gw.id, null, raw, 'bad_signature'); return res.status(401).json({ error: 'bad signature' }); }
   let j; try { j = JSON.parse(raw.toString('utf8')); } catch { return res.status(400).end(); }
   const ev = gw.parseWebhook(j, req.headers);
   const fresh = await logEvent(gw.id, ev.event_key, raw, 'received');
@@ -126,6 +126,28 @@ export async function settleIntent(gw, ref, claimedPaid) {
   emit('shop', 'mobile:paid', { id: o.id, bill_no: o.bill_no });
   return { status: 'paid' };
 }
+
+// ---------- gateway keys entered by the shop (write-only from the browser) ----------
+r.get('/payments/providers/beam', staffAuth('settings'), ah(async (req, res) => {
+  const c = await beamCreds();
+  const mask = (v) => (v ? v.slice(0, 3) + '•••' + v.slice(-3) : '');
+  res.json({ merchant_id: c.merchantId, api_key_set: !!c.apiKey, api_key_hint: mask(c.apiKey), webhook_secret_set: !!c.webhookSecret, webhook_secret_hint: mask(c.webhookSecret),
+    webhook_url: (process.env.PUBLIC_URL || '') + '/api/webhooks/beam', from_env: !(await getSecret('beam.api_key')) && !!process.env.BEAM_API_KEY });
+}));
+r.put('/payments/providers/beam', staffAuth('settings'), ah(async (req, res) => {
+  const b = req.body || {};
+  if (b.merchant_id !== undefined) await setSecret('beam.merchant_id', String(b.merchant_id).trim());
+  if (b.api_key) await setSecret('beam.api_key', String(b.api_key).trim());           // blank = keep the saved key
+  if (b.webhook_secret) await setSecret('beam.webhook_secret', String(b.webhook_secret).trim());
+  if (b.clear) for (const k of ['beam.merchant_id', 'beam.api_key', 'beam.webhook_secret']) await setSecret(k, null);
+  await audit(req.staff.id, 'beam_keys', 'settings', 'beam', null, { merchant_id: b.merchant_id, api_key: b.api_key ? 'changed' : 'kept', webhook_secret: b.webhook_secret ? 'changed' : 'kept', clear: !!b.clear });
+  res.json({ ok: true });
+}));
+r.post('/payments/providers/beam/test', staffAuth('settings'), ah(async (req, res) => {
+  const s = await getSettings();
+  if (!(await GATEWAYS.beam.configured())) return res.json({ ok: false, message: 'กรอก Merchant ID, API Key และ Webhook HMAC Key ให้ครบก่อน' });
+  res.json(await GATEWAYS.beam.test((s.payment.providers.beam || {}).mode));
+}));
 
 // mock checkout page calls this to simulate the provider (only when mock is enabled)
 r.post('/payments/mock/:ref/complete', ah(async (req, res) => {

@@ -7,7 +7,7 @@ import QRCode from 'qrcode';
 import { db, J, S } from '../db.js';
 import { ah, id, now, bad, notFound, conflict, audit, emit, getSettings, setSetting, clearRulesCache, dayRules, businessDateOf, DEFAULT_SETTINGS } from '../lib/util.js';
 import { staffAuth, can, requirePerm } from '../lib/auth.js';
-import { claimNext, report, retry, reprint, publicPrinter, enqueue, storeData } from '../lib/print.js';
+import { claimNext, report, retry, reprint, publicPrinter, enqueue, storeData, normalizePrinterOptions } from '../lib/print.js';
 import { DEFAULT_TEMPLATES, DOC_TYPES } from '../lib/templates.js';
 import { VERSION, businessRange } from '../../public/shared/core.js';
 
@@ -76,7 +76,7 @@ r.get('/qr-matrix', ah(async (req, res) => {
 // ---------- printers ----------
 r.get('/printers', staffAuth(), ah(async (req, res) => res.json((await db.all('SELECT * FROM printers ORDER BY name')).map(publicPrinter))));
 const PR = ['name', 'conn', 'address', 'port', 'paper', 'margin', 'copies', 'roles', 'station_ids', 'cut_mode', 'feed_before', 'feed_after', 'buzzer', 'beep_count', 'render',
-  'host_terminal_id', 'templates', 'can_confirm', 'active'];
+  'host_terminal_id', 'templates', 'can_confirm', 'active', 'options'];
 function normPrinter(b, cur = {}) {
   const o = {};
   for (const f of PR) o[f] = b[f] !== undefined ? b[f] : cur[f];
@@ -87,6 +87,7 @@ function normPrinter(b, cur = {}) {
   for (const f of ['buzzer', 'can_confirm']) o[f] = o[f] ? 1 : 0;
   o.active = o.active === undefined ? 1 : o.active ? 1 : 0;
   o.copies = Math.max(1, o.copies);
+  o.options = S(normalizePrinterOptions(typeof o.options === 'string' ? J(o.options, {}) : o.options || {}));
   return o;
 }
 r.post('/printers', staffAuth('manage_printers'), ah(async (req, res) => {
@@ -231,16 +232,17 @@ export function publicSettings(s) {
   out.members = { ...s.members, otp_webhook_url: undefined };
   out.payment = { promptpay_enabled: !!s.payment.promptpay_id, promptpay_id: s.payment.promptpay_id, promptpay_name: s.payment.promptpay_name, slip_upload: s.payment.slip_upload,
     beam: !!(s.payment.providers.beam && s.payment.providers.beam.enabled), mock: !!s.payment.mock_enabled };
-  out.sale = { payment_methods: s.sale.payment_methods, tax_rate: s.sale.tax_rate, tax_inclusive: s.sale.tax_inclusive, packaging_fee: s.sale.packaging_fee,
+  out.sale = { payment_methods: s.sale.payment_methods, count_unit: s.sale.count_unit || 'ชาม', tax_rate: s.sale.tax_rate, tax_inclusive: s.sale.tax_inclusive, packaging_fee: s.sale.packaging_fee,
     packaging_mode: s.sale.packaging_mode, kitchen_send: s.sale.kitchen_send, auto_lock_minutes: s.sale.auto_lock_minutes, max_discount_pct: s.sale.max_discount_pct };
   out.sound = s.sound;
+  out.print = s.print;
   out.version = VERSION;
   return out;
 }
 r.get('/settings/public', ah(async (req, res) => res.json(publicSettings(await getSettings()))));
 r.get('/settings', staffAuth(), ah(async (req, res) => {
   const s = await getSettings();
-  const full = can(req.staff, 'settings') ? { ...s, payment: { ...s.payment, providers: Object.fromEntries(Object.entries(s.payment.providers || {}).map(([k, v]) => [k, { ...v, secret_set: !!process.env[`${k.toUpperCase()}_API_KEY`] }])) } } : publicSettings(s);
+  const full = can(req.staff, 'settings') ? s : publicSettings(s);
   res.json({ ...full, version: VERSION, day_rules: await dayRules(), today: await businessDateOf() });
 }));
 r.put('/settings/:key', staffAuth('settings'), ah(async (req, res) => {

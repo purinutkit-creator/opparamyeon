@@ -5,6 +5,36 @@ import { dineLabel, baht, maskPhone } from '../../public/shared/core.js';
 
 export const STALE_MS = 120000;
 
+// Detailed per-printer options (stored as JSON in printers.options)
+export const PRINTER_OPTION_DEFAULTS = {
+  density: 160,          // raster threshold: higher = darker print (80–230)
+  width_dots: 0,         // printable width override in dots (0 = 384 for 58 mm / 576 for 80 mm)
+  top_feed: 0,           // blank lines before the document
+  scale: 1,              // enlarge/reduce every font on this printer (0.7–1.5)
+  buzzer_mode: 'all',    // printer beeper: 'all' documents | 'kitchen' | 'receipt' | 'off'
+  beep_duration: 2,      // ESC B duration unit (1–9)
+  cash_drawer: false,    // kick the cash drawer (ESC p) on cash payments
+  drawer_pin: 0,         // 0 = pin 2, 1 = pin 5
+  copies_by_doc: {},     // e.g. { receipt: 2, kitchen: 1 } (overrides template/printer copies)
+  print_logo: true,
+  reprint_mark: true,    // print "สำเนา / พิมพ์ซ้ำ" on reprints
+};
+export function printerOptions(p) {
+  const o = { ...PRINTER_OPTION_DEFAULTS, ...J(p && p.options, {}) };
+  if (p && J(p.options, {}).buzzer_mode === undefined) o.buzzer_mode = p.buzzer ? 'kitchen' : PRINTER_OPTION_DEFAULTS.buzzer_mode;
+  return o;
+}
+export function normalizePrinterOptions(v = {}) {
+  const d = PRINTER_OPTION_DEFAULTS;
+  const n = (x, lo, hi, def) => { if (x === null || x === undefined || x === '') return def; const y = Number(x); return Number.isFinite(y) ? Math.min(hi, Math.max(lo, y)) : def; };
+  return {
+    density: n(v.density, 80, 230, d.density), width_dots: n(v.width_dots, 0, 832, 0), top_feed: n(v.top_feed, 0, 20, 0), scale: n(v.scale, 0.7, 1.5, 1),
+    buzzer_mode: ['all', 'kitchen', 'receipt', 'off'].includes(v.buzzer_mode) ? v.buzzer_mode : d.buzzer_mode, beep_duration: n(v.beep_duration, 1, 9, 2),
+    cash_drawer: !!v.cash_drawer, drawer_pin: v.drawer_pin ? 1 : 0, print_logo: v.print_logo !== false, reprint_mark: v.reprint_mark !== false,
+    copies_by_doc: Object.fromEntries(Object.entries(v.copies_by_doc || {}).map(([k, c]) => [k, n(c, 0, 9, 1)]).filter(([, c]) => c >= 0)),
+  };
+}
+
 export async function templateFor(docType, printer) {
   const tid = printer ? J(printer.templates, {})[docType] : null;
   let t = tid ? await db.get('SELECT * FROM templates WHERE id = ?', [tid]) : null;
@@ -12,8 +42,8 @@ export async function templateFor(docType, printer) {
   return t ? { id: t.id, data: J(t.data) } : { id: null, data: DEFAULT_TEMPLATES[docType] };
 }
 
-export function fmtDate(iso) {
-  return new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+export function fmtDate(iso, seconds = false) {
+  return new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', year: '2-digit', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', ...(seconds ? { second: '2-digit' } : {}) });
 }
 
 export async function storeData() {
@@ -46,6 +76,10 @@ export async function orderDocData(order, extra = {}) {
     member_phone: member ? maskPhone(member.phone) : '',
     claim_available: !order.member_id && order.claim_status === 'available' && s.points.claim_qr && s.points.enabled,
     claim_url: order.claim_token ? `${base}/member/#/claim/${order.claim_token}` : '',
+    pay_methods: pays.map((p) => methods[p.method] || p.method).join(' + '),
+    detail_url: `${base}/admin/#/bill/${encodeURIComponent(order.bill_no)}`, count_unit: s.sale.count_unit || 'ชาม',
+    received_time: fmtDate(order.created_at, true), print_time: fmtDate(new Date().toISOString(), true),
+    table_or_type: order.table_name ? `โต๊ะ: ${order.table_name}` : dineLabel(order.dine_type),
     ...extra,
   };
 }
@@ -53,12 +87,13 @@ export async function orderDocData(order, extra = {}) {
 // Create one job per matching printer and copy. dedupe makes the same document impossible to enqueue twice.
 export async function enqueue(docType, refId, data, { stationId = null, dedupe = null, printerId = null, template = null } = {}) {
   let printers = await db.all('SELECT * FROM printers WHERE active = 1');
-  printers = printers.filter((p) => (printerId ? p.id === printerId : J(p.roles, []).includes(docType)));
+  printers = printers.filter((p) => (printerId ? p.id === printerId : docType === 'drawer' ? printerOptions(p).cash_drawer : J(p.roles, []).includes(docType)));
   if (docType === 'kitchen' && stationId && !printerId) printers = printers.filter((p) => { const st = J(p.station_ids, []); return !st.length || st.includes(stationId); });
   const jobs = [];
   for (const p of printers) {
-    const tpl = template ? { id: null, data: template } : await templateFor(docType, p);
-    const copies = Math.max(1, Number(tpl.data.copies || p.copies || 1));
+    const tpl = template ? { id: null, data: template } : ['drawer', 'cut', 'test'].includes(docType) ? { id: null, data: {} } : await templateFor(docType, p);
+    const byDoc = printerOptions(p).copies_by_doc[docType];
+    const copies = byDoc !== undefined ? Number(byDoc) : Math.max(1, Number((tpl.data && tpl.data.copies) || p.copies || 1));
     for (let c = 1; c <= copies; c++) {
       const key = dedupe ? `${dedupe}:${p.id}:${c}` : null;
       if (key && await db.get('SELECT id FROM print_jobs WHERE dedupe_key = ?', [key])) continue;
@@ -142,5 +177,5 @@ export async function reprint(jobId, actor) {
 
 export function publicPrinter(p) {
   if (!p) return null;
-  return { ...p, roles: J(p.roles, []), station_ids: J(p.station_ids, []), templates: J(p.templates, {}) };
+  return { ...p, roles: J(p.roles, []), station_ids: J(p.station_ids, []), templates: J(p.templates, {}), options: printerOptions(p) };
 }

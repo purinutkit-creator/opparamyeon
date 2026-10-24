@@ -96,9 +96,15 @@ CREATE TABLE IF NOT EXISTS member_prompts (id TEXT PRIMARY KEY, terminal_id TEXT
   expires_at TEXT, member_id TEXT, created_at TEXT, created_by TEXT);
 CREATE TABLE IF NOT EXISTS payment_intents (id TEXT PRIMARY KEY, order_id TEXT NOT NULL, provider TEXT, provider_ref TEXT UNIQUE, amount INTEGER, status TEXT DEFAULT 'pending',
   url TEXT, created_at TEXT, updated_at TEXT, raw TEXT);
+CREATE TABLE IF NOT EXISTS secrets (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT);
 CREATE TABLE IF NOT EXISTS webhook_events (id TEXT PRIMARY KEY, provider TEXT, event_key TEXT UNIQUE, payload TEXT, status TEXT, created_at TEXT, note TEXT);
 CREATE TABLE IF NOT EXISTS device_reports (id TEXT PRIMARY KEY, terminal_id TEXT, kind TEXT, data TEXT, created_at TEXT);
 `;
+
+// Columns added after v1.0.0 (existing databases get them on boot)
+const MIGRATIONS = [
+  ['printers', 'options', "TEXT DEFAULT '{}'"],
+];
 
 class SqliteDB {
   constructor(file) {
@@ -111,6 +117,10 @@ class SqliteDB {
     this.db = new DatabaseSync(this.file);
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=OFF;');
     this.db.exec(SCHEMA.replaceAll('{REAL}', 'REAL'));
+    for (const [t, c, d] of MIGRATIONS) {
+      const cols = this.db.prepare(`PRAGMA table_info(${t})`).all().map((x) => x.name);
+      if (!cols.includes(c)) this.db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${d}`);
+    }
     this.lock = Promise.resolve();
   }
   _norm(params) { return params.map((p) => (p === undefined ? null : typeof p === 'boolean' ? (p ? 1 : 0) : p)); }
@@ -142,6 +152,7 @@ class PgDB {
     const ssl = /localhost|127\.0\.0\.1/.test(this.url) || process.env.PGSSL === 'off' ? false : { rejectUnauthorized: false };
     this.pool = new pg.Pool({ connectionString: this.url, ssl, max: 10 });
     await this.pool.query(SCHEMA.replaceAll('{REAL}', 'DOUBLE PRECISION'));
+    for (const [t, c, d] of MIGRATIONS) await this.pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS ${c} ${d}`);
   }
   _sql(sql) { let i = 0; return sql.replace(/\?/g, () => '$' + ++i); }
   _norm(params) { return params.map((p) => (p === undefined ? null : typeof p === 'boolean' ? (p ? 1 : 0) : p)); }

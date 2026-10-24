@@ -10,8 +10,12 @@
 <style>
   .layout { display: grid; grid-template-columns: 230px 1fr; min-height: 100vh; }
   .side { background: var(--surface); border-right: 1px solid var(--line); padding: .8em; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
-  .side a { display: block; padding: .55em .8em; border-radius: 10px; color: var(--text); text-decoration: none; font-weight: 600; }
-  .side a.on { background: var(--brand-soft); color: var(--brand); }
+  .side a { display: block; padding: .55em .8em; border-radius: 10px; color: var(--text); text-decoration: none; font-weight: 600; transition: background .15s; }
+  .side a:hover { background: var(--surface2); }
+  .side a.on { background: var(--brand-soft); color: var(--brand); box-shadow: inset 3px 0 0 var(--brand); }
+  .kpi { position: relative; overflow: hidden; }
+  .kpi.hero { border-top: 4px solid var(--brand); }
+  .content { max-width: 1320px; }
   .side h4 { margin: 1em .5em .3em; font-size: .75em; color: var(--muted); text-transform: uppercase; }
   .content { padding: 1em 1.2em 3em; min-width: 0; }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .8em; }

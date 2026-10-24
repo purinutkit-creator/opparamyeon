@@ -275,6 +275,7 @@ export async function kitchenTickets(order, lines, kind, staff) {
         station: station.name, station_id: station.id, part_label: part.label, part: parts.length > 1 ? `ใบที่ ${part.index}/${part.count}` + (part.label ? ` · ${part.label}` : '') : part.label || '',
         lines: part.lines.map((l) => ({ name: l.name, qty: l.qty, options: (l.options || []).map((o) => ({ group: o.group, name: o.name })), note: l.note, dine_type: l.dine_type,
           bowl_group: l.bowl_group, bowl_label: l.bowl_label || (l.bowl_group ? `ชามที่ ${l.bowl_group}` : ''), bowl_count: l.bowl_count })),
+        received_time: fmtDate(order.created_at, true), count_unit: (await getSettings()).sale.count_unit || 'ชาม',
         bowls: countBowls(part.lines), ref: kind === 'void' ? `อ้างอิงบิล ${order.bill_no} คิว ${order.queue_no || '-'}` : '',
       };
       await db.run('INSERT INTO kitchen_tickets(id, order_id, station_id, kind, content, status, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?)',
@@ -288,7 +289,8 @@ export async function kitchenTickets(order, lines, kind, staff) {
   return created;
 }
 async function kitchenDocData(c) {
-  return { store_name: '', ticket_kind: c.kind_label, queue_no: c.queue_no, dine_type: c.dine_type, dine_label: c.dine_label, table: c.table, customer: c.customer,
+  return { store_name: '', ticket_kind: c.kind_label, not_new: c.kind !== 'new', queue_no: c.queue_no, received_time: c.received_time, count_unit: c.count_unit,
+    table_or_type: c.table ? `โต๊ะ: ${c.table}` : c.dine_type === 'takeaway' ? 'กลับบ้าน' : c.dine_label, dine_type: c.dine_type, dine_label: c.dine_label, table: c.table, customer: c.customer,
     station: c.station, ticket_part: c.part, bill_no: c.bill_no, datetime: c.datetime, staff: c.staff, order_note: c.note, bowls: c.bowls, reason: c.ref,
     items: c.lines.map((l) => ({ ...l, line_total: null })) };
 }
@@ -375,12 +377,18 @@ export async function payOrder({ orderId, payments, staff, terminalId, shiftId, 
       await db.run("UPDATE orders SET claim_token = ?, claim_status = 'available' WHERE id = ?", [token(18), orderId]);
     }
     order = await getOrder(orderId);
-    // kitchen: everything not sent yet goes now (also covers "send after payment" mode)
-    await sendKitchen(order, staff, terminalId, shiftId);
-    order = await getOrder(orderId);
     if (order.mobile_session_id) await afterMobilePaid(order);
-    if (print.receipt !== false) await enqueue('receipt', orderId, await orderDocData(order), { dedupe: 'receipt:' + orderId });
-    if (print.queue) await enqueue('queue', orderId, await orderDocData(order), { dedupe: 'queue:' + orderId });
+    // documents in the order set by the shop (jobs on the same printer print in exactly this order)
+    if (rows.some((r) => r.method === 'cash')) await enqueue('drawer', orderId, {}, { dedupe: 'drawer:' + orderId });
+    const P = s.print || {};
+    const want = { receipt: print.receipt ?? P.auto_receipt ?? true, merchant: print.merchant ?? !!P.auto_merchant, queue: print.queue ?? !!P.auto_queue };
+    const sequence = [...new Set([...(P.order || []), 'receipt', 'kitchen', 'merchant', 'queue'])];
+    for (const doc of sequence) {
+      // kitchen: everything not sent yet goes now (also covers "send after payment" mode)
+      if (doc === 'kitchen') { await sendKitchen(await getOrder(orderId), staff, terminalId, shiftId); continue; }
+      if (want[doc]) await enqueue(doc, orderId, await orderDocData(await getOrder(orderId)), { dedupe: `${doc}:${orderId}` });
+    }
+    order = await getOrder(orderId);
     return { order };
   });
   if (!result.duplicate) {

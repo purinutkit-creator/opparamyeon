@@ -14,7 +14,7 @@ const SAMPLES = {
 const base = { store_name: 'Oppa Ramyeon', branch: 'สาขาหลัก', address: '123 ถนนสุขุมวิท กรุงเทพฯ', phone: '02-000-0000', tax_id: '0105500000000', bill_no: 'B261023-0042', queue_no: 'T042',
   table: 'A3', customer: 'คุณมินจู', member: 'จีซู (M000123)', staff: 'แคชเชียร์', datetime: '23/10/2569 19:42', footer: 'ขอบคุณที่อุดหนุน 감사합니다', claim_available: true,
   claim_url: location.origin + '/member/#/claim/SAMPLE', mobile_url: location.origin + '/m/#SAMPLE', mobile_ref: 'MO-ABC123', mobile_target: 'โต๊ะ A3', mobile_expires: '23/10/2569 22:42',
-  ticket_kind: 'ออเดอร์ใหม่', ticket_part: 'ใบที่ 1/2 · ชามที่ 1', station: 'ครัวมาม่า', order_note: 'ลูกค้าแพ้กุ้ง', reason: 'ลูกค้าเปลี่ยนใจ', refund_amount: '79.00', reward_name: 'ไข่ออนเซ็นฟรี',
+  ticket_kind: 'ออเดอร์ใหม่', received_time: '24/10/69 15:38:37', table_or_type: 'โต๊ะ: V.22', detail_url: location.origin + '/admin/#/bill/B261023-0042', pay_methods: 'เงินสด', count_unit: 'ชาม', ticket_part: 'ใบที่ 1/2 · ชามที่ 1', station: 'ครัวมาม่า', order_note: 'ลูกค้าแพ้กุ้ง', reason: 'ลูกค้าเปลี่ยนใจ', refund_amount: '79.00', reward_name: 'ไข่ออนเซ็นฟรี',
   coupon_code: 'K7M2Q9XA', points_used: 20, payments: [{ method: 'เงินสด', amount: 7900, change: 2100 }], tax_rate: 7, tax_inclusive: true,
   shift: { terminal_name: 'เครื่องขาย 1', staff_name: 'แคชเชียร์', opened_at: new Date().toISOString(), opening_cash: 100000, bills: 42, net_bowls: 51, net_sales: 452300, discount: 1200, voids: { count: 1, amount: 7900 }, refunds: { count: 0, amount: 0 },
     payments: [{ name: 'เงินสด', count: 30, amount: 300000 }, { name: 'QR พร้อมเพย์', count: 12, amount: 152300 }], cash_in: 0, cash_out: 5000, expected_cash: 395000, counted_cash: 395000, diff: 0 } };
@@ -69,15 +69,19 @@ export async function designerPage() {
     if (!e) return propBox.replaceChildren(h('p', { class: 'muted small' }, 'คลิกองค์ประกอบเพื่อแก้ไขรายละเอียด'));
     const common = [selIn(e, 'align', 'ตำแหน่ง', [['left', 'ซ้าย'], ['center', 'กลาง'], ['right', 'ขวา']]), selIn(e, 'font', 'ฟอนต์', fontOpts), numIn(e, 'size', 'ขนาด (จุด)'), selIn(e, 'weight', 'น้ำหนัก', [['', '-'], [400, 'ปกติ'], [600, 'กึ่งหนา'], [700, 'หนา'], [800, 'หนามาก']]),
       boolIn(e, 'italic', 'ตัวเอียง'), boolIn(e, 'underline', 'ขีดเส้นใต้'), boolIn(e, 'invert', 'พื้นดำตัวขาว'), numIn(e, 'gap', 'ระยะห่างหลังองค์ประกอบ'),
-      selIn(e, 'when', 'แสดงเมื่อ', [['', 'เสมอ'], ['claim_available', 'บิลยังไม่ได้ให้แต้ม (มี QR รับแต้ม)'], ['reprint', 'เฉพาะพิมพ์ซ้ำ']])];
+      selIn(e, 'when', 'แสดงเมื่อ', [['', 'เสมอ'], ['claim_available', 'บิลยังไม่ได้ให้แต้ม (มี QR รับแต้ม)'], ['reprint', 'เฉพาะพิมพ์ซ้ำ'], ['not_new', 'เฉพาะใบสั่งเพิ่ม/ยกเลิก']])];
     const specific = {
       field: [selIn(e, 'field', 'ข้อมูล', Object.entries(FIELD_LABELS)), txtIn(e, 'label', 'ข้อความนำหน้า'), selIn(e, 'invert_if', 'เน้นพื้นดำเมื่อ', [['', '-'], ['takeaway', 'กลับบ้าน']])],
       text: [txtIn(e, 'text', 'ข้อความ (ใช้ตัวแปรได้)', true)],
-      items: [boolIn(e, 'show_options', 'แสดงตัวเลือก'), boolIn(e, 'show_note', 'แสดงหมายเหตุ'), boolIn(e, 'show_price', 'แสดงราคา'), boolIn(e, 'show_dine', 'แสดงทานที่ร้าน/กลับบ้านรายรายการ'), boolIn(e, 'group_by_bowl', 'จัดกลุ่มตามชาม')],
+      items: [selIn(e, 'style', 'รูปแบบรายการ', [['', 'ใบเสร็จ (จำนวน x ชื่อ ..... ราคา)'], ['kitchen', 'ใบครัว (จำนวนตัวใหญ่ | ชื่อตัวใหญ่)']]), boolIn(e, 'item_divider', 'เส้นคั่นระหว่างรายการ'), boolIn(e, 'show_options', 'แสดงตัวเลือก'), boolIn(e, 'show_note', 'แสดงหมายเหตุ'), boolIn(e, 'show_price', 'แสดงราคา'), boolIn(e, 'show_dine', 'แสดงทานที่ร้าน/กลับบ้านรายรายการ'), boolIn(e, 'group_by_bowl', 'จัดกลุ่มตามชาม')],
       totals: [h('div', { class: 'field' }, 'แสดงยอด', ...['items_total', 'discount', 'packaging', 'tax', 'total'].map((k) => { const c = h('input', { type: 'checkbox', checked: (e.show || []).includes(k) }); c.onchange = () => { e.show = ['items_total', 'discount', 'packaging', 'tax', 'total'].filter((x) => (x === k ? c.checked : (e.show || []).includes(x))); drawPreview(); }; return h('label', { class: 'switch' }, c, { items_total: 'รวมสินค้า', discount: 'ส่วนลด', packaging: 'ค่าบรรจุภัณฑ์', tax: 'ภาษี', total: 'ยอดสุทธิ' }[k]); })), numIn(e, 'total_size', 'ขนาดยอดสุทธิ')],
       divider: [selIn(e, 'style', 'รูปแบบ', [['dash', 'เส้นประ'], ['solid', 'เส้นทึบ'], ['double', 'เส้นคู่']])],
       space: [numIn(e, 'height', 'ความสูง (จุด)')],
-      logo: [numIn(e, 'width_pct', 'ความกว้าง % (รักษาสัดส่วน)')],
+      logo: [numIn(e, 'width_pct', 'ความกว้าง % (รักษาสัดส่วน)'), selIn(e, 'align', 'ตำแหน่ง', [['center', 'กลาง'], ['left', 'ซ้าย'], ['right', 'ขวา']]),
+        h('div', { class: 'field' }, 'รูปที่ใช้', e.src ? h('img', { src: e.src, style: { maxWidth: '160px', background: '#fff', borderRadius: '8px', padding: '4px' } }) : h('span', { class: 'hint' }, 'ตอนนี้ใช้โลโก้ร้าน (ตั้งค่าร้าน)'),
+          (() => { const f = h('input', { type: 'file', accept: 'image/*' }); f.onchange = async () => { const fd = new FormData(); fd.append('file', f.files[0]); const r = await api.post('/files', fd); e.src = r.url; drawProps(); drawPreview(); }; return f; })(),
+          e.src ? h('button', { class: 'btn sm', onclick: () => { delete e.src; drawProps(); drawPreview(); } }, 'กลับไปใช้โลโก้ร้าน') : null,
+          h('span', { class: 'hint' }, 'อัปโหลดรูปใดก็ได้ (เช่น โลโก้แคมเปญ ตราสัญลักษณ์ ภาพโปรโมชั่น) — แนะนำรูปขาวดำพื้นขาว คมชัด'))],
       image: [numIn(e, 'width_pct', 'ความกว้าง % (รักษาสัดส่วน)'), (() => { const f = h('input', { type: 'file', accept: 'image/*' }); f.onchange = async () => { const fd = new FormData(); fd.append('file', f.files[0]); const r = await api.post('/files', fd); e.src = r.url; drawPreview(); }; return h('label', { class: 'field' }, 'อัปโหลดรูป', f); })()],
       qr: [txtIn(e, 'value', 'ข้อมูล QR (ตัวแปร)'), numIn(e, 'size_mm', 'ขนาด (มม., อย่างน้อย 15)'), txtIn(e, 'caption', 'ข้อความใต้ QR'), numIn(e, 'caption_size', 'ขนาดข้อความ')],
       barcode: [txtIn(e, 'value', 'ข้อมูลบาร์โค้ด (A-Z, 0-9)'), numIn(e, 'height', 'ความสูง (จุด)'), numIn(e, 'module', 'ความกว้างแท่ง (จุด, ≥2)')],
