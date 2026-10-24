@@ -1,6 +1,7 @@
 import { db, J, S } from '../db.js';
 import { id, now, nextCounter, emit, getSettings, notFound, conflict, bad } from './util.js';
 import { DEFAULT_TEMPLATES } from './templates.js';
+import { previewPoints } from './members.js';
 import { dineLabel, baht, maskPhone } from '../../public/shared/core.js';
 
 export const STALE_MS = 120000;
@@ -57,9 +58,12 @@ export async function orderDocData(order, extra = {}) {
   const items = await db.all('SELECT * FROM order_items WHERE order_id = ? ORDER BY seq', [order.id]);
   const pays = await db.all("SELECT method, amount, received, change_amount FROM payments WHERE order_id = ? AND status = 'paid' ORDER BY created_at", [order.id]);
   const staff = order.staff_id ? await db.get('SELECT name FROM staff WHERE id = ?', [order.staff_id]) : null;
-  const member = order.member_id ? await db.get('SELECT member_no, first_name, last_name, nickname, phone FROM members WHERE id = ?', [order.member_id]) : null;
+  const member = order.member_id ? await db.get('SELECT m.member_no, m.first_name, m.last_name, m.nickname, m.phone, m.points, t.name AS tier_name FROM members m LEFT JOIN tiers t ON t.id = m.tier_id WHERE m.id = ?', [order.member_id]) : null;
   const methods = Object.fromEntries(s.sale.payment_methods.map((m) => [m.id, m.name]));
   const base = process.env.PUBLIC_URL || '';
+  const claimAvailable = !order.member_id && order.claim_status === 'available' && s.points.claim_qr && s.points.enabled;
+  const claimPoints = claimAvailable ? (await previewPoints(order, null)).points : 0;
+  const pointsMode = !s.points.enabled ? '' : member ? 'member' : claimAvailable && order.claim_token ? 'claim' : '';
   const memberName = member ? `${member.first_name || member.nickname || ''} ${member.last_name || ''}`.trim() + ` (${member.member_no})` : '';
   return {
     ...(await storeData()),
@@ -74,7 +78,11 @@ export async function orderDocData(order, extra = {}) {
     payments: pays.map((p) => ({ method: methods[p.method] || p.method, amount: p.amount, received: p.received, change: p.change_amount })),
     total: baht(order.total), total_satang: order.total, table_name: order.table_name || '', customer_name: order.customer_name || '',
     member_phone: member ? maskPhone(member.phone) : '',
-    claim_available: !order.member_id && order.claim_status === 'available' && s.points.claim_qr && s.points.enabled,
+    claim_available: claimAvailable, points_mode: pointsMode, claim_points: claimPoints,
+    claim_deadline: claimAvailable ? fmtDate(new Date(new Date(order.paid_at || order.created_at).getTime() + (s.points.claim_hours || 72) * 3600000).toISOString()) : '',
+    points_earned: order.points_earned || 0, member_points: member ? member.points : null, member_tier: member ? member.tier_name || '' : '',
+    member_display: member ? `${member.nickname || member.first_name || ''} · ${member.member_no}`.replace(/^ · /, '') : '',
+    points_note: member && !order.points_earned ? 'บิลนี้ไม่เข้าเงื่อนไขสะสมแต้ม' : '',
     claim_url: order.claim_token ? `${base}/member/#/claim/${order.claim_token}` : '',
     pay_methods: pays.map((p) => methods[p.method] || p.method).join(' + '),
     detail_url: `${base}/admin/#/bill/${encodeURIComponent(order.bill_no)}`, count_unit: s.sale.count_unit || 'ชาม',

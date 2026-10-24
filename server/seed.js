@@ -1,4 +1,4 @@
-import { db, S } from './db.js';
+import { db, J, S } from './db.js';
 import { id, now } from './lib/util.js';
 import { seedStaff } from './lib/auth.js';
 import { DEFAULT_TEMPLATES, DOC_TYPES } from './lib/templates.js';
@@ -15,6 +15,18 @@ export async function seed({ demo = process.env.SEED_DEMO !== 'false' } = {}) {
     await db.run('UPDATE templates SET is_default = 0 WHERE doc_type = ?', ['kitchen']);
     await db.run('INSERT INTO templates(id, doc_type, name, data, is_default, updated_at) VALUES(?,?,?,?,1,?)', [id(), 'kitchen', 'ใบครัวแบบใหม่ (ตัวใหญ่)', S(DEFAULT_TEMPLATES.kitchen), now()]);
     await db.run("INSERT INTO settings(key, value) VALUES('seed_v11', 'true') ON CONFLICT(key) DO NOTHING");
+  }
+  // v1.3: the receipt's plain claim QR becomes the framed points box (custom elements are kept as they are)
+  if (!(await db.get("SELECT key FROM settings WHERE key = 'seed_v13'"))) {
+    for (const t of await db.all('SELECT id, data FROM templates WHERE doc_type = ?', ['receipt'])) {
+      const d = J(t.data, null);
+      if (!d || !Array.isArray(d.elements) || d.elements.some((e) => e.type === 'points')) continue;
+      const i = d.elements.findIndex((e) => e.type === 'qr' && e.value === '{claim_url}');
+      if (i >= 0) d.elements.splice(i, 1, { type: 'points', size_mm: d.elements[i].size_mm || 30, size: 24 });
+      else d.elements.splice(Math.max(0, d.elements.length - 1), 0, { type: 'points', size_mm: 30, size: 24 });
+      await db.run('UPDATE templates SET data = ?, updated_at = ? WHERE id = ?', [S(d), now(), t.id]);
+    }
+    await db.run("INSERT INTO settings(key, value) VALUES('seed_v13', 'true') ON CONFLICT(key) DO NOTHING");
   }
   if (!(await db.get('SELECT id FROM terminals LIMIT 1'))) await db.run('INSERT INTO terminals(id, name, created_at) VALUES(?,?,?)', ['pos1', 'เครื่องขาย 1', now()]);
   if (!(await db.get('SELECT id FROM tiers LIMIT 1'))) {

@@ -30,20 +30,23 @@ async function loadMe() {
 }
 const shell = (...kids) => {
   const r = location.hash.split('/')[1] || 'home';
-  const titles = { home: 'บัตรสมาชิกของคุณ', rewards: 'ของรางวัล', coupons: 'คูปองของฉัน', history: 'ประวัติการซื้อ', points: 'ประวัติแต้ม', benefits: 'สิทธิประโยชน์', account: 'บัญชีของฉัน', claim: 'รับแต้มจากใบเสร็จ', register: 'สมัครสมาชิก', forgot: 'ลืมรหัสผ่าน', contact: 'ติดต่อร้าน' };
+  const titles = { home: 'บัตรสมาชิกของคุณ', rewards: 'ของรางวัล', coupons: 'คูปองของฉัน', history: 'ประวัติการซื้อ', points: 'ประวัติแต้ม', benefits: 'สิทธิประโยชน์', account: 'บัญชีของฉัน', claim: 'รับแต้มจากใบเสร็จ', scan: 'สแกน QR สะสมแต้ม', register: 'สมัครสมาชิก', forgot: 'ลืมรหัสผ่าน', contact: 'ติดต่อร้าน' };
   app.replaceChildren(h('header', { class: 'mhead' }, h('div', { class: 'row1' }, h('div', { class: 'logo' }, cfg.store.logo ? h('img', { src: cfg.store.logo, alt: '' }) : '🍜'),
       h('div', {}, h('div', { class: 'name' }, cfg.store.name), h('div', { class: 'sub' }, me ? `สวัสดี ${me.first_name || me.nickname || ''} 👋` : (titles[r] || 'สมาชิก')))),
     h('img', { class: 'bowl', src: '/assets/bowl.svg', alt: '' })),
     h('div', { class: 'wrap' }, ...kids),
-    me ? h('nav', { class: 'bot' }, [['home', '🏠', 'หน้าหลัก'], ['rewards', '🎁', 'ของรางวัล'], ['coupons', '🎟️', 'คูปอง'], ['history', '🧾', 'ประวัติ'], ['account', '👤', 'บัญชี']].map(([k, i, t]) =>
-      h('a', { href: '#/' + k, class: r === k ? 'on' : '' }, h('span', {}, i), t))) : null);
+    me ? h('nav', { class: 'bot' }, [['home', '🏠', 'หน้าหลัก'], ['rewards', '🎁', 'รางวัล'], ['scan', '', 'สแกนแต้ม'], ['coupons', '🎟️', 'คูปอง'], ['account', '👤', 'บัญชี']].map(([k, i, t]) =>
+      k === 'scan' ? h('a', { href: '#/scan', class: 'scanfab' + (r === k ? ' on' : '') }, h('span', { class: 'fab' }, scanIcon()), t)
+        : h('a', { href: '#/' + k, class: r === k ? 'on' : '' }, h('span', {}, i), t))) : null);
 };
 const loading = () => shell(h('div', { class: 'card skeleton', style: { height: '180px' } }, '.'), h('div', { class: 'card skeleton', style: { height: '90px' } }, '.'));
 
 async function route() {
   const [, r = 'home', arg] = location.hash.split('/');
   if (!cfg.enabled) return shell(h('div', { class: 'empty' }, 'ร้านยังไม่เปิดระบบสมาชิก'));
+  stopScan();
   if (r === 'claim') return claimPage(arg);
+  if (r === 'scan') return scanPage();
   if (r === 'reset') return resetPage(arg);
   if (r === 'register') return registerPage();
   if (r === 'forgot') return forgotPage();
@@ -83,6 +86,7 @@ function loginPage(after = null) {
     h('p', { class: 'small muted' }, 'สมาชิกใหม่: รหัสผ่านเริ่มต้นคือเลข 4 ตัวท้ายของเบอร์โทร'),
     h('button', { class: 'btn primary big block', type: 'submit' }, 'เข้าสู่ระบบ'),
     h('div', { class: 'row between', style: { marginTop: '.8em' } }, h('a', { href: '#/forgot' }, 'ลืมรหัสผ่าน'), cfg.signup ? h('a', { href: '#/register' + (after ? '' : '') }, 'สมัครสมาชิก') : h('span', { class: 'small muted' }, 'ปิดรับสมัครชั่วคราว'))),
+  h('a', { class: 'scan-cta', href: '#/scan' }, h('span', { class: 'ic' }, scanIcon()), h('span', {}, h('b', {}, 'มีใบเสร็จ? สแกนรับแต้มเลย'), h('small', {}, 'สแกนแล้วเข้าสู่ระบบหรือสมัครสมาชิก แต้มเข้าบัญชีทันที')), h('span', { class: 'go' }, '›')),
   h('a', { href: '#/contact', class: 'small', style: { textAlign: 'center' } }, 'ติดต่อร้าน'));
 }
 function registerPage(after = null) {
@@ -206,16 +210,110 @@ function homePage() {
       pr ? h('div', { style: { marginTop: '.6em' } }, h('div', { class: 'small' }, `ความคืบหน้าสู่ ${pr.name} ${m.progress.pct}%`), h('div', { class: 'prog' }, h('i', { style: { width: m.progress.pct + '%' } })),
         h('div', { class: 'small' }, m.progress.need.map((n) => (n.kind === 'spent' ? `ยอดซื้อ ${baht(n.have)}/${baht(n.need)} บาท` : `มาใช้บริการ ${n.have}/${n.need} ครั้ง`)).join(' · '))) : h('div', { class: 'small', style: { marginTop: '.6em' } }, 'คุณอยู่ระดับสูงสุดแล้ว 🎉')),
     h('div', { class: 'barcode-card' }, h('canvas', { id: 'mbc', width: 320, height: 70 }), h('div', { class: 'small muted' }, 'แสดงบาร์โค้ดนี้หรือบอกเบอร์โทรเพื่อสะสมแต้มที่ร้าน')),
+    h('a', { class: 'scan-cta', href: '#/scan' }, h('span', { class: 'ic' }, scanIcon()),
+      h('span', {}, h('b', {}, 'สแกน QR ใบเสร็จ สะสมแต้ม'), h('small', {}, 'เปิดกล้องแล้วส่องที่ QR ท้ายใบเสร็จ รับแต้มทันที')), h('span', { class: 'go' }, '›')),
     h('div', { class: 'quick' },
-      h('a', { class: 'btn', href: '#/claim-help' , onclick: (e) => { e.preventDefault(); claimHelp(); } }, h('b', {}, '🧾'), 'สะสมแต้มจากใบเสร็จ'),
       h('a', { class: 'btn', href: '#/rewards' }, h('b', {}, '🎁'), 'แลกของรางวัล'),
+      h('a', { class: 'btn', href: '#/history' }, h('b', {}, '🧾'), 'ประวัติการซื้อ'),
       h('a', { class: 'btn', href: '#/coupons' }, h('b', {}, '🎟️'), `คูปอง (${m.coupons_active})`),
       cfg.mobile ? h('a', { class: 'btn', href: '#/contact', onclick: (e) => { e.preventDefault(); toast('สแกน QR สั่งอาหารที่โต๊ะ หรือขอใบ QR จากพนักงาน', 'info', 5000); } }, h('b', {}, '🍜'), 'สั่งอาหาร') : null,
       h('a', { class: 'btn', href: '#/points' }, h('b', {}, '⭐'), 'ประวัติแต้ม'),
       h('a', { class: 'btn', href: '#/benefits' }, h('b', {}, '👑'), 'สิทธิประโยชน์')));
   drawBarcode($('#mbc'), m.member_no);
 }
-function claimHelp() { modal('สะสมแต้มจากใบเสร็จ', h('div', {}, h('p', {}, 'สแกน QR Code บนใบเสร็จด้วยกล้องมือถือ ระบบจะพาไปหน้ารับแต้มของบิลนั้นทันที'), h('p', { class: 'small muted' }, 'รับได้ครั้งเดียวต่อบิล และภายในเวลาที่ร้านกำหนด'))); }
+
+// ---------- scan a receipt QR inside the member site ----------
+function scanIcon() {
+  const ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('width', '26'); svg.setAttribute('height', '26'); svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '2.2'); svg.setAttribute('stroke-linecap', 'round');
+  svg.innerHTML = '<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M7 12h10"/>';
+  return svg;
+}
+// claim token from a scanned text: the receipt QR is <origin>/member/#/claim/<token>
+export function claimTokenOf(text) {
+  const m = /#\/claim\/([A-Za-z0-9_-]{8,})/.exec(String(text || ''));
+  return m ? m[1] : null;
+}
+let scanState = null;
+function stopScan() {
+  if (!scanState) return;
+  scanState.stop = true;
+  if (scanState.stream) scanState.stream.getTracks().forEach((t) => t.stop());
+  scanState = null;
+}
+let jsqrLoad;
+const loadJsQR = () => (jsqrLoad ||= new Promise((res, rej) => { if (window.jsQR) return res(window.jsQR); const sc = document.createElement('script'); sc.src = '/vendor/jsQR.js'; sc.onload = () => res(window.jsQR); sc.onerror = () => { jsqrLoad = null; rej(new Error('โหลดตัวอ่าน QR ไม่สำเร็จ')); }; document.head.append(sc); }));
+async function decoder() {
+  if ('BarcodeDetector' in window) {
+    try { const f = await window.BarcodeDetector.getSupportedFormats(); if (f.includes('qr_code')) { const d = new window.BarcodeDetector({ formats: ['qr_code'] }); return async (src) => { const r = await d.detect(src); return r[0] ? r[0].rawValue : null; }; } } catch { /* fall back to jsQR */ }
+  }
+  const jsQR = await loadJsQR();
+  const cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently: true });
+  return async (src) => {
+    const w0 = src.videoWidth || src.naturalWidth || src.width, h0 = src.videoHeight || src.naturalHeight || src.height;
+    if (!w0 || !h0) return null;
+    const k = Math.min(1, 720 / Math.max(w0, h0));
+    cv.width = Math.round(w0 * k); cv.height = Math.round(h0 * k);
+    cx.drawImage(src, 0, 0, cv.width, cv.height);
+    const img = cx.getImageData(0, 0, cv.width, cv.height);
+    const r = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+    return r ? r.data : null;
+  };
+}
+function onScanned(text) {
+  const tok = claimTokenOf(text);
+  if (!tok) { toast('QR นี้ไม่ใช่ QR รับแต้มจากใบเสร็จของร้าน', 'warn'); return false; }
+  if (navigator.vibrate) navigator.vibrate(60);
+  stopScan();
+  location.hash = '#/claim/' + tok;
+  return true;
+}
+async function scanPage() {
+  const video = h('video', { playsinline: true, muted: true, autoplay: true });
+  const status = h('div', { class: 'scan-status' }, 'กำลังเปิดกล้อง…');
+  const file = h('input', { type: 'file', accept: 'image/*', style: { display: 'none' } });
+  file.onchange = async () => {
+    const f = file.files[0]; if (!f) return;
+    try {
+      const img = new Image(); img.src = URL.createObjectURL(f); await img.decode();
+      const text = await (await decoder())(img);
+      URL.revokeObjectURL(img.src);
+      if (!text) return toast('ไม่พบ QR ในรูปนี้ ลองถ่ายให้ชัดและเห็น QR ทั้งหมด', 'warn', 4000);
+      onScanned(text);
+    } catch (e) { errToast(e); }
+    file.value = '';
+  };
+  shell(h('div', { class: 'scan-card' },
+    h('div', { class: 'viewfinder' }, video, h('div', { class: 'frame' }, h('i', { class: 'c1' }), h('i', { class: 'c2' }), h('i', { class: 'c3' }), h('i', { class: 'c4' }), h('b', { class: 'laser' }))),
+    status,
+    h('div', { class: 'scan-steps' }, h('div', {}, h('b', {}, '1'), 'ส่องกล้องที่ QR ท้ายใบเสร็จ'), h('div', {}, h('b', {}, '2'), 'ระบบอ่านอัตโนมัติ'), h('div', {}, h('b', {}, '3'), 'รับแต้มเข้าบัญชีทันที')),
+    h('button', { class: 'btn block', onclick: () => file.click() }, '🖼️ เลือกรูปใบเสร็จจากคลังภาพ'), file,
+    h('p', { class: 'small muted', style: { textAlign: 'center', margin: 0 } }, 'รับได้ครั้งเดียวต่อบิล และภายในเวลาที่ร้านกำหนด')));
+  const st = (scanState = { stop: false, stream: null });
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw Object.assign(new Error('อุปกรณ์นี้เปิดกล้องจากเว็บไม่ได้'), { name: 'NotSupported' });
+    st.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } }, audio: false });
+    if (st.stop) { st.stream.getTracks().forEach((t) => t.stop()); return; }
+    video.srcObject = st.stream; await video.play().catch(() => {});
+    status.textContent = 'ส่องกล้องให้ QR อยู่ในกรอบ';
+    const read = await decoder();
+    let busy = false, last = 0;
+    const tick = async (ts) => {
+      if (st.stop) return;
+      if (!busy && ts - last > 180 && video.readyState >= 2) {
+        busy = true; last = ts;
+        try { const text = await read(video); if (text && onScanned(text)) return; } catch { /* keep scanning */ }
+        busy = false;
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  } catch (e) {
+    status.classList.add('err');
+    status.textContent = e.name === 'NotAllowedError' ? 'ไม่ได้รับอนุญาตให้ใช้กล้อง — อนุญาตกล้องในการตั้งค่าเบราว์เซอร์ หรือเลือกรูปใบเสร็จจากคลังภาพแทน'
+      : (e.message || 'เปิดกล้องไม่สำเร็จ') + ' — เลือกรูปใบเสร็จจากคลังภาพแทนได้';
+  }
+}
 function drawBarcode(canvas, text) {
   if (!canvas) return;
   const mods = code128(text);

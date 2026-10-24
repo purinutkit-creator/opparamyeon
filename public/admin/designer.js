@@ -13,6 +13,7 @@ const SAMPLES = {
 };
 const base = { store_name: 'Oppa Ramyeon', branch: 'สาขาหลัก', address: '123 ถนนสุขุมวิท กรุงเทพฯ', phone: '02-000-0000', tax_id: '0105500000000', bill_no: 'B261023-0042', queue_no: 'T042',
   table: 'A3', customer: 'คุณมินจู', member: 'จีซู (M000123)', staff: 'แคชเชียร์', datetime: '23/10/2569 19:42', footer: 'ขอบคุณที่อุดหนุน 감사합니다', claim_available: true,
+  points_mode: 'claim', claim_points: 43, claim_deadline: '26/10/2569 19:42', points_earned: 43, member_points: 386, member_display: 'จีซู · M000123', member_tier: 'Gold',
   claim_url: location.origin + '/member/#/claim/SAMPLE', mobile_url: location.origin + '/m/#SAMPLE', mobile_ref: 'MO-ABC123', mobile_target: 'โต๊ะ A3', mobile_expires: '23/10/2569 22:42',
   ticket_kind: 'ออเดอร์ใหม่', received_time: '24/10/69 15:38:37', table_or_type: 'โต๊ะ: V.22', detail_url: location.origin + '/admin/#/bill/B261023-0042', pay_methods: 'เงินสด', count_unit: 'ชาม', ticket_part: 'ใบที่ 1/2 · ชามที่ 1', station: 'ครัวมาม่า', order_note: 'ลูกค้าแพ้กุ้ง', reason: 'ลูกค้าเปลี่ยนใจ', refund_amount: '79.00', reward_name: 'ไข่ออนเซ็นฟรี',
   coupon_code: 'K7M2Q9XA', points_used: 20, payments: [{ method: 'เงินสด', amount: 7900, change: 2100 }], tax_rate: 7, tax_inclusive: true,
@@ -59,7 +60,7 @@ export async function designerPage() {
           h('button', { class: 'btn sm', disabled: i === data.elements.length - 1, onclick: () => { data.elements.splice(i + 1, 0, data.elements.splice(i, 1)[0]); sel = i + 1; drawEditor(); drawPreview(); } }, '↓'),
           h('button', { class: 'btn sm danger', onclick: () => { data.elements.splice(i, 1); sel = -1; drawEditor(); drawPreview(); } }, '✕')))),
       h('div', { class: 'row' }, h('select', { class: 'input', style: { width: 'auto' }, id: 'addType' }, Object.entries(ELEMENT_TYPES).map(([k, t]) => h('option', { value: k }, t))),
-        h('button', { class: 'btn', onclick: () => { const t = document.getElementById('addType').value; const el = { type: t, align: 'left' }; if (t === 'field') el.field = 'store_name'; if (t === 'text') el.text = 'ข้อความ'; if (t === 'qr') Object.assign(el, { value: '{claim_url}', size_mm: 30, align: 'center' }); if (t === 'barcode') Object.assign(el, { value: '{bill_no}', height: 70 }); if (t === 'space') el.height = 20; if (t === 'logo') el.width_pct = 40;
+        h('button', { class: 'btn', onclick: () => { const t = document.getElementById('addType').value; const el = { type: t, align: 'left' }; if (t === 'field') el.field = 'store_name'; if (t === 'text') el.text = 'ข้อความ'; if (t === 'qr') Object.assign(el, { value: '{claim_url}', size_mm: 30, align: 'center' }); if (t === 'barcode') Object.assign(el, { value: '{bill_no}', height: 70 }); if (t === 'space') el.height = 20; if (t === 'logo') el.width_pct = 40; if (t === 'points') Object.assign(el, { size_mm: 30, size: 24 });
           data.elements.splice(sel >= 0 ? sel + 1 : data.elements.length, 0, el); sel = sel >= 0 ? sel + 1 : data.elements.length - 1; drawEditor(); drawPreview(); } }, '+ เพิ่มองค์ประกอบ')),
       h('p', { class: 'small muted' }, 'ตัวแปร: ', VARS.map((v) => `{${v}}`).join(' ')));
     drawProps();
@@ -84,6 +85,9 @@ export async function designerPage() {
           h('span', { class: 'hint' }, 'อัปโหลดรูปใดก็ได้ (เช่น โลโก้แคมเปญ ตราสัญลักษณ์ ภาพโปรโมชั่น) — แนะนำรูปขาวดำพื้นขาว คมชัด'))],
       image: [numIn(e, 'width_pct', 'ความกว้าง % (รักษาสัดส่วน)'), (() => { const f = h('input', { type: 'file', accept: 'image/*' }); f.onchange = async () => { const fd = new FormData(); fd.append('file', f.files[0]); const r = await api.post('/files', fd); e.src = r.url; drawPreview(); }; return h('label', { class: 'field' }, 'อัปโหลดรูป', f); })()],
       qr: [txtIn(e, 'value', 'ข้อมูล QR (ตัวแปร)'), numIn(e, 'size_mm', 'ขนาด (มม., อย่างน้อย 15)'), txtIn(e, 'caption', 'ข้อความใต้ QR'), numIn(e, 'caption_size', 'ขนาดข้อความ')],
+      points: [h('p', { class: 'hint' }, 'พิมพ์อัตโนมัติ: บิลที่ยังไม่มีสมาชิก → กรอบ "สแกนสะสมแต้ม" + QR + จำนวนแต้มที่จะได้ · บิลที่ใส่สมาชิกแล้ว → แต้มที่ได้รับจากบิลนี้และแต้มสะสมทั้งหมด'),
+        selIn(e, '_preview', 'ตัวอย่างบนจอ', [['claim', 'ยังไม่เป็นสมาชิก (QR รับแต้ม)'], ['member', 'ใส่สมาชิกแล้ว']]),
+        txtIn(e, 'title', 'หัวกรอบ (QR)'), txtIn(e, 'caption', 'ข้อความใต้ QR'), txtIn(e, 'member_title', 'หัวกรอบ (สมาชิก)'), numIn(e, 'size_mm', 'ขนาด QR (มม.)'), numIn(e, 'size', 'ขนาดตัวอักษร')],
       barcode: [txtIn(e, 'value', 'ข้อมูลบาร์โค้ด (A-Z, 0-9)'), numIn(e, 'height', 'ความสูง (จุด)'), numIn(e, 'module', 'ความกว้างแท่ง (จุด, ≥2)')],
     }[e.type] || [];
     propBox.replaceChildren(h('h4', {}, 'แก้ไข: ', ELEMENT_TYPES[e.type]), ...specific, ...(['divider', 'space', 'cut', 'image', 'logo'].includes(e.type) ? [common[0], common[7], common[8]] : common));
@@ -94,6 +98,7 @@ export async function designerPage() {
     tmr = setTimeout(async () => {
       if (!data) return;
       const d = { ...base, ...SAMPLES[sample], logo: ctx.settings.store.logo, store_name: ctx.settings.store.name || base.store_name };
+      const pe = data.elements.find((x) => x.type === 'points' && x._preview); if (pe) d.points_mode = pe._preview;
       try {
         const r = await renderDoc(data, d, { canvas, cutMarks: true });
         canvas.style.maxWidth = (data.paper === 58 ? 290 : 420) + 'px';

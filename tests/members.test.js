@@ -132,6 +132,24 @@ test('สมาชิกในบิลตั้งแต่ก่อนชำ�
   assert.deepEqual(led.map((x) => x.kind), ['earn', 'refund']);
 });
 
+test('ใบเสร็จ: กรอบสะสมแต้มบอกจำนวนแต้มที่จะได้ (ยังไม่เป็นสมาชิก) และแต้มที่ได้รับ/แต้มสะสม (ใส่สมาชิกแล้ว)', async () => {
+  const dataOf = async (o) => JSON.parse((await db.get("SELECT payload FROM print_jobs WHERE ref_id = ? AND doc_type = 'receipt'", [o.id])).payload).data;
+  const guest = await dataOf(await sell([line('p_r002', 2, { options: ramyeonOpts })])); // 198 บาท → 7 แต้ม
+  assert.equal(guest.points_mode, 'claim');
+  assert.equal(guest.claim_points, 7);
+  assert.ok(guest.claim_deadline);
+  const m = (await S.call('POST', '/api/members', { phone: '0850000077', first_name: 'มินนี่' }, { token: owner })).body;
+  await db.run('UPDATE members SET points = 100 WHERE id = ?', [m.id]);
+  const mine = await dataOf(await sell([line('p_r001', 2, { options: ramyeonOpts })], { member_id: m.id })); // 158 → 6
+  assert.equal(mine.points_mode, 'member');
+  assert.equal(mine.points_earned, 6);
+  assert.equal(mine.member_points, 106, 'แต้มสะสมหลังได้รับแต้มบิลนี้');
+  assert.match(mine.member_display, /มินนี่/);
+  assert.equal(mine.claim_available, false);
+  const tpl = (await S.call('GET', '/api/templates', undefined, { token: owner })).body.templates.find((t) => t.doc_type === 'receipt' && t.is_default);
+  assert.ok(tpl.data.elements.some((e) => e.type === 'points'), 'แม่แบบใบเสร็จใช้กรอบสะสมแต้ม');
+});
+
 test('ลืมรหัสผ่าน: ไม่บอกว่าเบอร์มีบัญชีไหม, ถึงแอดมิน, รีเซ็ตหลังตรวจสอบตัวตน, ลิงก์ใช้ครั้งเดียว', async () => {
   const a = await S.call('POST', '/api/c/forgot', { phone: '0810000012' });
   const b = await S.call('POST', '/api/c/forgot', { phone: '0899999999' });

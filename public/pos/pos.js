@@ -1,6 +1,6 @@
 import { makeApi, store, socket, uid, storageWarning } from '/shared/api.js';
 import { loginHero, h, $, toast, errToast, modal, confirmBox, promptBox, keypad, fmtTime, STATUS_TH, PREP_TH, SOURCE_TH, JOB_TH, debounce } from '/shared/ui.js';
-import { baht, toSatang, addToCart, computeTotals, countBowls, dineLabel, lineUnitTotal, lineTotal, orderDineType, promptPayPayload, VERSION, maskPhone } from '/shared/core.js';
+import { baht, toSatang, addToCart, computeTotals, countBowls, dineLabel, lineUnitTotal, lineTotal, orderDineType, promptPayPayload, VERSION, maskPhone, pointsFor } from '/shared/core.js';
 import { applyFonts } from '/shared/fonts.js';
 import { PrintHost, pairPrinter, unpairPrinter, isLinkedHere, testPrint, support, agentUrl, linkOf } from '/shared/printers.js';
 import { playSound, unlock, beep } from '/shared/sound.js';
@@ -119,7 +119,7 @@ function renderTop() {
   const t = $('#top'); if (!t) return;
   const badge = (n, pulse) => (n ? h('span', { class: 'count' + (pulse ? ' pulse' : '') }, n) : null);
   t.replaceChildren(
-    h('span', { class: 'brand' }, '🍜 ', st.settings.store.name), h('span', { id: 'net', class: 'status-dot ' + (online ? 'ok' : 'bad') }),
+    h('span', { class: 'brand' }, h('img', { src: st.settings.store.logo || '/assets/bowl.svg', alt: '' }), st.settings.store.name), h('span', { id: 'net', class: 'status-dot ' + (online ? 'ok' : 'bad') }),
     h('span', { class: 'who muted' }, `${st.terminal.name} · ${st.staff.name}`),
     st.shift ? h('span', { class: 'badge ok' }, 'รอบเปิดอยู่') : h('button', { class: 'btn sm danger', onclick: openShiftDialog }, 'ยังไม่เปิดรอบ'),
     h('span', { class: 'spacer' }),
@@ -163,7 +163,8 @@ function renderMenu() {
   });
   m.replaceChildren(
     h('div', { class: 'search' }, search, h('button', { class: 'btn', onclick: () => { search.value = ''; st.q = ''; renderGrid(); } }, 'ล้าง')),
-    h('div', { class: 'tabs' }, [{ id: 'all', name: 'ทั้งหมด' }, ...cats].map((c) => h('button', { class: 'tab' + (st.cat === c.id ? ' active' : ''), onclick: () => { st.cat = c.id; renderMenu(); } }, c.name))),
+    h('div', { class: 'tabs cats' }, [{ id: 'all', name: 'ทั้งหมด', color: '' }, ...cats].map((c) => h('button', { class: 'tab' + (st.cat === c.id ? ' active' : ''), style: c.color ? `--cat:${c.color}` : null, onclick: () => { st.cat = c.id; renderMenu(); } },
+      c.id !== 'all' ? h('i', { class: 'dot' }) : null, c.name, h('span', { class: 'n' }, st.catalog.products.filter((p) => p.active && (c.id === 'all' || p.category_id === c.id)).length)))),
     h('div', { class: 'products', id: 'grid' }));
   renderGrid();
 }
@@ -175,10 +176,15 @@ const filtered = () => {
 function renderGrid() {
   const g = $('#grid'); if (!g) return;
   const list = filtered();
-  g.replaceChildren(...(list.length ? list.map((p) => h('button', { class: 'prod' + (p.sold_out ? ' out' : ''), onclick: () => pickProduct(p), oncontextmenu: (e) => { e.preventDefault(); soldOutToggle(p); } },
-    h('div', { class: 'img', style: p.image ? { backgroundImage: `url(${p.image})` } : {} }, p.image ? '' : '🍜'),
-    h('div', { class: 'nm' }, p.name, p.sold_out ? h('span', { class: 'badge bad' }, ' หมด') : null),
-    h('div', { class: 'pr' }, baht(p.price) + ' ฿', p.bowl_count ? h('span', { class: 'muted small' }, ` · ${p.bowl_count} ${U()}`) : null))) : [h('div', { class: 'empty' }, 'ไม่พบสินค้า')]));
+  const inCart = new Map();
+  for (const l of st.cart.lines) inCart.set(l.product_id, (inCart.get(l.product_id) || 0) + l.qty);
+  const catColor = Object.fromEntries(st.catalog.categories.map((c) => [c.id, c.color]));
+  g.replaceChildren(...(list.length ? list.map((p) => h('button', { class: 'prod' + (p.sold_out ? ' out' : '') + (inCart.get(p.id) ? ' picked' : ''), style: catColor[p.category_id] ? `--cat:${catColor[p.category_id]}` : null,
+    onclick: () => pickProduct(p), oncontextmenu: (e) => { e.preventDefault(); soldOutToggle(p); } },
+    h('div', { class: 'img' + (p.image ? '' : ' noimg'), style: p.image ? { backgroundImage: `url(${p.image})` } : {} }, p.image ? null : h('img', { src: '/assets/bowl.svg', alt: '' }),
+      inCart.get(p.id) ? h('span', { class: 'incart' }, '×' + inCart.get(p.id)) : null, p.sold_out ? h('span', { class: 'soldout' }, 'หมด') : null),
+    h('div', { class: 'nm' }, p.name),
+    h('div', { class: 'pr' }, h('span', { class: 'price' }, baht(p.price) + ' ฿'), p.bowl_count ? h('span', { class: 'unit' }, `${p.bowl_count} ${U()}`) : null, h('span', { class: 'plus' }, '+')))) : [h('div', { class: 'empty' }, 'ไม่พบสินค้า')]));
 }
 async function soldOutToggle(p) {
   if (!(await confirmBox(p.sold_out ? 'เปิดขาย' : 'ตั้งเป็นสินค้าหมด', `${p.name}`, 'ยืนยัน'))) return;
@@ -273,9 +279,9 @@ function renderCart() {
         h('button', { class: 'chip', onclick: async () => { const v = await promptBox('ชื่อลูกค้า', { value: cart.customer_name, required: false }); if (v !== null) { cart.customer_name = v; saveCart(); renderCart(); } } }, cart.customer_name ? `👤 ${cart.customer_name}` : '+ ชื่อลูกค้า'),
         h('button', { class: 'chip', onclick: async () => { const v = await promptBox('หมายเหตุออเดอร์', { value: cart.note, required: false }); if (v !== null) { cart.note = v; saveCart(); renderCart(); } } }, cart.note ? `📝 ${cart.note}` : '+ หมายเหตุ'),
         cart.member ? null : h('button', { class: 'chip', onclick: memberDialog }, '+ สมาชิก')),
-      cart.member ? h('div', { class: 'member-box' }, '⭐ ', `${cart.member.first_name || cart.member.nickname || ''} · ${cart.member.member_no}`, cart.member.tier ? h('span', { class: 'badge', style: { background: cart.member.tier.color, color: '#fff' } }, cart.member.tier.name) : null,
-        h('span', { class: 'small' }, ` ${cart.member.points} แต้ม`), h('span', { class: 'spacer', style: { flex: 1 } }), h('button', { class: 'btn sm', onclick: () => { cart.member = null; saveCart(); renderCart(); } }, 'นำออก')) : null),
-    h('div', { class: 'lines' }, cart.lines.length ? cart.lines.map((l) => lineView(l)) : h('div', { class: 'empty' }, 'ยังไม่มีสินค้า — แตะเมนู หรือสแกนบาร์โค้ด')),
+      cart.member ? memberBox(cart, t) : null),
+    h('div', { class: 'lines' }, cart.lines.length ? cart.lines.map((l) => lineView(l))
+      : h('div', { class: 'cart-empty' }, h('img', { src: '/assets/bowl.svg', alt: '' }), h('b', {}, 'ยังไม่มีสินค้าในบิล'), h('span', {}, 'แตะเมนูทางซ้าย หรือสแกนบาร์โค้ดได้เลย'))),
     h('div', { class: 'totals' },
       row('รวมสินค้า', baht(t.items_total)),
       t.discount ? row('ส่วนลด' + (t.tierAmt ? ' (รวมสิทธิ์ Tier)' : ''), '-' + baht(t.discount)) : null,
@@ -287,7 +293,25 @@ function renderCart() {
       h('button', { class: 'btn', onclick: () => saveOrder('send'), disabled: !cart.lines.length }, '🔥 ส่งครัว'),
       h('button', { class: 'btn', onclick: discountDialog, disabled: !cart.lines.length || !can('discount') }, '％ ส่วนลด'),
       h('button', { class: 'btn', onclick: bowlPicker }, `🥣 ${U()} ${st.activeBowl || '-'}`),
-      h('button', { class: 'btn primary pay', onclick: payDialog, disabled: !cart.lines.length }, `ชำระเงิน ${baht(t.total)} ฿`)));
+      h('button', { class: 'btn primary pay', onclick: payDialog, disabled: !cart.lines.length }, h('span', {}, '💳 ชำระเงิน'), h('span', { class: 'amt num' }, `${baht(t.total)} ฿`))));
+  renderGrid();
+}
+// points the attached member will get from this bill (same rule as the server; the receipt shows the final number)
+function previewEarn(cart, t) {
+  const P = st.settings.points || {};
+  if (!P.enabled || !cart.member) return 0;
+  const items = cart.lines.map((l) => ({ product_id: l.product_id, qty: l.qty, void_qty: 0, refunded_qty: 0, line_total: lineTotal(l) }));
+  return pointsFor({ items_total: t.items_total, discount: t.discount, packaging: t.packaging, tax: t.tax }, items, { ...P, tax_inclusive: st.settings.sale.tax_inclusive },
+    cart.member.tier ? Number(cart.member.tier.multiplier) || 1 : 1).points;
+}
+function memberBox(cart, t) {
+  const m = cart.member, earn = previewEarn(cart, t);
+  return h('div', { class: 'member-box' },
+    h('div', { class: 'av' }, (m.first_name || m.nickname || '⭐').slice(0, 1)),
+    h('div', { class: 'who' }, h('b', {}, `${m.first_name || m.nickname || ''}`, m.tier ? h('span', { class: 'badge', style: { background: m.tier.color, color: '#fff', marginLeft: '.4em' } }, m.tier.name) : null),
+      h('small', {}, `${m.member_no} · มี ${Number(m.points).toLocaleString()} แต้ม`)),
+    st.settings.points && st.settings.points.enabled ? h('div', { class: 'earn' }, h('b', {}, `+${earn}`), h('small', {}, 'แต้มบิลนี้')) : null,
+    h('button', { class: 'btn sm', onclick: () => { cart.member = null; saveCart(); renderCart(); } }, 'นำออก'));
 }
 const row = (a, b) => h('div', { class: 'r' }, h('span', {}, a), h('span', { class: 'num' }, b));
 function lineView(l) {

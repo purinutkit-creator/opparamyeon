@@ -55,6 +55,38 @@
   .success-card .burst { font-size: 56px; position: relative; animation: pop .5s ease-out; }
   .success-card .big-pts { font-family: var(--head-font); font-size: 3.4em; font-weight: 700; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; position: relative; }
   .page-title { font-family: var(--head-font); font-size: 1.5em; margin: .2em 0 0; }
+  /* raised scan button in the middle of the bottom nav */
+  nav.bot a.scanfab { position: relative; padding-top: 0; color: var(--brand); }
+  nav.bot a.scanfab.on { background: transparent; box-shadow: none; color: var(--brand); }
+  nav.bot a.scanfab .fab { width: 58px; height: 58px; margin: -26px auto 2px; border-radius: 20px; display: grid; place-items: center; color: #fff; background: var(--grad);
+    box-shadow: 0 10px 24px rgb(232 50 31 / .4), 0 0 0 5px var(--bg); transform: rotate(-4deg); transition: transform .2s; }
+  nav.bot a.scanfab:active .fab { transform: scale(.94); }
+  /* scan call-to-action on the home page */
+  .scan-cta { display: grid; grid-template-columns: 56px 1fr 24px; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 24px; text-decoration: none; color: #fff;
+    background: radial-gradient(120% 160% at 0% 0%, rgb(255 255 255 / .22), transparent 50%), var(--grad); box-shadow: 0 14px 30px rgb(232 50 31 / .3); position: relative; overflow: hidden; }
+  .scan-cta::after { content: ''; position: absolute; width: 130px; height: 130px; border-radius: 50%; right: -40px; top: -60px; border: 18px solid rgb(255 255 255 / .12); }
+  .scan-cta .ic { width: 56px; height: 56px; border-radius: 18px; background: rgb(255 255 255 / .2); display: grid; place-items: center; }
+  .scan-cta b { font-family: var(--head-font); font-size: 1.12em; display: block; line-height: 1.2; }
+  .scan-cta small { opacity: .9; }
+  .scan-cta .go { font-size: 2em; line-height: 1; opacity: .9; }
+  /* camera viewfinder */
+  .scan-card { background: var(--surface); border-radius: 28px; padding: 14px; box-shadow: var(--shadow-lg); display: grid; gap: 12px; }
+  .viewfinder { position: relative; aspect-ratio: 1; border-radius: 22px; overflow: hidden; background: radial-gradient(circle at 50% 40%, #3d1d15, #140906); }
+  .viewfinder video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .viewfinder .frame { position: absolute; inset: 16%; border-radius: 18px; box-shadow: 0 0 0 999px rgb(20 9 6 / .45); }
+  .viewfinder .frame i { position: absolute; width: 34px; height: 34px; border: 5px solid #fff; }
+  .viewfinder .frame .c1 { left: -3px; top: -3px; border-right: 0; border-bottom: 0; border-radius: 16px 0 0 0; }
+  .viewfinder .frame .c2 { right: -3px; top: -3px; border-left: 0; border-bottom: 0; border-radius: 0 16px 0 0; }
+  .viewfinder .frame .c3 { left: -3px; bottom: -3px; border-right: 0; border-top: 0; border-radius: 0 0 0 16px; }
+  .viewfinder .frame .c4 { right: -3px; bottom: -3px; border-left: 0; border-top: 0; border-radius: 0 0 16px 0; }
+  .viewfinder .laser { position: absolute; left: 8%; right: 8%; height: 3px; border-radius: 3px; background: linear-gradient(90deg, transparent, #ffb199, #fff, #ffb199, transparent);
+    box-shadow: 0 0 14px 3px rgb(255 120 90 / .7); animation: laser 2.2s ease-in-out infinite; }
+  @keyframes laser { 0%, 100% { top: 8%; } 50% { top: 90%; } }
+  .scan-status { text-align: center; font-weight: 700; padding: .2em .4em; }
+  .scan-status.err { color: var(--bad); }
+  .scan-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: .8em; text-align: center; color: var(--muted); }
+  .scan-steps b { display: grid; place-items: center; width: 30px; height: 30px; margin: 0 auto 4px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); font-size: 1.1em; }
+  @media (prefers-reduced-motion: reduce) { .viewfinder .laser { animation: none; top: 50%; } }
 </style>
 </head>
 <body>

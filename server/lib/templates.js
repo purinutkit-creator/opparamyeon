@@ -30,7 +30,7 @@ export const DEFAULT_TEMPLATES = {
     { type: 'totals', show: ['items_total', 'discount', 'packaging', 'tax', 'total'], size: 24, total_size: 34 },
     { type: 'payments', size: 22 },
     { type: 'divider', style: 'dash' },
-    { type: 'qr', value: '{claim_url}', size_mm: 30, align: 'center', when: 'claim_available', caption: 'สแกนเพื่อสมัครสมาชิกและรับแต้มจากบิลนี้' },
+    { type: 'points', size_mm: 30, size: 24 },
     { type: 'text', text: '{footer}', align: 'center', size: 22 },
   ]),
   // Kitchen ticket (style: staff / received / print time → big table → big "qty  item" rows)

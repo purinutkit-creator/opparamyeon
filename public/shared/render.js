@@ -13,7 +13,7 @@ export const FIELD_LABELS = {
   mobile_ref: 'เลขอ้างอิง QR', mobile_expires: 'วันหมดอายุ QR', reward_name: 'ชื่อรางวัล', coupon_code: 'โค้ดคูปอง', points_used: 'แต้มที่ใช้',
 };
 export const ELEMENT_TYPES = { logo: 'โลโก้', field: 'ข้อมูลจากระบบ', text: 'ข้อความอิสระ', items: 'รายการสินค้า', totals: 'ยอดรวม', payments: 'การชำระเงิน', divider: 'เส้นคั่น',
-  space: 'ช่องว่าง', image: 'รูปภาพ', barcode: 'บาร์โค้ด', qr: 'QR Code', cut: 'จุดตัดกระดาษ', shift_summary: 'สรุปรอบการขาย' };
+  space: 'ช่องว่าง', image: 'รูปภาพ', barcode: 'บาร์โค้ด', qr: 'QR Code', cut: 'จุดตัดกระดาษ', shift_summary: 'สรุปรอบการขาย', points: 'กรอบสะสมแต้ม (QR รับแต้ม / แต้มสมาชิก)' };
 export const VARS = ['detail_url', 'queue_number', 'bill_no', 'table_name', 'customer_name', 'member_name', 'total', 'store_name', 'datetime', 'staff', 'claim_url', 'mobile_url', 'footer', 'phone'];
 
 const imgCache = new Map();
@@ -77,6 +77,7 @@ export async function renderDoc(tpl, data, opts = {}) {
     if (e.type === 'logo' && !opts.noLogo) images.set(e, await loadImage(e.src || data.logo));
     if (e.type === 'image') images.set(e, await loadImage(e.src));
     if (e.type === 'qr') { const v = fillVars(e.value, vars); if (v) images.set(e, await qrMatrix(v)); }
+    if (e.type === 'points' && data.points_mode === 'claim' && data.claim_url) images.set(e, await qrMatrix(data.claim_url));
   }
   const run = (ctx, draw) => {
     let y = margin;
@@ -105,6 +106,23 @@ export async function renderDoc(tpl, data, opts = {}) {
         if (draw) { ctx.fillStyle = '#000'; ctx.textBaseline = 'top'; ctx.fillText(ln, margin, y + (lh(size) - size) / 2); if (i === 0 && right) ctx.fillText(right, margin + inner - rw, y + (lh(size) - size) / 2); }
         y += lh(size);
       });
+    };
+    // QR matrix drawn as square modules inside the column [x0, x0 + w]
+    const qrAt = (m, sizeMm, align, x0 = margin, w = inner) => {
+      const target = Math.round((sizeMm || 30) * DOTS_PER_MM);
+      const mod = Math.floor(Math.min(target, w) / (m.size + 2));
+      if (mod < 3) warnings.push(`QR Code เล็กเกินไป (โมดูล ${mod} จุด) อาจสแกนไม่ได้ — เพิ่มขนาด`);
+      const ms = Math.max(3, mod), size = ms * (m.size + 2);
+      if (size > w) warnings.push('QR Code กว้างเกินพื้นที่พิมพ์');
+      const qx = align === 'left' ? x0 : align === 'right' ? x0 + w - size : x0 + Math.round((w - size) / 2);
+      if (draw) { ctx.fillStyle = '#000'; for (let r = 0; r < m.size; r++) for (let c = 0; c < m.size; c++) if (m.data[r * m.size + c]) ctx.fillRect(qx + (c + 1) * ms, y + (r + 1) * ms, ms, ms); }
+      y += size + 4;
+    };
+    const pair = (left, right, e, { size, weight, x0, w }) => {
+      font(e, size, weight);
+      const rw = ctx.measureText(right).width;
+      if (draw) { ctx.fillStyle = '#000'; ctx.textBaseline = 'top'; ctx.fillText(left, x0, y + (lh(size) - size) / 2); ctx.fillText(right, x0 + w - rw, y + (lh(size) - size) / 2); }
+      y += lh(size);
     };
     if (data.reprint && opts.reprintMark !== false) text('** สำเนา / พิมพ์ซ้ำ **', { align: 'center' }, { size: 24, weight: 700 });
     for (const e of tpl.elements) {
@@ -198,15 +216,43 @@ export async function renderDoc(tpl, data, opts = {}) {
         case 'qr': {
           const m = images.get(e);
           if (!m) break;
-          const target = Math.round((e.size_mm || 30) * DOTS_PER_MM);
-          const mod = Math.floor(Math.min(target, inner) / (m.size + 2));
-          if (mod < 3) warnings.push(`QR Code เล็กเกินไป (โมดูล ${mod} จุด) อาจสแกนไม่ได้ — เพิ่มขนาด`);
-          const size = Math.max(3, mod) * (m.size + 2);
-          if (size > inner) warnings.push('QR Code กว้างเกินพื้นที่พิมพ์');
-          const x0 = e.align === 'left' ? margin : e.align === 'right' ? margin + inner - size : margin + Math.round((inner - size) / 2);
-          if (draw) { ctx.fillStyle = '#000'; const ms = Math.max(3, mod); for (let r = 0; r < m.size; r++) for (let c = 0; c < m.size; c++) if (m.data[r * m.size + c]) ctx.fillRect(x0 + (c + 1) * ms, y + (r + 1) * ms, ms, ms); }
-          y += size + 4;
+          qrAt(m, e.size_mm, e.align, margin, inner);
           if (e.caption) text(fillVars(e.caption, vars), { ...e, align: 'center' }, { size: e.caption_size || 22 });
+          break;
+        }
+        case 'points': {
+          // framed loyalty box: "scan to collect N points" with the claim QR, or the attached member's earned/total points
+          const mode = data.points_mode;
+          if (!mode) break;
+          const size = e.size || 24, pad = 14, x0 = margin + pad, w = inner - pad * 2, y0 = y;
+          const band = (t) => { y += 6; text(t, e, { size: Math.round(size * 1.15), weight: 800, align: 'center', x0: margin + 6, w: inner - 12, invert: true }); y += 4; };
+          if (mode === 'claim') {
+            band(e.title || '★ สแกนสะสมแต้ม ★');
+            if (data.claim_points > 0) {
+              text('บิลนี้รับได้', e, { size, weight: 600, align: 'center', x0, w });
+              text(`${data.claim_points} แต้ม`, e, { size: Math.round(size * 2), weight: 800, align: 'center', x0, w });
+            }
+            const m = images.get(e);
+            if (m) qrAt(m, e.size_mm || 30, 'center', x0, w);
+            text(e.caption || 'สแกนด้วยกล้องมือถือ รับแต้มทันที ไม่ต้องกรอกรหัส', e, { size: Math.round(size * 0.85), weight: 700, align: 'center', x0, w });
+            text('ยังไม่เป็นสมาชิก? สแกนแล้วสมัครได้เลย', e, { size: Math.round(size * 0.78), align: 'center', x0, w });
+            if (data.claim_deadline) text(`รับแต้มได้ถึง ${data.claim_deadline}`, e, { size: Math.round(size * 0.75), align: 'center', x0, w });
+          } else {
+            band(e.member_title || '★ คะแนนสมาชิก ★');
+            if (data.member_display) text(data.member_display, e, { size, weight: 700, align: 'center', x0, w });
+            if (data.member_tier) text(`ระดับ ${data.member_tier}`, e, { size: Math.round(size * 0.8), align: 'center', x0, w });
+            y += 4;
+            pair('ได้รับจากบิลนี้', `+${data.points_earned || 0} แต้ม`, e, { size: Math.round(size * 1.1), weight: 800, x0, w });
+            pair('แต้มสะสมทั้งหมด', `${data.member_points ?? 0} แต้ม`, e, { size: Math.round(size * 1.1), weight: 800, x0, w });
+            if (data.points_earned === 0 && data.points_note) text(data.points_note, e, { size: Math.round(size * 0.75), align: 'center', x0, w });
+          }
+          y += 8;
+          if (draw) {
+            // double rounded frame
+            ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+            const rr = (o, r) => { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(margin + o, y0 + o, inner - o * 2, y - y0 - o * 2, r); else ctx.rect(margin + o, y0 + o, inner - o * 2, y - y0 - o * 2); ctx.stroke(); };
+            rr(1.5, 16); ctx.lineWidth = 1.5; rr(6, 12);
+          }
           break;
         }
         case 'barcode': {
