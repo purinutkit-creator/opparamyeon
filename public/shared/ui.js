@@ -32,7 +32,7 @@ export function toast(msg, type = 'info', ms = 3200) {
 }
 export const errToast = (e) => toast(e && e.message ? e.message : String(e), 'error', 5000);
 
-export function modal(title, body, { actions = [], wide = false, onClose = null, closable = true } = {}) {
+export function modal(title, body, { actions = [], wide = false, onClose = null, closable = true, autofocus = true } = {}) {
   const close = () => { back.remove(); document.removeEventListener('keydown', onKey); onClose && onClose(); };
   const onKey = (e) => { if (e.key === 'Escape' && closable) close(); };
   const footer = h('div', { class: 'modal-actions' }, actions.map((a) => h('button', { class: 'btn ' + (a.class || ''), onclick: async (e) => {
@@ -47,7 +47,8 @@ export function modal(title, body, { actions = [], wide = false, onClose = null,
   const back = h('div', { class: 'modal-back', onclick: (e) => { if (e.target === back && closable) close(); } }, box);
   document.body.append(back);
   document.addEventListener('keydown', onKey);
-  setTimeout(() => { const f = box.querySelector('input,select,textarea'); if (f) f.focus(); }, 30);
+  // autofocus:false keeps the on-screen keyboard closed on tablets when typing is optional
+  if (autofocus) setTimeout(() => { const f = box.querySelector('input,select,textarea'); if (f) f.focus(); }, 30);
   return { close, box };
 }
 export function confirmBox(title, text, okLabel = 'ยืนยัน', danger = false) {

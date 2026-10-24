@@ -153,7 +153,11 @@ function renderMenu() {
   const m = $('#menu'); if (!m) return;
   const cats = st.catalog.categories;
   const search = h('input', { class: 'input', id: 'search', placeholder: '🔍 ค้นหาชื่อ / รหัสสินค้า / สแกนบาร์โค้ด', value: st.q, autocomplete: 'off' });
-  search.addEventListener('input', debounce(() => { st.q = search.value; renderGrid(); }, 150));
+  search.addEventListener('input', debounce(() => {
+    const v = search.value.trim();
+    if (v.length >= 3 && exactCode(v) && addByCode(v)) { search.value = ''; st.q = ''; renderGrid(); return; }
+    st.q = search.value; renderGrid();
+  }, 250));
   search.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
@@ -194,6 +198,12 @@ async function soldOutToggle(p) {
 // ---------------- cart ----------------
 function saveCart() { store.set('cart_' + st.terminal.id, st.cart); pushDisplay(); }
 const product = (id) => st.catalog.products.find((p) => p.id === id);
+// a code that matches one product exactly and is not the start of a longer code (so "R01" never fires while typing "R010")
+function exactCode(v) {
+  const q = v.toLowerCase();
+  const codes = st.catalog.products.filter((x) => x.active).flatMap((x) => [x.code.toLowerCase(), ...x.barcodes.map((b) => b.toLowerCase())]).filter(Boolean);
+  return codes.includes(q) && !codes.some((c) => c !== q && c.startsWith(q));
+}
 function addByCode(code) {
   const p = st.catalog.products.find((x) => x.active && (x.barcodes.includes(code) || x.code.toLowerCase() === code.toLowerCase()));
   if (!p) return false;
@@ -217,6 +227,8 @@ function optionsDialog(p, editLine = null) {
   let qty = editLine ? editLine.qty : 1;
   let dine = editLine ? editLine.dine_type : st.cart.dine_type;
   const note = h('input', { class: 'input', placeholder: 'หมายเหตุ เช่น ไม่ใส่ต้นหอม', value: editLine ? editLine.note : '' });
+  // the note is optional: hidden behind a button so the keyboard only opens when the cashier wants to type
+  let showNote = !!(editLine && editLine.note);
   const body = h('div');
   const draw = () => {
     const price = p.price + groups.reduce((s, g) => s + g.options.filter((o) => chosen.get(g.id).has(o.id)).reduce((a, o) => a + o.price, 0), 0);
@@ -232,11 +244,12 @@ function optionsDialog(p, editLine = null) {
         h('button', { class: dine === 'dine_in' ? 'on' : '', onclick: () => { dine = 'dine_in'; draw(); } }, 'ทานที่ร้าน'),
         h('button', { class: dine === 'takeaway' ? 'on takeaway' : '', onclick: () => { dine = 'takeaway'; draw(); } }, 'กลับบ้าน')),
       h('div', { class: 'qty' }, h('button', { onclick: () => { qty = Math.max(1, qty - 1); draw(); } }, '−'), h('span', {}, qty), h('button', { onclick: () => { qty++; draw(); } }, '+'))),
-      h('label', { class: 'field' }, 'หมายเหตุ', note),
+      showNote ? h('label', { class: 'field' }, 'หมายเหตุ (ไม่บังคับ)', note)
+        : h('button', { class: 'chip', style: { marginBottom: '.6em' }, onclick: () => { showNote = true; draw(); setTimeout(() => note.focus(), 30); } }, '📝 เพิ่มหมายเหตุ (ไม่บังคับ)'),
       h('div', { class: 'bigsum' }, baht(price * qty), ' ฿'));
   };
   draw();
-  modal(p.name, body, { actions: [{ label: 'ยกเลิก', onClick: () => {} }, { label: editLine ? 'บันทึก' : 'เพิ่มลงบิล', class: 'primary', onClick: () => {
+  modal(p.name, body, { autofocus: false, actions: [{ label: 'ยกเลิก', onClick: () => {} }, { label: editLine ? 'บันทึก' : 'เพิ่มลงบิล', class: 'primary', onClick: () => {
     for (const g of groups) if (chosen.get(g.id).size < g.min_select) { toast('กรุณาเลือก ' + g.name, 'warn'); return false; }
     const options = groups.flatMap((g) => g.options.filter((o) => chosen.get(g.id).has(o.id)).map((o) => ({ group_id: g.id, group: g.name, id: o.id, name: o.name, price: o.price })));
     if (editLine) Object.assign(editLine, { options, qty, dine_type: dine, note: note.value });
@@ -809,27 +822,36 @@ function reportDevice() {
 
 // ---------------- scanner (USB/Bluetooth keyboard wedge) ----------------
 function setupScanner() {
-  let buf = '', last = 0;
+  // A barcode scanner "types" the digits very fast. A burst is handled as soon as it ends,
+  // with or without the Enter key that some scanners send.
+  let buf = '', last = 0, fast = true, timer = null;
+  const handle = (code, enter) => {
+    if (addByCode(code)) return;
+    // bill barcode from the merchant copy / receipt → open that bill
+    if (/^[A-Z]+\d{6}-\d{4}$/i.test(code)) { api.get('/orders/by-bill/' + encodeURIComponent(code)).then((r) => openOrder(r.id)).catch(errToast); return; }
+    if (/^[A-Z0-9]{8,12}$/i.test(code) && can('redeem')) return couponDialog(code.toUpperCase());
+    if (enter || code.length >= 6) toast('ไม่พบสินค้าจากบาร์โค้ด ' + code, 'error');
+  };
+  const flush = (enter) => {
+    clearTimeout(timer); timer = null;
+    const code = buf, wasFast = fast; buf = ''; fast = true;
+    if (code.length >= 4 && (enter || wasFast)) { handle(code, enter); return true; }
+    return false;
+  };
   document.addEventListener('keydown', (e) => {
     const t = e.target;
     const inField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
-    if (inField && t.id !== 'search') return; // typing in a form
+    if (inField) return; // typing in a form (the search box handles its own codes)
     if (document.querySelector('.modal-back')) return;
     const now = performance.now();
-    if (now - last > 80) buf = '';
+    if (now - last > 300) { buf = ''; fast = true; }
+    else if (buf && now - last > 60) fast = false; // human typing speed
     last = now;
-    if (e.key === 'Enter') {
-      if (buf.length >= 4 && !inField) {
-        e.preventDefault();
-        const code = buf; buf = '';
-        if (addByCode(code)) return;
-        // bill barcode from the merchant copy / receipt → open that bill
-        if (/^[A-Z]+\d{6}-\d{4}$/i.test(code)) { api.get('/orders/by-bill/' + encodeURIComponent(code)).then((r) => openOrder(r.id)).catch(errToast); return; }
-        if (/^[A-Z0-9]{8,12}$/i.test(code) && can('redeem')) couponDialog(code.toUpperCase()); else toast('ไม่พบสินค้าจากบาร์โค้ด ' + code, 'error');
-      }
-      return;
-    }
-    if (e.key.length === 1 && !inField) buf += e.key;
+    if (e.key === 'Enter') { if (buf && flush(true)) e.preventDefault(); return; }
+    if (e.key.length !== 1) return;
+    buf += e.key;
+    clearTimeout(timer);
+    timer = setTimeout(() => flush(false), 120);
   });
 }
 
