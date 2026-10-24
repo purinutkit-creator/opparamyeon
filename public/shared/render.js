@@ -11,10 +11,11 @@ export const FIELD_LABELS = {
   ticket_kind: 'ประเภทใบ (ใหม่/เพิ่ม/ยกเลิก)', received_time: 'เวลารับออเดอร์', print_time: 'เวลาพิมพ์', table_or_type: 'โต๊ะ หรือ ทานที่ร้าน/กลับบ้าน (ตัวใหญ่)',
   pay_methods: 'ช่องทางชำระ', ticket_part: 'ใบที่/ชามที่', station: 'จุดครัว', reason: 'เหตุผล', refund_amount: 'ยอดคืน', mobile_target: 'โต๊ะ/Pick Up',
   mobile_ref: 'เลขอ้างอิง QR', mobile_expires: 'วันหมดอายุ QR', reward_name: 'ชื่อรางวัล', coupon_code: 'โค้ดคูปอง', points_used: 'แต้มที่ใช้',
+  pay_amount: 'ยอดชำระ (QR)', promptpay_name: 'ชื่อบัญชีพร้อมเพย์', promptpay_masked: 'เลขพร้อมเพย์ (ปิดบางส่วน)',
 };
 export const ELEMENT_TYPES = { logo: 'โลโก้', field: 'ข้อมูลจากระบบ', text: 'ข้อความอิสระ', items: 'รายการสินค้า', totals: 'ยอดรวม', payments: 'การชำระเงิน', divider: 'เส้นคั่น',
   space: 'ช่องว่าง', image: 'รูปภาพ', barcode: 'บาร์โค้ด', qr: 'QR Code', cut: 'จุดตัดกระดาษ', shift_summary: 'สรุปรอบการขาย', points: 'กรอบสะสมแต้ม (QR รับแต้ม / แต้มสมาชิก)' };
-export const VARS = ['detail_url', 'queue_number', 'bill_no', 'table_name', 'customer_name', 'member_name', 'total', 'store_name', 'datetime', 'staff', 'claim_url', 'mobile_url', 'footer', 'phone'];
+export const VARS = ['detail_url', 'queue_number', 'bill_no', 'table_name', 'customer_name', 'member_name', 'total', 'store_name', 'datetime', 'staff', 'claim_url', 'mobile_url', 'footer', 'phone', 'pay_qr'];
 
 const imgCache = new Map();
 function loadImage(src) {
@@ -147,7 +148,7 @@ export async function renderDoc(tpl, data, opts = {}) {
           text((e.label || '') + v, e, { invert: inv });
           break;
         }
-        case 'text': { const v = fillVars(e.text, vars); if (v.trim()) text(v, e); break; }
+        case 'text': { const v = fillVars(e.text, vars); if (v.trim()) text(v, e, { invert: !!e.invert }); break; }
         case 'divider': {
           const st = e.style || 'dash';
           if (draw) {

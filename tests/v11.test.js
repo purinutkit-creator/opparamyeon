@@ -123,3 +123,39 @@ test('คีย์ Beam: ร้านกรอกเองได้ เก็บ
   await S.call('PUT', '/api/payments/providers/beam', { api_key: '' }, { token: owner });
   assert.equal((await S.call('GET', '/api/payments/providers/beam', undefined, { token: owner })).body.api_key_set, true, 'เว้นว่าง = ใช้คีย์เดิม');
 });
+
+test('ใบ QR ชำระเงิน: พิมพ์ QR พร้อมเพย์ + ยอดเงิน, อัตโนมัติเมื่อไม่มีจอลูกค้าและไม่ซ้ำ, ปิดได้', async () => {
+  await S.call('PUT', '/api/settings/payment', { value: { promptpay_id: '0812345678', promptpay_name: 'ร้านออปป้า' } }, { token: owner });
+  const r = await S.call('POST', '/api/print/payqr', { amount: 15800 }, { token: owner, terminal: 'pos1' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.printed, true);
+  const job = await db.get('SELECT doc_type, payload FROM print_jobs WHERE id = ?', [r.body.jobs[0].id || r.body.jobs[0]]);
+  assert.equal(job.doc_type, 'payqr');
+  const d = JSON.parse(job.payload).data;
+  assert.equal(d.pay_amount, '158.00 บาท');
+  assert.match(d.pay_qr, /5406158\.00/, 'ยอดเงินฝังใน QR');
+  assert.match(d.promptpay_masked, /5678$/);
+  assert.ok(!d.promptpay_masked.includes('081234'), 'เลขพร้อมเพย์ถูกปิดบางส่วน');
+  const auto1 = await S.call('POST', '/api/print/payqr', { amount: 9900, auto: true, ref: 'cart-q1' }, { token: owner, terminal: 'pos1' });
+  assert.equal(auto1.body.printed, true, 'ไม่มีจอลูกค้า → พิมพ์อัตโนมัติ');
+  const auto2 = await S.call('POST', '/api/print/payqr', { amount: 9900, auto: true, ref: 'cart-q1' }, { token: owner, terminal: 'pos1' });
+  assert.equal(auto2.body.printed, false, 'ยอดเดิมบิลเดิมไม่พิมพ์ซ้ำ');
+  await S.call('PUT', '/api/settings/print', { value: { payqr_auto: 'off' } }, { token: owner });
+  const off = await S.call('POST', '/api/print/payqr', { amount: 5000, auto: true, ref: 'cart-q2' }, { token: owner, terminal: 'pos1' });
+  assert.equal(off.body.skipped, true);
+  const manual = await S.call('POST', '/api/print/payqr', { amount: 5000 }, { token: owner, terminal: 'pos1' });
+  assert.equal(manual.body.printed, true, 'กดพิมพ์เองได้เสมอ');
+  await S.call('PUT', '/api/settings/print', { value: { payqr_auto: 'no_display' } }, { token: owner });
+  assert.equal((await S.call('POST', '/api/print/payqr', { amount: 0 }, { token: owner, terminal: 'pos1' })).status, 400);
+});
+
+test('Add-on พิเศษ: เปิดที่สินค้าแล้ว POS ได้รับค่าแสดงตัวเลือกปุ่มใหญ่', async () => {
+  const cat = (await S.call('GET', '/api/catalog?all=1', undefined, { token: owner })).body;
+  const p = cat.products.find((x) => x.option_groups.length);
+  assert.equal(p.big_options, false);
+  const u = await S.call('PUT', '/api/products/' + p.id, { ...p, big_options: true }, { token: owner });
+  assert.equal(u.status, 200, JSON.stringify(u.body));
+  const again = (await S.call('GET', '/api/catalog', undefined, { token: owner })).body.products.find((x) => x.id === p.id);
+  assert.equal(again.big_options, true);
+  assert.deepEqual(again.option_groups, p.option_groups, 'ตัวเลือกเดิมไม่เปลี่ยน');
+});

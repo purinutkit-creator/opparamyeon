@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS device_reports (id TEXT PRIMARY KEY, terminal_id TEXT
 // Columns added after v1.0.0 (existing databases get them on boot)
 const MIGRATIONS = [
   ['printers', 'options', "TEXT DEFAULT '{}'"],
+  ['products', 'big_options', 'INTEGER DEFAULT 0'],
 ];
 
 class SqliteDB {

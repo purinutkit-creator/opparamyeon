@@ -61,7 +61,7 @@ export const DEFAULT_SETTINGS = {
     excluded_products: [], expire_days: 365, claim_qr: true, claim_enabled: true, claim_hours: 72, refund_policy: 'negative_allowed',
     tier_mode: 'auto' },
   // what prints automatically after payment, and in which order (same printer = printed in this order)
-  print: { order: ['receipt', 'kitchen', 'merchant', 'queue'], auto_receipt: true, auto_merchant: true, auto_queue: false, kitchen_every_order: true },
+  print: { order: ['receipt', 'kitchen', 'merchant', 'queue'], auto_receipt: true, auto_merchant: true, auto_queue: false, kitchen_every_order: true, payqr_auto: 'no_display' },
   week_start: 1,
 };
 
@@ -125,6 +125,8 @@ export async function nextCounter(key) {
 // ---------- realtime ----------
 let ioRef = null;
 export const setIO = (io) => { ioRef = io; };
+// number of sockets in a room right now (e.g. is a customer display connected to this terminal)
+export const roomSize = (room) => (ioRef ? (ioRef.sockets.adapter.rooms.get(room) || new Set()).size : 0);
 export function emit(room, event, data) { db.afterCommit(() => { if (ioRef) ioRef.to(room).emit(event, data); }); }
 
 // ---------- rate limiting (in memory, per key) ----------

@@ -1,7 +1,7 @@
 // Default document templates. The same JSON is rendered by public/shared/render.js for preview and printing.
 export const DOC_TYPES = {
   receipt: 'ใบเสร็จลูกค้า', kitchen: 'ใบครัว', queue: 'ใบเลขคิว', mobile_qr: 'ใบ Mobile Ordering', refund: 'ใบยกเลิก/คืนเงิน',
-  shift: 'ใบสรุปเปิด/ปิดรอบ', redeem: 'หลักฐานการแลกรางวัล', merchant: 'ใบสรุปร้านค้า (สำเนาร้าน)',
+  shift: 'ใบสรุปเปิด/ปิดรอบ', redeem: 'หลักฐานการแลกรางวัล', merchant: 'ใบสรุปร้านค้า (สำเนาร้าน)', payqr: 'ใบ QR ชำระเงิน (พร้อมเพย์)',
 };
 
 const base = (elements, extra = {}) => ({ paper: 80, margin: 8, line_height: 1.3, section_gap: 6, font: 'Sarabun', size: 24, copies: 1, feed_after: 4, cut: 'full', elements, ...extra });
@@ -101,6 +101,21 @@ export const DEFAULT_TEMPLATES = {
     { type: 'divider', style: 'dash' },
     { type: 'barcode', value: '{bill_no}', height: 70, module: 2 },
     { type: 'qr', value: '{detail_url}', size_mm: 18, align: 'center', caption: 'สแกนดูรายละเอียดบิล (สำหรับพนักงาน)', caption_size: 18 },
+  ], { feed_after: 3 }),
+  // printed PromptPay QR for shops without a customer display: just the QR and the amount
+  payqr: base([
+    { type: 'field', field: 'store_name', align: 'center', size: 30, weight: 700 },
+    { type: 'text', text: 'สแกนเพื่อชำระเงิน', align: 'center', size: 30, weight: 800, invert: true },
+    { type: 'text', text: 'พร้อมเพย์ · Thai QR Payment', align: 'center', size: 20 },
+    { type: 'text', text: 'ยอดชำระ', align: 'center', size: 24, gap: 0 },
+    { type: 'field', field: 'pay_amount', align: 'center', size: 56, weight: 800 },
+    { type: 'qr', value: '{pay_qr}', size_mm: 50, align: 'center' },
+    { type: 'field', field: 'promptpay_name', label: 'ชื่อบัญชี: ', align: 'center', size: 22, weight: 700 },
+    { type: 'field', field: 'promptpay_masked', label: 'พร้อมเพย์: ', align: 'center', size: 20 },
+    { type: 'divider', style: 'dash' },
+    { type: 'field', field: 'queue_no', label: 'คิว ', align: 'center', size: 26, weight: 700 },
+    { type: 'field', field: 'datetime', align: 'center', size: 18 },
+    { type: 'text', text: 'โอนแล้วกรุณาแสดงหน้าจอยืนยันให้พนักงาน', align: 'center', size: 20 },
   ], { feed_after: 3 }),
   redeem: base([
     { type: 'field', field: 'store_name', align: 'center', size: 30, weight: 700 },

@@ -2,12 +2,13 @@ import { Router } from 'express';
 import express from 'express';
 import multer from 'multer';
 import { db, J, S } from '../db.js';
-import { ah, id, now, bad, notFound, conflict, forbidden, emit, getSettings, rateLimit, audit, getSecret, setSecret } from '../lib/util.js';
+import { ah, id, now, bad, notFound, conflict, forbidden, emit, roomSize, getSettings, rateLimit, audit, getSecret, setSecret } from '../lib/util.js';
 import { staffAuth } from '../lib/auth.js';
 import { getOrder, payOrder, idemRetry } from '../lib/orders.js';
 import { GATEWAYS, beamCreds } from '../lib/gateways.js';
 import { saveFile } from './system.js';
-import { promptPayPayload } from '../../public/shared/core.js';
+import { promptPayPayload, baht } from '../../public/shared/core.js';
+import { enqueue, storeData } from '../lib/print.js';
 
 const r = Router();
 const upload = multer({ limits: { fileSize: 8 * 1024 * 1024 } });
@@ -28,6 +29,29 @@ export async function promptPayFor(amount, ref) {
   return { payload: promptPayPayload(s.payment.promptpay_id, amount), name: s.payment.promptpay_name, amount, ref,
     note: 'โอนตามยอดที่แสดงเท่านั้น ระบบจะยืนยันหลังพนักงานตรวจสอบยอดเงินเข้า' };
 }
+// Print a slip with only the PromptPay QR and the amount (shops without a customer display, or on request).
+// auto=true is the POS asking when PromptPay is chosen: the shop setting decides whether it prints.
+r.post('/print/payqr', staffAuth('sell'), ah(async (req, res) => {
+  const s = await getSettings();
+  const amount = Math.round(Number(req.body.amount));
+  if (!(amount > 0)) throw bad('ยอดเงินไม่ถูกต้อง');
+  if (req.body.auto) {
+    const mode = (s.print || {}).payqr_auto || 'no_display';
+    const hasDisplay = req.terminalId ? roomSize('display:' + req.terminalId) > 0 : false;
+    if (mode === 'off' || (mode === 'no_display' && hasDisplay)) return res.json({ skipped: true, reason: mode === 'off' ? 'off' : 'display_connected' });
+  }
+  const pp = await promptPayFor(amount, req.body.ref || '');
+  const order = req.body.order_id ? await db.get('SELECT id, bill_no, queue_no FROM orders WHERE id = ?', [req.body.order_id]) : null;
+  const pid = String(s.payment.promptpay_id || '');
+  const data = { ...(await storeData()), pay_qr: pp.payload, pay_amount: `${baht(amount)} บาท`, total: baht(amount), promptpay_name: s.payment.promptpay_name || '',
+    promptpay_masked: pid.length > 4 ? 'x'.repeat(pid.length - 4) + pid.slice(-4) : pid, queue_no: (order && order.queue_no) || req.body.queue_no || '', bill_no: order ? order.bill_no : '',
+    datetime: new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) };
+  // the automatic print happens once per bill and amount; pressing the button always prints
+  const dedupe = req.body.auto && req.body.ref ? `payqr:${req.body.ref}:${amount}` : null;
+  const jobs = await enqueue('payqr', (order && order.id) || 'payqr-' + Date.now(), data, { dedupe });
+  if (!jobs.length && !dedupe) throw bad('ยังไม่มีเครื่องพิมพ์ใบเสร็จที่ใช้งานอยู่');
+  res.json({ jobs, printed: jobs.length > 0 });
+}));
 r.get('/payments/promptpay', staffAuth('sell'), ah(async (req, res) => res.json(await promptPayFor(Math.round(Number(req.query.amount)), req.query.ref || ''))));
 r.get('/m/orders/:id/promptpay', ah(async (req, res) => {
   const o = await mobileOrder(req);

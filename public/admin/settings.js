@@ -87,7 +87,9 @@ function printOrderCard(s) {
       h('button', { class: 'btn sm', disabled: i === order.length - 1, onclick: () => { order.splice(i + 1, 0, order.splice(i, 1)[0]); draw(); } }, '↓')))));
   draw();
   const f = form([{ k: 'auto_receipt', label: 'พิมพ์ใบเสร็จลูกค้าอัตโนมัติหลังชำระ', type: 'bool' }, { k: 'auto_merchant', label: 'พิมพ์ใบสรุปร้านค้าอัตโนมัติ (มีบาร์โค้ดเลขบิล + QR รายละเอียด)', type: 'bool' },
-    { k: 'auto_queue', label: 'พิมพ์ใบเลขคิวอัตโนมัติ', type: 'bool' }], P);
+    { k: 'auto_queue', label: 'พิมพ์ใบเลขคิวอัตโนมัติ', type: 'bool' },
+    { k: 'payqr_auto', label: 'พิมพ์ใบ QR ชำระเงิน (พร้อมเพย์) เมื่อเลือกจ่ายด้วย QR', type: 'select', wide: true, options: [['no_display', 'อัตโนมัติ เฉพาะเครื่องที่ไม่มีจอลูกค้าเชื่อมอยู่ (แนะนำ)'], ['always', 'อัตโนมัติทุกครั้ง'], ['off', 'ไม่พิมพ์เอง (กดปุ่มพิมพ์ในหน้าชำระเงินเมื่อต้องการ)']],
+      hint: 'ใบ QR มีแค่ QR พร้อมเพย์และยอดเงิน ให้ลูกค้าสแกนจ่าย · ปุ่ม "🖨 พิมพ์ QR ชำระเงิน" ในหน้าชำระเงินกดพิมพ์ได้ทุกเมื่อ' }], { payqr_auto: 'no_display', ...P });
   return card(h('h3', {}, 'ลำดับและเอกสารที่พิมพ์หลังชำระเงิน'),
     h('p', { class: 'small muted' }, 'ถ้าใช้เครื่องพิมพ์เครื่องเดียว เอกสารจะออกตามลำดับนี้ · ใบครัวพิมพ์ทุกครั้งที่มีรายการใหม่ (กดส่งครัว หรือชำระเงิน) ไปยังเครื่องที่ติ๊ก "ใบครัว"'),
     list, f, saveBtn('บันทึกการพิมพ์', () => saveKey('print', { ...f.value(), order })));
@@ -198,7 +200,7 @@ export async function fontsPage() {
 export async function printersPage() {
   const [printers, tpl, cat, terms, jobs] = await Promise.all([api.get('/printers'), api.get('/templates'), api.get('/catalog?all=1'), api.get('/terminals'), api.get('/print/jobs')]);
   const open = (p) => {
-    const roles = [['receipt', 'ใบเสร็จ'], ['kitchen', 'ใบครัว'], ['merchant', 'ใบสรุปร้านค้า'], ['queue', 'ใบเลขคิว'], ['mobile_qr', 'ใบ Mobile Ordering'], ['refund', 'ใบยกเลิก/คืนเงิน'], ['shift', 'สรุปรอบ'], ['redeem', 'หลักฐานแลกรางวัล']];
+    const roles = [['receipt', 'ใบเสร็จ'], ['kitchen', 'ใบครัว'], ['merchant', 'ใบสรุปร้านค้า'], ['queue', 'ใบเลขคิว'], ['mobile_qr', 'ใบ Mobile Ordering'], ['refund', 'ใบยกเลิก/คืนเงิน'], ['shift', 'สรุปรอบ'], ['redeem', 'หลักฐานแลกรางวัล'], ['payqr', 'ใบ QR ชำระเงิน (ไม่เลือก = ใช้เครื่องพิมพ์ใบเสร็จ)']];
     const f = form([{ k: 'name', label: 'ชื่อเครื่อง' }, { k: 'conn', label: 'ช่องทาง', type: 'select', options: [['usb', 'USB (WebUSB)'], ['lan', 'LAN (IP:Port)'], ['bluetooth', 'Bluetooth'], ['serial', 'Serial/COM'], ['agent_usb', 'USB ผ่าน Print Agent'], ['browser', 'เบราว์เซอร์ (A4/ทั่วไป)']] },
       { k: 'address', label: 'IP / Path' }, { k: 'port', label: 'Port', type: 'number' }, { k: 'paper', label: 'กระดาษ', type: 'select', options: [[80, '80 มม.'], [58, '58 มม.']] }, { k: 'margin', label: 'ระยะขอบ (จุด)', type: 'number' },
       { k: 'copies', label: 'จำนวนสำเนา', type: 'number' }, { k: 'cut_mode', label: 'การตัด', type: 'select', options: [['full', 'ตัดเต็ม'], ['partial', 'ตัดบางส่วน (ถ้ารองรับ)'], ['none', 'ไม่ตัด']] },

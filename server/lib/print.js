@@ -95,7 +95,9 @@ export async function orderDocData(order, extra = {}) {
 // Create one job per matching printer and copy. dedupe makes the same document impossible to enqueue twice.
 export async function enqueue(docType, refId, data, { stationId = null, dedupe = null, printerId = null, template = null } = {}) {
   let printers = await db.all('SELECT * FROM printers WHERE active = 1');
-  printers = printers.filter((p) => (printerId ? p.id === printerId : docType === 'drawer' ? printerOptions(p).cash_drawer : J(p.roles, []).includes(docType)));
+  // the payment QR goes to the receipt printer unless a printer is set up for it
+  const role = docType === 'payqr' && !printers.some((p) => J(p.roles, []).includes('payqr')) ? 'receipt' : docType;
+  printers = printers.filter((p) => (printerId ? p.id === printerId : docType === 'drawer' ? printerOptions(p).cash_drawer : J(p.roles, []).includes(role)));
   if (docType === 'kitchen' && stationId && !printerId) printers = printers.filter((p) => { const st = J(p.station_ids, []); return !st.length || st.includes(stationId); });
   const jobs = [];
   for (const p of printers) {

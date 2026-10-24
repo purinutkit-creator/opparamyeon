@@ -173,3 +173,24 @@ body { background: var(--bg); }
 .prod .pr .unit { display: none; }
 .menu { min-width: 0; }
 .cart { min-width: 0; }
+
+/* Add-on พิเศษ: large option tiles */
+.bigopts .opt-group h4 { font-family: var(--head-font); font-size: 1.2em; margin: .2em 0 .5em; }
+.bigopts .opt-group .opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .7em; }
+.bigopts .opt-group .opt { position: relative; min-height: 96px; border-radius: 20px; border: 3px solid var(--line); background: var(--surface); display: grid; place-content: center; gap: .25em;
+  text-align: center; padding: .8em .6em; font-size: 1.1em; box-shadow: 0 4px 12px rgb(60 20 10 / .06); touch-action: manipulation; transition: transform .08s; }
+.bigopts .opt-group .opt b { font-size: 1.15em; line-height: 1.2; }
+.bigopts .opt-group .opt small { color: var(--muted); font-weight: 700; }
+.bigopts .opt-group .opt:active { transform: scale(.96); }
+.bigopts .opt-group .opt.on { border-color: var(--brand); background: radial-gradient(120% 120% at 100% 0%, #fff, var(--brand-soft)); box-shadow: 0 8px 20px rgb(232 50 31 / .22); }
+.bigopts .opt-group .opt.on small { color: var(--brand); }
+.bigopts .opt .tick { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--grad); color: #fff; font-weight: 800; }
+.bigopts .seg button { min-height: 64px; font-size: 1.15em; }
+.bigopts .qty button { width: 64px; height: 60px; font-size: 1.6em; }
+.bigopts .qty span { font-size: 1.4em; min-width: 2.4em; }
+.bigopts .bigsum { font-family: var(--head-font); font-size: 2.6em; }
+.dualguide { display: grid; gap: .7em; }
+.dg-step { display: grid; grid-template-columns: 40px 1fr; gap: .7em; background: var(--surface2); border-radius: 18px; padding: .8em; }
+.dg-step .n { width: 40px; height: 40px; border-radius: 14px; display: grid; place-items: center; background: var(--grad); color: #fff; font-family: var(--head-font); font-size: 1.2em; }
+.dg-step p { margin: .3em 0 0; }
+.dg-code { font-size: 1.4em; letter-spacing: .15em; color: var(--brand); }

@@ -229,7 +229,9 @@ function optionsDialog(p, editLine = null) {
   const note = h('input', { class: 'input', placeholder: 'หมายเหตุ เช่น ไม่ใส่ต้นหอม', value: editLine ? editLine.note : '' });
   // the note is optional: hidden behind a button so the keyboard only opens when the cashier wants to type
   let showNote = !!(editLine && editLine.note);
-  const body = h('div');
+  // "Add-on พิเศษ": products flagged big_options get large, easy-to-tap option tiles
+  const big = !!p.big_options;
+  const body = h('div', { class: big ? 'bigopts' : '' });
   const draw = () => {
     const price = p.price + groups.reduce((s, g) => s + g.options.filter((o) => chosen.get(g.id).has(o.id)).reduce((a, o) => a + o.price, 0), 0);
     body.replaceChildren(
@@ -239,7 +241,8 @@ function optionsDialog(p, editLine = null) {
           if (set.has(o.id)) { if (!(g.min_select && set.size <= g.min_select)) set.delete(o.id); }
           else { if (g.max_select === 1) set.clear(); if (!g.max_select || set.size < g.max_select) set.add(o.id); else toast(`เลือกได้ไม่เกิน ${g.max_select}`, 'warn'); }
           draw();
-        } }, o.name, o.price ? ` +${baht(o.price)}` : ''))))),
+        } }, big ? [chosen.get(g.id).has(o.id) ? h('span', { class: 'tick' }, '✓') : null, h('b', {}, o.name), h('small', {}, o.price ? `+${baht(o.price)} ฿` : 'ไม่เพิ่มราคา')]
+          : [o.name, o.price ? ` +${baht(o.price)}` : '']))))),
       h('div', { class: 'row', style: { marginBottom: '.8em' } }, h('div', { class: 'seg', style: { flex: 1 } },
         h('button', { class: dine === 'dine_in' ? 'on' : '', onclick: () => { dine = 'dine_in'; draw(); } }, 'ทานที่ร้าน'),
         h('button', { class: dine === 'takeaway' ? 'on takeaway' : '', onclick: () => { dine = 'takeaway'; draw(); } }, 'กลับบ้าน')),
@@ -249,7 +252,7 @@ function optionsDialog(p, editLine = null) {
       h('div', { class: 'bigsum' }, baht(price * qty), ' ฿'));
   };
   draw();
-  modal(p.name, body, { autofocus: false, actions: [{ label: 'ยกเลิก', onClick: () => {} }, { label: editLine ? 'บันทึก' : 'เพิ่มลงบิล', class: 'primary', onClick: () => {
+  modal((big ? '✨ ' : '') + p.name, body, { autofocus: false, wide: big, actions: [{ label: 'ยกเลิก', onClick: () => {} }, { label: editLine ? 'บันทึก' : 'เพิ่มลงบิล', class: 'primary', onClick: () => {
     for (const g of groups) if (chosen.get(g.id).size < g.min_select) { toast('กรุณาเลือก ' + g.name, 'warn'); return false; }
     const options = groups.flatMap((g) => g.options.filter((o) => chosen.get(g.id).has(o.id)).map((o) => ({ group_id: g.id, group: g.name, id: o.id, name: o.name, price: o.price })));
     if (editLine) Object.assign(editLine, { options, qty, dine_type: dine, note: note.value });
@@ -460,9 +463,11 @@ function payDialog() {
       method === 'cash' ? h('div', { class: 'row' }, [...new Set(quick)].map((q) => h('button', { class: 'btn', onclick: () => { amt.value = (q / 100).toFixed(2); drawRight(); } }, baht(q)))) : null,
       method === 'cash' && received > rem ? h('div', { class: 'bigsum', style: { color: 'var(--ok)' } }, 'ทอน ', baht(received - rem)) : null,
       method === 'promptpay' && st.settings.payment.promptpay_enabled ? h('div', { style: { textAlign: 'center' } }, h('img', { src: '/api/qr.svg?d=' + encodeURIComponent(qrPayload(Math.min(rem, toSatang(amt.value) || rem))), style: { width: '200px' }, alt: 'PromptPay QR' }),
-        h('div', { class: 'small muted' }, 'แสดงบนจอลูกค้าด้วย · ตรวจสอบยอดเงินเข้าก่อนกดยืนยัน')) : null,
+        h('div', { class: 'small muted' }, 'แสดงบนจอลูกค้าด้วย · ตรวจสอบยอดเงินเข้าก่อนกดยืนยัน'),
+        h('button', { class: 'btn block', style: { marginTop: '.5em' }, onclick: () => printPayQr(Math.min(rem, toSatang(amt.value) || rem), false) }, '🖨 พิมพ์ QR ชำระเงิน')) : null,
       keypad(amt, { decimal: true }),
       h('div', { class: 'row', style: { marginTop: '.6em' } }, h('button', { class: 'btn block', onclick: addPay }, '+ เพิ่มช่องทางนี้ (แบ่งจ่าย)')));
+    if (method === 'promptpay' && st.settings.payment.promptpay_enabled) printPayQr(rem, true);
     pushDisplay({ phase: 'pay', received: method === 'cash' ? received : 0, change: method === 'cash' ? Math.max(0, received - rem) : 0, qr: method === 'promptpay' ? qrPayload(rem) : null,
       livePay: { method: (methods.find((x) => x.id === method) || {}).name || method, entered: received, remaining: rem, change: method === 'cash' ? Math.max(0, received - rem) : 0,
         splits: pays.map((p) => ({ method: (methods.find((x) => x.id === p.method) || {}).name || p.method, amount: p.amount })) } });
@@ -497,6 +502,16 @@ function payDialog() {
         throw e;
       }
     } }] });
+}
+// printed PromptPay QR slip: auto (shop setting decides, once per bill+amount on the server) or on demand
+async function printPayQr(amount, auto) {
+  if (!(amount > 0)) return;
+  const ref = st.cart.cart_id || st.cart.idem;
+  if (auto) { st.payqrAsked = st.payqrAsked || new Set(); if (st.payqrAsked.has(ref + ':' + amount)) return; st.payqrAsked.add(ref + ':' + amount); }
+  try {
+    const r = await api.post('/print/payqr', { amount, auto, ref, order_id: st.cart.order_id || null, queue_no: st.cart.queue_no || '' });
+    if (r.printed) toast(`🖨 พิมพ์ QR ชำระเงิน ${baht(amount)} ฿`, 'ok');
+  } catch (e) { if (!auto) errToast(e); }
 }
 const qrPayload = (amount) => (st.settings.payment.promptpay_enabled ? promptPayPayload(st.settings.payment.promptpay_id || '', amount) : null);
 function done(o) {
@@ -766,7 +781,8 @@ async function devicesDialog() {
       h('button', { class: 'btn sm', onclick: async () => { const v = await promptBox('ที่อยู่ Print Agent', { value: agentUrl() }); if (v) { store.set('agent_url', v); draw(); } } }, 'ตั้งค่า Print Agent')),
     h('hr'),
     h('h4', {}, '📺 จอลูกค้า'),
-    h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: pairDisplay }, 'สร้างรหัสจับคู่ (6 หลัก)'), h('button', { class: 'btn', onclick: openSecondScreen }, '🖥️ เปิดบนจอที่สอง (Dual Screen)')),
+    h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: pairDisplay }, 'สร้างรหัสจับคู่ (6 หลัก)'), h('button', { class: 'btn', onclick: openSecondScreen }, '🖥️ เปิดบนจอที่สอง (Dual Screen)'),
+      h('button', { class: 'btn', onclick: () => dualScreenGuide() }, '📱 วิธีเชื่อมเครื่อง Android 2 จอ (iMin / Sunmi)')),
     h('p', { class: 'small muted' }, 'จอที่สอง: Chrome/Edge บนคอมพิวเตอร์ใช้ Window Management API, แอป Android ใช้ Presentation/SDK ผ่าน OppaBridge — ถ้าอุปกรณ์ไม่รองรับ ให้เปิด ', h('code', {}, location.origin + '/display/'), ' บนจอลูกค้าแล้วกรอกรหัสจับคู่'));
   draw();
   modal('อุปกรณ์ของเครื่องนี้', body, { wide: true });
@@ -797,6 +813,20 @@ async function openSecondScreen() {
   const url = `/display/?code=${r.code}&local=${st.terminal.id}`;
   store.set('dual_screen', true);
   if (window.OppaBridge && window.OppaBridge.openCustomerDisplay) { window.OppaBridge.openCustomerDisplay(location.origin + url); return toast('เปิดจอลูกค้าผ่านแอป Android แล้ว', 'ok'); }
+  // Android 2-screen POS (iMin, Sunmi ...): Chrome can show a page on the built-in second screen via the Presentation API
+  if (/Android/i.test(navigator.userAgent)) {
+    if ('PresentationRequest' in window) {
+      try {
+        const conn = await new PresentationRequest([location.origin + url]).start();
+        st.presentation = conn;
+        return toast('เปิดจอลูกค้าบนจอที่สองแล้ว', 'ok');
+      } catch (e) {
+        if (e && e.name === 'AbortError') return; // the cashier closed the screen picker
+        toast('Chrome บนเครื่องนี้ส่งหน้าไปจอที่สองไม่ได้ — ดูวิธีอื่นในคู่มือ', 'warn', 6000);
+      }
+    }
+    return dualScreenGuide(r.code);
+  }
   let feat = 'popup=yes,width=1024,height=600';
   try {
     if ('getScreenDetails' in window) {
@@ -808,6 +838,20 @@ async function openSecondScreen() {
   } catch { toast('ไม่ได้รับอนุญาตจัดการหน้าต่างบนหลายจอ', 'warn'); }
   const w = window.open(url, 'opp-customer-display', feat);
   if (!w) toast('เบราว์เซอร์บล็อกหน้าต่าง — อนุญาต Pop-up สำหรับเว็บไซต์นี้', 'error', 8000);
+}
+// how to connect the customer display on Android two-screen POS devices (iMin Swan 2, Sunmi D3 ...)
+function dualScreenGuide(code) {
+  const url = location.origin + '/display/';
+  const step = (n, title, ...body) => h('div', { class: 'dg-step' }, h('b', { class: 'n' }, n), h('div', {}, h('strong', {}, title), ...body));
+  modal('📱 เชื่อมจอลูกค้า เครื่อง Android 2 จอ', h('div', { class: 'dualguide' },
+    h('p', { class: 'muted' }, 'สำหรับเครื่อง POS แบบ 2 จอ เช่น iMin Swan 2 / Swan 1 / D4 / Falcon 2, Sunmi D3 Pro / T2s / D2s และรุ่นอื่นที่จอลูกค้าต่ออยู่กับเครื่องเดียวกัน — ลองทีละวิธีตามลำดับ'),
+    step('1', 'ปุ่ม "🖥️ เปิดบนจอที่สอง" ใน Chrome', h('p', {}, 'เปิด POS ด้วย Google Chrome (อัปเดตล่าสุด) → อุปกรณ์ → เปิดบนจอที่สอง → ถ้ามีหน้าต่างให้เลือกจอ ให้เลือกจอที่สอง/Built-in display หน้าจอลูกค้าจะขึ้นบนจอฝั่งลูกค้าและอัปเดตเรียลไทม์'),
+      h('p', { class: 'small muted' }, 'ใช้ Presentation API ของ Chrome — ขึ้นกับรุ่นและเฟิร์มแวร์ ถ้าไม่มีจอให้เลือก ให้ใช้วิธีที่ 2–4')),
+    step('2', 'เปิดเบราว์เซอร์บนจอที่สองเอง แล้วกรอกรหัส', h('p', {}, 'บางรุ่นย้ายแอปไปจอที่สองได้ (แอปจัดการจอที่สองของผู้ผลิต หรือ ตั้งค่า → ตัวเลือกสำหรับนักพัฒนา → "บังคับโหมดเดสก์ท็อป"/"Force desktop mode" แล้วรีสตาร์ต) เมื่อเปิด Chrome บนจอที่สองได้ ให้เข้า ',
+      h('code', {}, url), ' แล้วกรอกรหัส 6 หลัก', code ? [' ', h('b', { class: 'dg-code' }, code)] : ' (กด "สร้างรหัสจับคู่" ในเมนูอุปกรณ์)')),
+    step('3', 'แอป Android ของร้าน (OppaBridge)', h('p', {}, 'แอปห่อเว็บ POS ที่เรียก SDK จอที่สองของ iMin/Sunmi โดยตรง — เปิดจอลูกค้าอัตโนมัติและพิมพ์ด้วยเครื่องพิมพ์ในตัวได้ ระบบรองรับแล้ว (ดูสัญญา OppaBridge ในคู่มือ) ต้องติดตั้งแอปที่สร้างสำหรับรุ่นนั้น')),
+    step('4', 'ทางเลือกเมื่อยังเชื่อมจอที่สองไม่ได้', h('p', {}, 'ใช้แท็บเล็ต/มือถือเครื่องใดก็ได้เป็นจอลูกค้า (เปิดลิงก์ด้านบน + รหัส 6 หลัก) หรือให้ระบบ ', h('b', {}, 'พิมพ์ใบ QR ชำระเงิน'), ' ออกจากเครื่องพิมพ์ให้ลูกค้าสแกนจ่าย (ตั้งค่าได้ที่ จัดการร้าน → ตั้งค่าร้าน → ลำดับและเอกสารที่พิมพ์)'))),
+    { wide: true, autofocus: false, actions: [{ label: 'เปิดคู่มือฉบับเต็ม', onClick: () => { window.open('/guide/#display-android', '_blank'); return false; } }, { label: 'เข้าใจแล้ว', class: 'primary', onClick: () => {} }] });
 }
 async function manualCut() {
   const printers = (await api.get('/printers')).filter((p) => p.active);

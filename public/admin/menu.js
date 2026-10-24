@@ -66,7 +66,8 @@ function productDialog(p, cat, ingredients, reload) {
     { k: 'option_groups', label: 'ตัวเลือก/ท็อปปิ้ง', type: 'multi', options: cat.option_groups.map((g) => [g.id, g.name]), wide: true },
     { k: 'description', label: 'คำอธิบาย', type: 'textarea', wide: true }, { k: 'image', label: 'รูปภาพ', type: 'image' },
     { k: 'track_stock', label: 'นับสต็อกสินค้านี้', type: 'bool' }, { k: 'low_stock', label: 'แจ้งเตือนใกล้หมดเมื่อเหลือ', type: 'number' },
-    { k: 'active', label: 'เปิดขาย', type: 'bool' }, { k: 'sold_out', label: 'สินค้าหมด', type: 'bool' }, { k: 'mobile', label: 'แสดงใน Mobile Ordering', type: 'bool' }, { k: 'sort', label: 'ลำดับแสดง', type: 'number' },
+    { k: 'active', label: 'เปิดขาย', type: 'bool' }, { k: 'sold_out', label: 'สินค้าหมด', type: 'bool' }, { k: 'mobile', label: 'แสดงใน Mobile Ordering', type: 'bool' },
+      { k: 'big_options', label: '✨ Add-on พิเศษ: ตัวเลือกปุ่มใหญ่ กดง่าย (หน้าขาย POS)', type: 'bool' }, { k: 'sort', label: 'ลำดับแสดง', type: 'number' },
   ], v);
   const recipe = (p && p.recipe ? p.recipe : []).map((r) => ({ ...r }));
   const rbox = h('div');
