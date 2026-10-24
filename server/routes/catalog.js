@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { db, J, S } from '../db.js';
-import { ah, id, now, bad, notFound, conflict, audit, emit } from '../lib/util.js';
+import { ah, id, now, bad, notFound, conflict, audit, emit, getSettings, setSetting } from '../lib/util.js';
+import { enqueue } from '../lib/print.js';
+import { labelCfg, labelRowDots } from '../../public/shared/labels.js';
+import { isEan13, ean13Check } from '../../public/shared/core.js';
 import { staffAuth, can } from '../lib/auth.js';
 
 const r = Router();
@@ -175,3 +178,60 @@ r.get('/stock', staffAuth(), ah(async (req, res) => {
 }));
 
 export default r;
+
+// ---------- product barcode labels ----------
+r.get('/labels/config', staffAuth('manage_menu'), ah(async (req, res) => res.json(labelCfg((await getSettings()).labels))));
+r.put('/labels/config', staffAuth('manage_menu'), ah(async (req, res) => {
+  const v = req.body.value || {};
+  const clean = Object.fromEntries(Object.entries(v).filter(([k]) => k in labelCfg({})));
+  const after = await setSetting('labels', clean);
+  await audit(req.staff.id, 'settings', 'settings', 'labels', null, after);
+  res.json(labelCfg(after));
+}));
+const bestBarcode = (codes) => codes.find(isEan13) || codes[0] || '';
+// Print labels on a printer of the shop (ESC/POS raster). Prices and codes come from the database.
+r.post('/print/labels', staffAuth('manage_menu'), ah(async (req, res) => {
+  const cfg = labelCfg({ ...(await getSettings()).labels, ...(req.body.cfg || {}) });
+  const printer = await db.get('SELECT * FROM printers WHERE id = ? AND active = 1', [req.body.printer_id || '']);
+  if (!printer) throw bad('กรุณาเลือกเครื่องพิมพ์');
+  const width = Number(printer.paper) === 58 ? 384 : 576;
+  if (labelRowDots(cfg).w > width) throw bad(`ฉลากกว้างเกินกระดาษ ${printer.paper} มม. — ลดความกว้างหรือจำนวนคอลัมน์`);
+  const store = (await getSettings()).store.name;
+  const list = [];
+  for (const { product_id, qty } of [].concat(req.body.items || [])) {
+    const p = await db.get('SELECT id, code, name, price FROM products WHERE id = ?', [product_id]);
+    if (!p) throw notFound('ไม่พบสินค้า');
+    const codes = (await db.all('SELECT code FROM barcodes WHERE product_id = ?', [p.id])).map((b) => b.code);
+    const n = Math.max(0, Math.min(200, Math.round(Number(qty) || 0)));
+    for (let i = 0; i < n; i++) list.push({ name: p.name, price: p.price, code: p.code, barcode: bestBarcode(codes), store });
+  }
+  if (!list.length) throw bad('ยังไม่ได้เลือกสินค้า');
+  if (list.length > 500) throw bad('พิมพ์ได้ครั้งละไม่เกิน 500 ดวง');
+  const cols = labelRowDots(cfg).cols;
+  const elements = [];
+  for (let i = 0; i < list.length; i += cols) {
+    elements.push({ type: 'label', cfg, items: list.slice(i, i + cols), font: cfg.font });
+    elements.push(cfg.cut_each ? { type: 'cut' } : { type: 'space', height: Math.round((Number(cfg.feed_mm) || 0) * 8) });
+  }
+  const template = { paper: Number(printer.paper) || 80, margin: 0, section_gap: 0, font: cfg.font, size: 20, copies: 1, feed_after: 3, cut: 'full', elements };
+  const jobs = await enqueue('label', 'labels-' + Date.now(), { store_name: store }, { printerId: printer.id, template });
+  await audit(req.staff.id, 'print_labels', 'printer', printer.id, null, { count: list.length });
+  res.json({ jobs, count: list.length });
+}));
+// Give products without a barcode an in-store EAN-13 (prefix 20 = for use inside the shop)
+r.post('/products/barcodes/generate', staffAuth('manage_menu'), ah(async (req, res) => {
+  const ids = req.body.product_ids && req.body.product_ids.length ? req.body.product_ids : (await db.all('SELECT id FROM products WHERE active = 1')).map((p) => p.id);
+  const made = [];
+  await db.tx(async () => {
+    for (const pid of ids) {
+      if (await db.get('SELECT code FROM barcodes WHERE product_id = ?', [pid])) continue;
+      if (!(await db.get('SELECT id FROM products WHERE id = ?', [pid]))) continue;
+      let code;
+      do { const d12 = '20' + String(Math.floor(Math.random() * 1e10)).padStart(10, '0'); code = d12 + ean13Check(d12); } while (await db.get('SELECT code FROM barcodes WHERE code = ?', [code]));
+      await db.run('INSERT INTO barcodes(code, product_id) VALUES(?,?)', [code, pid]);
+      made.push({ product_id: pid, barcode: code });
+    }
+  });
+  if (made.length) { await audit(req.staff.id, 'generate_barcodes', 'product', null, null, { count: made.length }); changed(); }
+  res.json({ created: made });
+}));

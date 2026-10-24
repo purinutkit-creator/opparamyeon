@@ -1,7 +1,7 @@
 // Pure logic shared by the server (Node) and the browser.
 // Money is always an integer number of satang (1 บาท = 100 satang).
 
-export const VERSION = '1.5.0';
+export const VERSION = '1.6.0';
 
 export const baht = (satang) => {
   const v = (Number(satang) || 0) / 100;
@@ -237,6 +237,32 @@ export function code128(text) {
   for (let i = 1; i < codes.length; i++) sum += codes[i] * i;
   codes.push(sum % 103, 106);
   return codes.map((c) => C128[c]).join('').split('').map(Number);
+}
+
+// ---------- EAN-13 (retail barcodes such as 885xxxxxxxxxx) ----------
+export function ean13Check(d12) {
+  let sum = 0;
+  for (let i = 0; i < 12; i++) sum += Number(d12[i]) * (i % 2 ? 3 : 1);
+  return String((10 - (sum % 10)) % 10);
+}
+export const isEan13 = (v) => /^\d{13}$/.test(String(v)) && ean13Check(String(v).slice(0, 12)) === String(v)[12];
+const EAN_L = ['0001101', '0011001', '0010011', '0111101', '0100011', '0110001', '0101111', '0111011', '0110111', '0001011'];
+const EAN_G = ['0100111', '0110011', '0011011', '0100001', '0011101', '0111001', '0000101', '0010001', '0001001', '0010111'];
+const EAN_R = ['1110010', '1100110', '1101100', '1000010', '1011100', '1001110', '1010000', '1000100', '1001000', '1110100'];
+const EAN_PARITY = ['LLLLLL', 'LLGLGG', 'LLGGLG', 'LLGGGL', 'LGLLGG', 'LGGLLG', 'LGGGLL', 'LGLGLG', 'LGLGGL', 'LGGLGL'];
+// same output shape as code128(): module widths starting with a bar
+export function ean13(text) {
+  const v = String(text);
+  if (!isEan13(v)) throw new Error('barcode: invalid EAN-13');
+  const par = EAN_PARITY[Number(v[0])];
+  let bits = '101';
+  for (let i = 1; i <= 6; i++) bits += (par[i - 1] === 'L' ? EAN_L : EAN_G)[Number(v[i])];
+  bits += '01010';
+  for (let i = 7; i <= 12; i++) bits += EAN_R[Number(v[i])];
+  bits += '101';
+  const runs = [];
+  for (const b of bits) { if (runs.length && runs.at(-1).b === b) runs.at(-1).n++; else runs.push({ b, n: 1 }); }
+  return runs.map((r) => r.n);
 }
 
 // Monotonic request guard: protects dashboards from an old response overwriting a newer one.

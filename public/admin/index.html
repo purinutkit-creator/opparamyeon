@@ -70,6 +70,20 @@
   .cards > .kpi.hero:nth-child(3) { background: linear-gradient(135deg, #3d1d15, #6b2a1c); }
   .page-head h2 { font-size: 1.8em; }
   .topm { background: linear-gradient(90deg, #2b1712, #4a2016); color: #fff; }
+  /* barcode labels */
+  .lbl-layout { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 1em; align-items: start; }
+  .lbl-side { position: sticky; top: 1em; }
+  .lbl-list { max-height: 460px; overflow-y: auto; display: grid; gap: 6px; margin-top: .6em; }
+  .lbl-row { display: grid; grid-template-columns: 1fr auto; gap: .6em; align-items: center; padding: .5em .7em; border-radius: 14px; background: var(--surface2); }
+  .lbl-row.on { background: var(--brand-soft); box-shadow: inset 0 0 0 2px var(--brand); }
+  .lbl-row small { display: block; color: var(--muted); } .lbl-row .mono { font-family: ui-monospace, monospace; }
+  .lbl-row .qtyc { display: flex; gap: 4px; align-items: center; }
+  .lbl-settings h4 { margin: 1em 0 .4em; } .lbl-settings h4:first-child { margin-top: 0; }
+  .chk-grid { display: flex; flex-wrap: wrap; gap: .4em 1em; margin-bottom: .6em; }
+  .lbl-canvas { display: grid; place-items: center; padding: 18px; border-radius: 18px; background: repeating-conic-gradient(var(--surface2) 0 25%, var(--surface) 0 50%) 0 0 / 16px 16px; overflow: auto; }
+  .lbl-canvas canvas { max-width: 100%; height: auto; box-shadow: 0 6px 20px rgb(0 0 0 / .18); border-radius: 4px; background: #fff; }
+  .lbl-out h4 { margin: 1em 0 .4em; } .lbl-out .row select { flex: 1; }
+  @media (max-width: 1100px) { .lbl-layout { grid-template-columns: 1fr; } .lbl-side { position: static; } }
   /* Live View */
   .live-btn { display: inline-flex; align-items: center; gap: .45em; font-weight: 800; }
   .live-btn i, .live-card .phase i, .rec { width: 10px; height: 10px; border-radius: 50%; background: #ef2b2b; display: inline-block; box-shadow: 0 0 0 0 rgb(239 43 43 / .6); animation: rec 1.4s infinite; }

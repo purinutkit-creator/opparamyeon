@@ -2,6 +2,7 @@
 // The same output is used for the on-screen preview and for raster printing, so what you see is what prints.
 import { baht, dineLabel, fillVars, code128 } from './core.js';
 import { loadFont, familyCss } from './fonts.js';
+import { drawLabel, labelCfg, labelRowDots } from './labels.js';
 
 export const DOTS_PER_MM = 8;
 export const paperDots = (paper) => (Number(paper) === 58 ? 384 : 576);
@@ -282,6 +283,14 @@ export async function renderDoc(tpl, data, opts = {}) {
           twoCol('เงินเข้าลิ้นชัก', baht(s.cash_in), e); twoCol('เงินออกลิ้นชัก', baht(s.cash_out), e);
           twoCol('เงินสดที่ควรมี', baht(s.expected_cash), e, { weight: 800 });
           if (s.counted_cash !== null && s.counted_cash !== undefined) { twoCol('เงินสดที่นับได้', baht(s.counted_cash), e); twoCol('ขาด/เกิน', baht(s.diff), e, { weight: 800 }); }
+          break;
+        }
+        case 'label': {
+          // one row of product barcode labels (see labels.js), drawn at printer resolution
+          const c = labelCfg(e.cfg);
+          const { h: rowH } = labelRowDots(c, DOTS_PER_MM);
+          if (draw) (e.items || []).forEach((it, i) => { if (it) warnings.push(...drawLabel(ctx, margin + Math.round(i * (c.width_mm + c.gap_mm) * DOTS_PER_MM), y, c, it, DOTS_PER_MM)); });
+          y += rowH;
           break;
         }
         case 'cut': if (draw && opts.cutMarks) { ctx.strokeStyle = '#999'; ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.moveTo(0, y + 6); ctx.lineTo(width, y + 6); ctx.stroke(); ctx.setLineDash([]); } (opts.cuts || []).push(y); y += 12; break;

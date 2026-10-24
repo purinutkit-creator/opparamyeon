@@ -159,3 +159,37 @@ test('Add-on พิเศษ: เปิดที่สินค้าแล้�
   assert.equal(again.big_options, true);
   assert.deepEqual(again.option_groups, p.option_groups, 'ตัวเลือกเดิมไม่เปลี่ยน');
 });
+
+test('พิมพ์บาร์โค้ดสินค้า: บันทึกการตั้งค่าฉลาก, สร้าง EAN-13 ให้สินค้าที่ไม่มี, ส่งงานพิมพ์ด้วยราคาจากฐานข้อมูล', async () => {
+  const { isEan13, ean13 } = await import('../public/shared/core.js');
+  assert.equal(isEan13('4006381333931'), true);
+  assert.equal(ean13('4006381333931').reduce((a, b) => a + b, 0), 95, 'EAN-13 มี 95 โมดูล');
+  const cfg = await S.call('PUT', '/api/labels/config', { value: { width_mm: 40, height_mm: 30, font: 'Sarabun', show_code: true, hacker: 'x' } }, { token: owner });
+  assert.equal(cfg.status, 200);
+  assert.equal(cfg.body.width_mm, 40);
+  assert.equal(cfg.body.hacker, undefined, 'รับเฉพาะค่าที่รู้จัก');
+  // a product without barcode gets an in-store EAN-13
+  const np = await S.call('POST', '/api/products', { code: 'LBL1', name: 'ฉลากทดสอบ', price: 2500 }, { token: owner });
+  const gen = await S.call('POST', '/api/products/barcodes/generate', { product_ids: [np.body.id, 'p_r001'] }, { token: owner });
+  assert.equal(gen.body.created.length, 1, 'สร้างเฉพาะสินค้าที่ยังไม่มีบาร์โค้ด');
+  const code = gen.body.created[0].barcode;
+  assert.ok(isEan13(code) && code.startsWith('20'), code);
+  const found = await S.call('GET', '/api/barcode/' + code, undefined, { token: owner });
+  assert.equal(found.body.product_id, np.body.id, 'สแกนบาร์โค้ดใหม่แล้วเจอสินค้า');
+  const r = await S.call('POST', '/api/print/labels', { printer_id: printer, items: [{ product_id: np.body.id, qty: 3 }, { product_id: 'p_r001', qty: 2 }], cfg: { cols: 2, width_mm: 34, price: 1 } }, { token: owner });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.count, 5);
+  const job = await db.get('SELECT doc_type, payload FROM print_jobs WHERE id = ?', [r.body.jobs[0].id]);
+  assert.equal(job.doc_type, 'label');
+  const tpl = JSON.parse(job.payload).template;
+  const rows = tpl.elements.filter((e) => e.type === 'label');
+  assert.equal(rows.length, 3, '5 ดวง 2 ดวงต่อแถว = 3 แถว');
+  assert.equal(rows[0].items[0].price, 2500, 'ราคาจากฐานข้อมูล');
+  assert.equal(rows[0].items[0].barcode, code);
+  assert.equal(rows[0].cfg.width_mm, 34);
+  assert.equal(rows[0].cfg.height_mm, 30, 'ค่าที่บันทึกไว้ใช้ต่อ');
+  const tooWide = await S.call('POST', '/api/print/labels', { printer_id: printer, items: [{ product_id: 'p_r001', qty: 1 }], cfg: { cols: 4, width_mm: 50 } }, { token: owner });
+  assert.equal(tooWide.status, 400, 'ฉลากกว้างเกินกระดาษ');
+  const cashierTok = await S.login('0002', '2222', 'pos1');
+  assert.equal((await S.call('POST', '/api/print/labels', { printer_id: printer, items: [{ product_id: 'p_r001', qty: 1 }] }, { token: cashierTok })).status, 403);
+});
