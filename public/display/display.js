@@ -16,6 +16,8 @@ async function boot() {
     state = qs.get('phase') === 'idle' ? { phase: 'idle' } : sampleState();
     applyTheme(); renderAll();
     // ?demo=1 plays the cash flow: nothing received → partly received → paid with change
+    // ?phase=done&demo=1 shows the thank-you screen, then plays the cashier pressing เสร็จ
+    if (qs.get('demo') && state.phase === 'done') setTimeout(() => { state = { phase: 'idle', at: Date.now() }; renderAll(); }, 3000);
     if (qs.get('demo') && state.phase === 'pay' && !state.qr) {
       state.received = 0; state.change = 0; renderAll();
       [10000, 20000, 50000].forEach((r, i) => setTimeout(() => { state = { ...state, received: r, change: Math.max(0, r - state.total) }; renderAll(); }, 1200 + i * 1400));
@@ -78,6 +80,7 @@ function renderAll() {
     h('div', { class: 'promo', id: 'promo' }), h('div', { class: 'panel', id: 'panel' }));
   const old = $('.disp');
   if (old && old.className === wrap.className) { renderPanel(); if (paying) renderPay(); return renderDone(); }
+  if ($('.done:not(.leaving)') && state.phase !== 'done') wrap.classList.add('welcome-in');
   root.replaceChildren(wrap);
   if (paying) renderPay(); else renderPromo();
   renderPanel(); renderDone(); renderPrompt();
@@ -121,8 +124,14 @@ function renderPay() {
       const ready = () => setTimeout(() => frame.classList.add('ready'), Math.max(0, 700 - (performance.now() - t0)));
       img.onerror = () => { frame.querySelector('.qrskel strong').textContent = 'โหลด QR ไม่สำเร็จ · แจ้งพนักงาน'; };
       if (img.complete && img.naturalWidth) ready(); else img.onload = ready;
-      body = h('div', { class: 'payarea' }, h('div', { class: 'qrcard' }, h('div', { class: 'qrtitle' }, h('span', { class: 'pp' }, 'PromptPay'), 'THAI QR PAYMENT'), frame,
-        h('div', { class: 'qracc' }, 'ชื่อบัญชี: ', settings.payment.promptpay_name || '-'), h('div', { class: 'qracc big' }, 'สแกนจ่าย ', h('span', { id: 'qrAmt' }), ' บาท')));
+      const acc = settings.payment.promptpay_name || settings.store.name || '';
+      body = h('div', { class: 'payarea' }, h('div', { class: 'qrcard' },
+        h('div', { class: 'qrtitle' }, h('span', { class: 'qi', html: QR_ICON }), h('div', {}, h('b', {}, 'THAI QR PAYMENT'), h('small', {}, 'พร้อมเพย์ · PromptPay'))),
+        h('div', { class: 'qrwell' }, frame),
+        h('div', { class: 'qrfoot' },
+          h('div', { class: 'qacc' }, h('span', { class: 'av' }, (acc.trim()[0] || '฿').toUpperCase()), h('div', {}, h('small', {}, 'ชื่อบัญชี'), h('b', {}, acc || '-'))),
+          h('div', { class: 'qamt' }, h('small', {}, 'สแกนจ่าย'), h('b', {}, h('span', { id: 'qrAmt' }), ' ฿'))),
+        h('div', { class: 'qbanks' }, h('span', { class: 'dots' }, ['#138f2d', '#4e2e7f', '#1e4598', '#00a6e6', '#fec43b', '#ec1c24'].map((c, i) => h('i', { style: `background:${c};animation-delay:${i * 0.15}s` }))), 'สแกนได้ทุกแอปธนาคาร')));
     } else {
       body = h('div', { class: 'cashcard' },
         h('div', { class: 'cc-head' }, h('span', { class: 'bill', html: BILL_SVG + BILL_SVG }), h('div', {}, h('b', {}, 'ชำระด้วยเงินสด'), h('small', {}, 'Cash payment'))),
@@ -257,10 +266,11 @@ function renderPanel() {
 const r = (a, b) => h('div', { class: 'r' }, h('span', {}, a), h('span', {}, b));
 let fireTimer = null, wordTimer = null;
 function renderDone() {
-  const old = $('.done');
+  const old = $('.done:not(.leaving)');
   if (old && state.phase === 'done' && old._at === state.at) return;
-  if (old) old.remove();
   clearInterval(fireTimer); clearInterval(wordTimer);
+  if (old && state.phase !== 'done') return leaveDone(old);
+  document.querySelectorAll('.done').forEach((x) => x.remove());
   if (state.phase !== 'done') return;
   const s = state;
   const colors = ['#facc15', '#f97316', '#ef4444', '#22c55e', '#3b82f6', '#ec4899', '#ffffff'];
@@ -299,6 +309,12 @@ function renderDone() {
   burst(); setTimeout(burst, 300); fireTimer = setInterval(burst, 1100);
   let wi = 0;
   wordTimer = setInterval(() => { wi = (wi + 1) % words.length; word.replaceChildren(wave(words[wi])); }, 2600);
+}
+// cashier pressed "เสร็จ": say goodbye, fly the content away and close like an iris onto the normal screen
+function leaveDone(el) {
+  el.classList.add('leaving');
+  el.append(h('div', { class: 'bye' }, h('span', { class: 'hand' }, '👋'), h('b', {}, wave('แล้วพบกันใหม่นะคะ')), h('small', {}, 'See you again · 또 만나요')));
+  setTimeout(() => el.remove(), 2200);
 }
 // each character bounces in turn (grapheme-aware so Thai vowels and tone marks stay on their letter)
 function wave(text) {

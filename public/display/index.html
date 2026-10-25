@@ -150,12 +150,32 @@
   .perks .earn { background: rgb(255 255 255 / .92); color: #92400e; }
   /* --- PromptPay QR: loading shimmer → circular reveal → scan laser --- */
   .payarea { flex: 1; min-height: 0; display: grid; place-items: center; }
-  .qrcard { position: relative; background: #fff; color: #10203f; border-radius: 3vh; padding: 2.2vh 2.2vh 2.6vh; text-align: center; width: min(86%, 52vh);
-    box-shadow: 0 0 0 .6vh color-mix(in srgb, var(--a) 55%, transparent), 0 3vh 8vh rgb(0 0 0 / .45); animation: qrin .7s cubic-bezier(.2,.9,.3,1.25) both, qrpulse 2.4s 1.2s ease-in-out infinite; }
-  @keyframes qrin { from { opacity: 0; transform: perspective(900px) rotateX(18deg) translateY(4vh) scale(.9); } }
-  @keyframes qrpulse { 50% { box-shadow: 0 0 0 1.6vh color-mix(in srgb, var(--a) 12%, transparent), 0 3vh 8vh rgb(0 0 0 / .45); } }
-  .qrtitle { display: flex; align-items: center; justify-content: center; gap: .7em; background: #0f2a5f; color: #fff; font-weight: 800; border-radius: 1.6vh; padding: .6em; margin-bottom: 1.6vh; font-size: clamp(14px, 2.3vh, 26px); letter-spacing: .04em; }
-  .qrtitle .pp { background: #fff; color: #0f2a5f; border-radius: .5em; padding: .1em .55em; font-size: .85em; letter-spacing: 0; }
+  .qrcard { position: relative; background: #fff; color: #10203f; border-radius: 3.2vh; padding: 0 0 1.6vh; text-align: center; width: min(86%, 52vh);
+    box-shadow: 0 3vh 9vh rgb(0 0 0 / .5), 0 0 7vh color-mix(in srgb, var(--a) 35%, transparent); animation: qrin .8s cubic-bezier(.2,.9,.3,1.25) both; }
+  /* animated gradient ring around the card */
+  .qrcard::before { content: ''; position: absolute; inset: -.7vh; border-radius: 3.8vh; padding: .7vh; pointer-events: none; z-index: -1;
+    background: conic-gradient(from var(--ang), #0f2a5f, var(--a), #fde68a, #7dd3fc, #0f2a5f);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; animation: ang 4s linear infinite; }
+  @keyframes qrin { from { opacity: 0; transform: perspective(900px) rotateX(22deg) translateY(5vh) scale(.88); } }
+  .qrtitle { display: flex; align-items: center; justify-content: center; gap: 1.2vh; color: #fff; border-radius: 3.2vh 3.2vh 0 0; padding: 1.4vh 2vh; margin-bottom: 1.6vh; text-align: left; overflow: hidden; position: relative;
+    background: linear-gradient(135deg, #1b3f86, #0f2a5f 55%, #0a1d44); }
+  .qrtitle::after { content: ''; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / .22) 50%, transparent 65%); background-size: 250% 100%; animation: shimmer 3.6s ease-in-out infinite; }
+  .qrtitle .qi { width: 5vh; height: 5vh; flex: none; display: grid; place-items: center; background: #fff; color: #0f2a5f; border-radius: 1.2vh; padding: .8vh; }
+  .qrtitle .qi svg { width: 100%; height: 100%; }
+  .qrtitle b { display: block; font-size: clamp(15px, 2.5vh, 28px); letter-spacing: .08em; line-height: 1.1; }
+  .qrtitle small { font-size: clamp(11px, 1.6vh, 17px); font-weight: 700; opacity: .8; letter-spacing: .04em; }
+  .qrwell { margin: 0 1.8vh; padding: 1.4vh; border-radius: 2.4vh; background: linear-gradient(160deg, #f3f6fc, #e8eef9); box-shadow: inset 0 0 0 1px #dbe3f3; display: flex; justify-content: center; min-height: 0; }
+  .qrfoot { display: flex; align-items: center; justify-content: space-between; gap: 1.6vh; margin: 1.4vh 1.8vh 0; padding-top: 1.4vh; border-top: 2px dashed #dbe3f3; text-align: left; }
+  .qacc { display: flex; align-items: center; gap: 1vh; min-width: 0; }
+  .qacc .av { width: 4.6vh; height: 4.6vh; flex: none; border-radius: 50%; display: grid; place-items: center; font-family: var(--hf); font-size: 2.3vh; color: #fff; background: linear-gradient(135deg, var(--a), var(--a-deep)); }
+  .qacc small, .qamt small { display: block; font-size: clamp(10px, 1.5vh, 16px); font-weight: 700; color: #64748b; }
+  .qacc b { display: block; font-size: clamp(13px, 2.1vh, 22px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 22vh; }
+  .qamt { text-align: right; background: #0f2a5f; color: #fff; border-radius: 1.6vh; padding: .7vh 1.6vh; flex: none; }
+  .qamt small { color: rgb(255 255 255 / .7); }
+  .qamt b { font-family: var(--hf); font-size: clamp(18px, 3.2vh, 36px); line-height: 1; font-variant-numeric: tabular-nums; }
+  .qbanks { display: flex; align-items: center; justify-content: center; gap: 1vh; margin-top: 1.2vh; font-size: clamp(11px, 1.6vh, 17px); font-weight: 700; color: #64748b; }
+  .qbanks .dots { display: inline-flex; } .qbanks .dots i { width: 1.6vh; height: 1.6vh; border-radius: 50%; border: 2px solid #fff; margin-left: -.5vh; animation: dotbob 2.4s ease-in-out infinite; }
+  @keyframes dotbob { 0%, 70%, 100% { transform: none; } 80% { transform: translateY(-.6vh); } }
   .qrframe { position: relative; aspect-ratio: 1; width: 100%; max-height: 40vh; margin: 0 auto; max-width: 40vh; }
   .qrframe .qrimg { position: absolute; inset: 4%; width: 92%; height: 92%; object-fit: contain; clip-path: circle(0% at 50% 50%); filter: blur(6px); opacity: 0;
     transition: clip-path .9s .25s cubic-bezier(.6,0,.2,1), filter .9s .25s ease, opacity .3s .25s; }
@@ -178,7 +198,9 @@
   @keyframes indet { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
   @keyframes shimmer { from { background-position: 150% 0; } to { background-position: -100% 0; } }
   .qrframe.ready .qrskel { opacity: 0; transform: scale(1.08); pointer-events: none; }
-  .qrframe .cn { position: absolute; width: 16%; height: 16%; border: .8vh solid var(--a); transition: all .7s cubic-bezier(.2,.9,.3,1.3); opacity: .9; }
+  .qrframe .cn { position: absolute; width: 17%; height: 17%; border: .9vh solid var(--a); transition: all .7s cubic-bezier(.2,.9,.3,1.3); filter: drop-shadow(0 0 .8vh color-mix(in srgb, var(--a) 60%, transparent)); z-index: 2; }
+  .qrframe.ready .cn { animation: cnbreath 2.6s 1.2s ease-in-out infinite; }
+  @keyframes cnbreath { 50% { transform: scale(1.06); } }
   .cn.tl { left: 20%; top: 20%; border-right: 0; border-bottom: 0; border-radius: 1.2vh 0 0 0; }
   .cn.tr { right: 20%; top: 20%; border-left: 0; border-bottom: 0; border-radius: 0 1.2vh 0 0; }
   .cn.bl { left: 20%; bottom: 20%; border-right: 0; border-top: 0; border-radius: 0 0 0 1.2vh; }
@@ -193,9 +215,9 @@
   /* QR mode: the QR takes all the room left under the amount */
   .isqr .payhead { padding: 2vh 3vh; } .isqr .payhead .amt { font-size: clamp(44px, 9vh, 120px); }
   .isqr .payarea { display: flex; justify-content: center; }
-  .isqr .qrcard { display: flex; flex-direction: column; align-items: center; width: auto; max-width: 100%; height: 100%; max-height: 62vh; padding: 1.6vh 1.8vh 1.8vh; }
-  .isqr .qrtitle { align-self: stretch; margin-bottom: 1.2vh; }
-  .isqr .qrframe { flex: 1 1 auto; min-height: 16vh; height: auto; width: auto; max-width: none; max-height: 44vh; aspect-ratio: 1; }
+  .isqr .qrcard { display: flex; flex-direction: column; align-items: stretch; width: auto; max-width: 100%; height: 100%; max-height: 64vh; }
+  .isqr .qrtitle { margin-bottom: 1.2vh; padding: 1.1vh 2vh; } .isqr .paystatus { display: none; } .isqr .qrfoot { margin-top: 1.1vh; padding-top: 1.1vh; } .isqr .qbanks { margin-top: .9vh; } .isqr .qrwell { flex: 1 1 auto; }
+  .isqr .qrframe { flex: none; height: 100%; min-height: 16vh; width: auto; max-width: none; max-height: 40vh; aspect-ratio: 1; }
   .cashcard { gap: 1.4vh; padding: 2.4vh 3vh; }
   .cashcard .cc-row.recv b, .cashcard .cc-change b { font-size: clamp(36px, 7.5vh, 96px); }
   .cc-change.show { padding: 1.8vh 3vh; }
@@ -299,6 +321,22 @@
   @keyframes hintpulse { 50% { opacity: .55; } }
   .done .rays { position: absolute; left: 50%; top: 45%; width: 220vmax; height: 220vmax; margin: -110vmax 0 0 -110vmax; z-index: 0; pointer-events: none; opacity: .14;
     background: repeating-conic-gradient(from 0deg, #fff 0 6deg, transparent 6deg 18deg); -webkit-mask: radial-gradient(circle, #000 0, transparent 45%); mask: radial-gradient(circle, #000 0, transparent 45%); animation: spin 40s linear infinite; }
+  /* leaving (cashier pressed เสร็จ): goodbye → content flies up → iris closes onto the normal screen */
+  .done.leaving { animation: iris 1s 1.1s cubic-bezier(.7,0,.3,1) forwards; pointer-events: none; }
+  @keyframes iris { from { clip-path: circle(150% at 50% 45%); } to { clip-path: circle(0% at 50% 45%); } }
+  .done.leaving .card2 > * { animation: flyaway .55s cubic-bezier(.5,0,.75,0) forwards !important; }
+  .done.leaving .card2 > :nth-child(2) { animation-delay: .05s !important; } .done.leaving .card2 > :nth-child(3) { animation-delay: .1s !important; }
+  .done.leaving .card2 > :nth-child(4) { animation-delay: .15s !important; } .done.leaving .card2 > :nth-child(n+5) { animation-delay: .2s !important; }
+  .done .bye { position: absolute; inset: 0; z-index: 4; display: grid; place-content: center; justify-items: center; gap: 1.4vh; text-align: center; pointer-events: none; }
+  .done .bye .hand { font-size: 12vh; line-height: 1; display: inline-block; transform-origin: 70% 80%; animation: popin .5s .2s cubic-bezier(.2,1.5,.4,1) both, handwave .5s .5s ease-in-out 3; }
+  .done .bye b { font-family: var(--hf); font-size: clamp(34px, min(8vh, 9vw), 96px); color: #fff; text-shadow: 0 .5vh 3vh rgb(0 0 0 / .4); }
+  .done .bye b span { display: inline-block; white-space: pre; animation: letter .6s cubic-bezier(.2,.9,.3,1.6) both; }
+  .done .bye small { font-weight: 800; font-size: clamp(14px, 2.4vh, 28px); opacity: .8; letter-spacing: .06em; animation: pop .5s .5s both; }
+  @keyframes handwave { 50% { transform: rotate(-18deg); } }
+  .done.leaving .rays { animation: spin 3s linear infinite; opacity: .3; }
+  @keyframes flyaway { to { transform: translateY(-16vh) scale(.7); opacity: 0; filter: blur(6px); } }
+  .disp.welcome-in { animation: welcomein 1.2s .6s cubic-bezier(.2,.9,.3,1.1) both; }
+  @keyframes welcomein { from { opacity: 0; transform: scale(1.06); filter: blur(10px); } }
   .confetti { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
   .confetti i { position: absolute; top: -4vh; width: 1.2vh; height: 2.2vh; border-radius: .3vh; scale: var(--s, 1); animation: fall linear infinite; }
   @keyframes fall { to { transform: translateY(115vh) rotate(720deg); } }
@@ -329,7 +367,7 @@
     .disp.split.active, .disp.paying { grid-template-columns: 1fr !important; grid-template-rows: 34vh 1fr; }
     .disp.split.active.paying, .disp.paying { grid-template-rows: auto minmax(0, 1fr); }
     .disp.paying .paybox > * { flex-shrink: 0; }
-    .disp.paying .isqr .qrcard { height: auto; max-height: none; } .disp.paying .isqr .qrframe { flex: none; width: min(62vw, 30vh); max-height: none; }
+    .disp.paying .isqr .qrcard { height: auto; max-height: none; } .disp.paying .isqr .qrframe { flex: none; height: auto; width: min(58vw, 30vh); max-height: none; }
     .disp.paying .promo { order: 1; } .disp.paying .panel { order: 2; }
     .qrcard { width: min(70%, 40vh); }
     .disp.paying .paybox, .disp.paying .cashcard, .disp.paying .payarea { flex: none; }
