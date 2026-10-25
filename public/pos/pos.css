@@ -266,3 +266,4 @@ body { background: var(--bg); }
 .opt-group.quick .opt { display: grid; justify-items: center; gap: .2em; min-height: 90px; padding: .5em; }
 .opt-group .opt .oimg { width: 72px; height: 72px; object-fit: cover; border-radius: 12px; }
 .bigopts .opt-group .opt .oimg { width: 90px; height: 90px; }
+.oc.kitchen { background: var(--info-soft); color: var(--info); box-shadow: none; }

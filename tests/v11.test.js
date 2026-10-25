@@ -391,3 +391,28 @@ test('ตัวเลือกเลือกด่วน (เช่น แบ�
   const missing = await S.call('POST', '/api/orders/checkout', { idempotency_key: key(), cart: { lines: [line(p.body.id, 1)] }, payments: [{ method: 'cash', amount: 1e6, received: 1e6 }] }, { token: owner, terminal: 'pos1' });
   assert.equal(missing.status, 400, 'ต้องเลือกแบบไข่');
 });
+
+test('ตัวเลือกเปลี่ยนชื่อรายการ: ไข่ไก่ + ออนเซ็น → ใบครัวพิมพ์ "ไข่ออนเซ็น"; ตั้งให้ใช้ทุกที่ได้ (ใบเสร็จ/บิล)', async () => {
+  const mk = async (rename_all) => (await S.call('POST', '/api/option-groups', { name: 'แบบไข่ ' + rename_all, min_select: 1, max_select: 1, display: 'quick', rename_all,
+    options: [{ name: 'ออนเซ็น', price: 0, rename_to: 'ไข่ออนเซ็น' }, { name: 'ตีไข่', price: 0 }] }, { token: owner })).body.id;
+  const gk = await mk(false), ga = await mk(true);
+  const pk = (await S.call('POST', '/api/products', { code: 'EGGK', name: 'ไข่ไก่', price: 1000, option_groups: [gk] }, { token: owner })).body.id;
+  const pa = (await S.call('POST', '/api/products', { code: 'EGGA', name: 'ไข่ไก่', price: 1000, option_groups: [ga] }, { token: owner })).body.id;
+  const cat = (await S.call('GET', '/api/catalog', undefined, { token: owner })).body;
+  const optK = cat.option_groups.find((g) => g.id === gk).options, optA = cat.option_groups.find((g) => g.id === ga).options;
+  assert.equal(optK[0].rename_to, 'ไข่ออนเซ็น');
+  assert.equal(cat.option_groups.find((g) => g.id === ga).rename_all, true);
+  const o = await sell([line(pk, 1, { options: [{ group_id: gk, id: optK[0].id }] }), line(pk, 1, { options: [{ group_id: gk, id: optK[1].id }] }), line(pa, 1, { options: [{ group_id: ga, id: optA[0].id }] })]);
+  const klines = (await db.all('SELECT content FROM kitchen_tickets WHERE order_id = ?', [o.id])).flatMap((k) => JSON.parse(k.content).lines);
+  const names = klines.map((l) => l.name);
+  assert.equal(names.filter((n) => n === 'ไข่ออนเซ็น').length, 2, 'ใบครัวเปลี่ยนชื่อทั้งสองแบบ: ' + names.join(','));
+  assert.ok(names.includes('ไข่ไก่'), 'ตัวเลือกที่ไม่ได้ตั้งชื่อใหม่ ใช้ชื่อเดิม');
+  assert.ok(klines.filter((l) => l.name === 'ไข่ออนเซ็น').every((l) => !l.options.some((x) => x.name === 'ออนเซ็น')), 'ไม่พิมพ์ตัวเลือกซ้ำใต้ชื่อใหม่');
+  assert.ok(klines.find((l) => l.name === 'ไข่ไก่').options.some((x) => x.name === 'ตีไข่'));
+  // bill / receipt: kitchen-only keeps the menu name, "everywhere" renames the line
+  const items = (await S.call('GET', '/api/orders/' + o.id, undefined, { token: owner })).body.items.map((i) => i.name);
+  assert.deepEqual(items.sort(), ['ไข่ไก่', 'ไข่ไก่', 'ไข่ออนเซ็น'].sort());
+  const rc = JSON.parse((await db.get("SELECT payload FROM print_jobs WHERE ref_id = ? AND doc_type = 'receipt'", [o.id])).payload).data.items;
+  const renamed = rc.find((i) => i.name === 'ไข่ออนเซ็น');
+  assert.ok(renamed && !renamed.options.length, 'ใบเสร็จไม่พิมพ์ตัวเลือกซ้ำ');
+});

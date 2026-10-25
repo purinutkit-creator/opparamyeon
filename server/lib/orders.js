@@ -1,7 +1,7 @@
 import { db, J, S } from '../db.js';
 import { id, now, getSettings, businessDateOf, nextCounter, bad, conflict, notFound, forbidden, emit, audit, token, addMinutes } from './util.js';
 import { can } from './auth.js';
-import { computeTotals, orderDineType, splitTickets, countBowls, dineLabel, isAddon } from '../../public/shared/core.js';
+import { computeTotals, orderDineType, splitTickets, countBowls, dineLabel, isAddon, renamedLine } from '../../public/shared/core.js';
 import { enqueue, orderDocData, fmtDate } from './print.js';
 import { awardOrder, reverseForRefund } from './members.js';
 
@@ -42,7 +42,8 @@ export async function priceLines(rawLines, { staff = null, source = 'pos', exist
       if (!opt || opt.active === false) throw bad(`ตัวเลือกไม่พร้อมใช้: ${o.name || o.id}`);
       byGroup.set(g.id, (byGroup.get(g.id) || 0) + 1);
       // add-on = from an optional group (toppings, extras); choice = from a required group (noodle, spice level)
-      chosen.push({ group_id: g.id, group: g.name, id: opt.id, name: opt.name, price: Number(opt.price) || 0, cost: Number(opt.cost) || 0, recipe: opt.recipe || [], addon: !(Number(g.min_select) > 0) });
+      chosen.push({ group_id: g.id, group: g.name, id: opt.id, name: opt.name, price: Number(opt.price) || 0, cost: Number(opt.cost) || 0, recipe: opt.recipe || [], addon: !(Number(g.min_select) > 0),
+        ...(opt.rename_to ? { rename_to: opt.rename_to, rename_all: !!g.rename_all } : {}) });
     }
     for (const gid of groups) {
       const g = await db.get('SELECT * FROM option_groups WHERE id = ?', [gid]);
@@ -64,7 +65,8 @@ export async function priceLines(rawLines, { staff = null, source = 'pos', exist
       costUnit = 0;
       for (const r of recipe) { const ing = await db.get('SELECT cost FROM ingredients WHERE id = ?', [r.ingredient_id]); costUnit += Math.round((ing ? ing.cost : 0) * Number(r.qty)); }
     }
-    out.push({ product_id: p.id, name: p.name, qty, qty_new: qty, unit_price: unit, options: chosen, note: String(raw.note || '').slice(0, 200), dine_type: dt,
+    // a "rename everywhere" option names the line itself (receipt, bill history, reports); kitchen-only renames happen on the ticket
+    out.push({ product_id: p.id, name: renamedLine(p.name, chosen, 'everywhere').name, qty, qty_new: qty, unit_price: unit, options: chosen, note: String(raw.note || '').slice(0, 200), dine_type: dt,
       bowl_group: raw.bowl_group ? Math.max(1, Math.floor(raw.bowl_group)) : null, bowl_count: Number(p.bowl_count) || 0, station_id: p.station_id,
       cost_unit: costUnit, category_id: p.category_id, per_bowl_limit: p.per_bowl_limit, product: p, void_qty: 0, sent_qty: 0 });
   }
@@ -274,8 +276,8 @@ export async function kitchenTickets(order, lines, kind, staff) {
         queue_no: order.queue_no, bill_no: order.bill_no, dine_type: order.dine_type, dine_label: dineLabel(order.dine_type), table: order.table_name || '',
         customer: order.customer_name || '', staff: staffName, created_at: now(), datetime: fmtDate(now()), note: order.note || '', source: order.source,
         station: station.name, station_id: station.id, part_label: part.label, part: parts.length > 1 ? `ใบที่ ${part.index}/${part.count}` + (part.label ? ` · ${part.label}` : '') : part.label || '',
-        lines: part.lines.map((l) => ({ name: l.name, qty: l.qty, options: (l.options || []).map((o) => ({ group: o.group, name: o.name, price: o.price, addon: isAddon(o) })), note: l.note, dine_type: l.dine_type,
-          bowl_group: l.bowl_group, bowl_label: l.bowl_label || (l.bowl_group ? `ชามที่ ${l.bowl_group}` : ''), bowl_count: l.bowl_count })),
+        lines: part.lines.map((l) => { const rn = renamedLine(l.name, l.options || [], 'kitchen'); return { name: rn.name, qty: l.qty, options: rn.options.map((o) => ({ group: o.group, name: o.name, price: o.price, addon: isAddon(o) })), note: l.note, dine_type: l.dine_type,
+          bowl_group: l.bowl_group, bowl_label: l.bowl_label || (l.bowl_group ? `ชามที่ ${l.bowl_group}` : ''), bowl_count: l.bowl_count }; }),
         received_time: fmtDate(order.created_at, true), count_unit: (await getSettings()).sale.count_unit || 'ชาม',
         bowls: countBowls(part.lines), ref: kind === 'void' ? `อ้างอิงบิล ${order.bill_no} คิว ${order.queue_no || '-'}` : '',
       };

@@ -1,7 +1,7 @@
 // Pure logic shared by the server (Node) and the browser.
 // Money is always an integer number of satang (1 บาท = 100 satang).
 
-export const VERSION = '1.11.0';
+export const VERSION = '1.11.1';
 
 export const baht = (satang) => {
   const v = (Number(satang) || 0) / 100;
@@ -241,6 +241,13 @@ export function code128(text) {
 
 // option kind for tickets/receipts: add-on (extra the customer added) vs choice (required pick); older orders: priced = add-on
 export const isAddon = (o) => (o && o.addon !== undefined ? !!o.addon : !!(o && o.price > 0));
+
+// An option can rename the item it is chosen on (e.g. ไข่ไก่ + ออนเซ็น → "ไข่ออนเซ็น").
+// kitchen = kitchen ticket / kitchen screen; everywhere = also POS cart, receipt and customer display when the group says so.
+export function renamedLine(name, options = [], where = 'kitchen') {
+  const r = (options || []).find((o) => o && o.rename_to && (where === 'kitchen' || o.rename_all));
+  return r ? { name: r.rename_to, options: options.filter((o) => o !== r) } : { name, options };
+}
 
 // ---------- EAN-13 (retail barcodes such as 885xxxxxxxxxx) ----------
 export function ean13Check(d12) {

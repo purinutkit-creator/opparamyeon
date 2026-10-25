@@ -32,7 +32,7 @@ export async function menuPage(set) {
     } else if (tab === 'options') {
       body = h('div', {}, h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => optionGroupDialog(null, ingredients, reload) }, '+ เพิ่มกลุ่มตัวเลือก'),
         h('button', { class: 'btn', onclick: () => optionGroupDialog(null, ingredients, reload, { name: 'แบบไข่', min_select: 1, max_select: 1, display: 'quick',
-          options: [{ name: 'ไข่ออนเซ็น', price: 0 }, { name: 'ไข่ตี', price: 0 }, { name: 'ไข่ต้มสุก', price: 0 }].map((o) => ({ ...o, cost: 0, recipe: [], active: true })) }) }, '⚡ ตัวอย่าง: แบบไข่ (ออนเซ็น / ไข่ตี / ต้มสุก)')),
+          options: [{ name: 'ออนเซ็น', rename_to: 'ไข่ออนเซ็น' }, { name: 'ไข่ตี', rename_to: 'ไข่ตี' }, { name: 'ต้มสุก', rename_to: 'ไข่ต้มสุก' }].map((o) => ({ ...o, price: 0, cost: 0, recipe: [], active: true })) }) }, '⚡ ตัวอย่าง: แบบไข่ (ออนเซ็น / ไข่ตี / ต้มสุก)')),
         table([{ t: 'กลุ่ม', f: (g) => [g.name, g.display === 'quick' ? h('span', { class: 'badge brand', style: { marginLeft: '.4em' } }, '⚡ เลือกด่วน') : null] }, { t: 'บังคับเลือกอย่างน้อย', r: 1, k: 'min_select' }, { t: 'เลือกได้สูงสุด', r: 1, k: 'max_select' }, { t: 'ตัวเลือก', f: (g) => g.options.map((o) => `${o.name}${o.price ? ' +' + baht(o.price) : ''}`).join(', ') }],
           cat.option_groups, { onRow: (g) => optionGroupDialog(g, ingredients, reload) }));
     } else if (tab === 'ingredients') {
@@ -98,7 +98,8 @@ function optionGroupDialog(g, ingredients, reload, preset = null) {
   const start = g || preset || { min_select: 0, max_select: 1, display: 'normal' };
   const f = form([{ k: 'name', label: 'ชื่อกลุ่ม เช่น ชนิดเส้น / ระดับความเผ็ด / แบบไข่' }, { k: 'min_select', label: 'ต้องเลือกอย่างน้อย', type: 'number' }, { k: 'max_select', label: 'เลือกได้สูงสุด (0=ไม่จำกัด)', type: 'number' }, { k: 'sort', label: 'ลำดับ', type: 'number' },
     { k: 'display', label: 'รูปแบบการเลือกที่หน้าขาย', type: 'select', wide: true, options: [['normal', 'ปกติ — แสดงในหน้าต่างตัวเลือก'], ['quick', '⚡ เลือกด่วน — แตะสินค้าแล้วขึ้นปุ่มใหญ่ (มีรูปได้) แตะครั้งเดียวเข้าบิล เช่น ไข่ไก่ → ออนเซ็น / ไข่ตี / ต้มสุก']],
-      hint: 'เลือกด่วนเหมาะกับ "ตัวเลือกของสินค้ารายการเดียวกัน" ที่ต้องเลือก 1 อย่าง · ถ้าไม่บังคับเลือก จะมีปุ่ม "แบบปกติ" ให้ด้วย' }], start);
+      hint: 'เลือกด่วนเหมาะกับ "ตัวเลือกของสินค้ารายการเดียวกัน" ที่ต้องเลือก 1 อย่าง · ถ้าไม่บังคับเลือก จะมีปุ่ม "แบบปกติ" ให้ด้วย' },
+    { k: 'rename_all', label: 'ใช้ "ชื่อใหม่เมื่อเลือก" ในใบเสร็จ หน้าจอขาย จอลูกค้า และรายงานด้วย (ไม่ติ๊ก = เปลี่ยนชื่อเฉพาะใบครัว/จอครัว)', type: 'bool', wide: true }], start);
   const opts = (start.options || []).map((o) => ({ ...o, recipe: o.recipe || [] }));
   const box = h('div');
   const draw = () => box.replaceChildren(h('h4', {}, 'ตัวเลือก'), ...opts.map((o, i) => {
@@ -107,6 +108,8 @@ function optionGroupDialog(g, ingredients, reload, preset = null) {
     const ing = h('select', { class: 'input', style: { width: '160px' } }, h('option', { value: '' }, 'ไม่ตัดวัตถุดิบ'), ingredients.map((x) => h('option', { value: x.id, selected: o.recipe[0] && o.recipe[0].ingredient_id === x.id }, x.name)));
     const iq = h('input', { class: 'input', type: 'number', step: 'any', value: o.recipe[0] ? o.recipe[0].qty : 1, style: { width: '80px' } });
     const act = h('input', { type: 'checkbox', checked: o.active !== false });
+    const rn = h('input', { class: 'input og-rename', value: o.rename_to || '', placeholder: 'ชื่อใหม่เมื่อเลือก เช่น ไข่ออนเซ็น (ไม่บังคับ)', title: 'ถ้าเลือกตัวเลือกนี้ ใบครัวจะพิมพ์ชื่อรายการเป็นชื่อนี้แทน' });
+    rn.addEventListener('input', () => { o.rename_to = rn.value; });
     // picture for the big quick-pick button (optional)
     const file = h('input', { type: 'file', accept: 'image/*', style: { display: 'none' } });
     file.onchange = async () => { try { const r = await upload(file.files[0]); o.image = r.url; draw(); } catch (e) { errToast(e); } };
@@ -115,7 +118,7 @@ function optionGroupDialog(g, ingredients, reload, preset = null) {
     const sync = () => { o.name = n.value; o.price = toSatang(pr.value); o.cost = toSatang(co.value); o.active = act.checked; o.recipe = ing.value ? [{ ingredient_id: ing.value, qty: Number(iq.value) || 1 }] : []; };
     [n, pr, co, ing, iq, act].forEach((x) => x.addEventListener('input', sync)); ing.addEventListener('change', sync); act.addEventListener('change', sync);
     n.classList.add('og-name');
-    return h('div', { class: 'og-row' }, pic, file, unpic, n, h('span', { class: 'small' }, 'ราคา+'), pr, h('span', { class: 'small' }, 'ต้นทุน'), co, ing, iq, h('label', { class: 'switch' }, act, 'ใช้'), h('button', { class: 'btn sm', onclick: () => { opts.splice(i, 1); draw(); } }, 'ลบ'));
+    return h('div', { class: 'og-row' }, pic, file, unpic, n, h('span', { class: 'small' }, '→ ใบครัว:'), rn, h('span', { class: 'small' }, 'ราคา+'), pr, h('span', { class: 'small' }, 'ต้นทุน'), co, ing, iq, h('label', { class: 'switch' }, act, 'ใช้'), h('button', { class: 'btn sm', onclick: () => { opts.splice(i, 1); draw(); } }, 'ลบ'));
   }), h('button', { class: 'btn sm', onclick: () => { opts.push({ name: '', price: 0, cost: 0, recipe: [], active: true }); draw(); } }, '+ ตัวเลือก'));
   draw();
   modal(g ? 'แก้ไขตัวเลือก' : 'เพิ่มกลุ่มตัวเลือก', h('div', {}, f, box, h('p', { class: 'small muted' }, 'อย่าลืมเลือกกลุ่มนี้ที่สินค้า (เมนูและสินค้า → แก้ไขสินค้า → ตัวเลือก/ท็อปปิ้ง)')), { wide: true, actions: [g ? { label: 'ลบกลุ่ม', class: 'danger', onClick: async () => { await api.del('/option-groups/' + g.id); reload(); } } : null,

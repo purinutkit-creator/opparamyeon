@@ -18,7 +18,7 @@ export async function catalog({ includeInactive = false, mobile = false, withCos
   if (mobile) prods = prods.filter((p) => p.mobile);
   const bcs = await db.all('SELECT * FROM barcodes');
   const groups = (await db.all('SELECT * FROM option_groups ORDER BY sort, name')).map((g) => ({ ...g, options: J(g.options, []).filter((o) => includeInactive || o.active !== false)
-    .map((o) => (withCost ? o : { id: o.id, name: o.name, price: o.price, active: o.active, image: o.image || '' })), display: g.display || 'normal' }));
+    .map((o) => (withCost ? o : { id: o.id, name: o.name, price: o.price, active: o.active, image: o.image || '', rename_to: o.rename_to || '' })), display: g.display || 'normal', rename_all: !!g.rename_all }));
   const stations = await db.all('SELECT * FROM stations ORDER BY sort, name');
   return {
     categories: cats, stations, option_groups: groups,
@@ -148,10 +148,10 @@ crud('stations', 'stations', ['name', 'split_mode', 'bowls_per_ticket', 'sort'],
 });
 // display: 'normal' (list in the options dialog) or 'quick' (big picture buttons right after tapping the item, one tap adds it)
 const imgRef = (v) => (typeof v === 'string' && /^(\/files\/[\w-]+|https:\/\/[^\s"'<>]{1,480})$/.test(v) ? v : '');
-crud('option-groups', 'option_groups', ['name', 'min_select', 'max_select', 'options', 'sort', 'display'], 'manage_menu', {
-  normalize: (o) => ({ ...o, min_select: Number(o.min_select) || 0, max_select: Number(o.max_select) || 0, sort: Number(o.sort) || 0, display: o.display === 'quick' ? 'quick' : 'normal',
+crud('option-groups', 'option_groups', ['name', 'min_select', 'max_select', 'options', 'sort', 'display', 'rename_all'], 'manage_menu', {
+  normalize: (o) => ({ ...o, min_select: Number(o.min_select) || 0, max_select: Number(o.max_select) || 0, sort: Number(o.sort) || 0, display: o.display === 'quick' ? 'quick' : 'normal', rename_all: o.rename_all ? 1 : 0,
     options: S((typeof o.options === 'string' ? J(o.options, []) : o.options || []).map((x) => ({ id: x.id || id().slice(0, 8), name: x.name, price: Math.round(Number(x.price) || 0),
-      cost: Math.round(Number(x.cost) || 0), active: x.active !== false, image: imgRef(x.image), recipe: (x.recipe || []).filter((r) => r.ingredient_id) }))) }),
+      cost: Math.round(Number(x.cost) || 0), active: x.active !== false, image: imgRef(x.image), rename_to: String(x.rename_to || '').trim().slice(0, 80), recipe: (x.recipe || []).filter((r) => r.ingredient_id) }))) }),
 });
 crud('ingredients', 'ingredients', ['name', 'unit', 'low_stock', 'cost'], 'manage_stock', { normalize: (o) => ({ ...o, low_stock: Number(o.low_stock) || 0, cost: Math.round(Number(o.cost) || 0) }) });
 crud('tables', 'dining_tables', ['name', 'zone', 'seats', 'sort', 'active', 'status'], 'manage_tables', {

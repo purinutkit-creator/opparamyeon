@@ -71,7 +71,8 @@ export async function orderDocData(order, extra = {}) {
     table: order.table_name || '', customer: order.customer_name || '', member: s.members.show_on_receipt ? memberName : '',
     member_name: memberName, staff: staff ? staff.name : (order.source !== 'pos' ? 'Mobile Ordering' : ''), datetime: fmtDate(order.paid_at || order.created_at),
     order_note: order.note || '', bowls: order.bowls,
-    items: items.filter((i) => i.qty - i.void_qty > 0).map((i) => ({ name: i.name, qty: i.qty - i.void_qty, options: J(i.options, []), note: i.note,
+    // an option that renamed the line everywhere is already in the name: don't print it again underneath
+    items: items.filter((i) => i.qty - i.void_qty > 0).map((i) => ({ name: i.name, qty: i.qty - i.void_qty, options: J(i.options, []).filter((o) => !(o.rename_to && o.rename_all)), note: i.note,
       dine_type: i.dine_type, line_total: i.line_total, bowl_group: i.bowl_group })),
     totals: { items_total: order.items_total, discount: order.discount, packaging: order.packaging, tax: order.tax, total: order.total },
     tax_inclusive: s.sale.tax_inclusive, tax_rate: s.sale.tax_rate,
