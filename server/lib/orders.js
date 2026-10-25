@@ -4,6 +4,7 @@ import { can } from './auth.js';
 import { computeTotals, orderDineType, splitTickets, countBowls, dineLabel, isAddon, renamedLine, markOf } from '../../public/shared/core.js';
 import { enqueue, orderDocData, fmtDate } from './print.js';
 import { awardOrder, reverseForRefund } from './members.js';
+import { assignCooker, cookerCfg, changed as cookersChanged, jobsOf } from './cookers.js';
 
 const EDITABLE = ['held', 'open', 'pending_payment'];
 
@@ -134,7 +135,7 @@ export async function orderFull(oid) {
   const jobs = await db.all('SELECT id, printer_id, doc_type, status, error, attempts, created_at, updated_at FROM print_jobs WHERE ref_id = ? OR ref_id IN (SELECT id FROM kitchen_tickets WHERE order_id = ?) ORDER BY seq', [oid, oid]);
   const member = o.member_id ? await db.get('SELECT id, member_no, first_name, last_name, nickname, phone, points FROM members WHERE id = ?', [o.member_id]) : null;
   const staff = o.staff_id ? await db.get('SELECT name FROM staff WHERE id = ?', [o.staff_id]) : null;
-  return { ...o, discount_info: J(o.discount_info), items, payments, refunds, tickets, print_jobs: jobs, member, staff_name: staff && staff.name };
+  return { ...o, discount_info: J(o.discount_info), items, payments, refunds, tickets, print_jobs: jobs, member, staff_name: staff && staff.name, cooker_jobs: await jobsOf(oid) };
 }
 
 // Create or update an order from a cart. action: 'hold' | 'send' | 'save'
@@ -265,34 +266,53 @@ export async function kitchenTickets(order, lines, kind, staff) {
     byStation.get(st).push(l);
   }
   const staffName = staff ? staff.name : order.source === 'pos' ? '' : 'Mobile Ordering';
+  const settings = await getSettings();
+  const cook = cookerCfg(settings);
+  // "สั่งเพิ่ม" only when the shop wants additions marked; otherwise every send prints as a normal ticket
+  const markAdd = kind === 'add' && !!(settings.print || {}).mark_additions;
   const created = [];
+  let cooked = false;
   for (const [stationId, ls] of byStation) {
     const station = await db.get('SELECT * FROM stations WHERE id = ?', [stationId]) || { id: stationId, name: 'ครัว', split_mode: 'order', bowls_per_ticket: 1 };
-    const parts = kind === 'void' ? [{ label: '', lines: ls, index: 1, count: 1 }] : splitTickets(ls, station.split_mode, station.bowls_per_ticket);
+    // with cookers on, bowl tickets are split one bowl per ticket so each bowl can go to whichever cooker is free first
+    const useCook = kind !== 'void' && cook.enabled && countBowls(ls) > 0;
+    const parts = kind === 'void' ? [{ label: '', lines: ls, index: 1, count: 1 }]
+      : splitTickets(ls, useCook && cook.split_by_bowl ? 'bowl' : station.split_mode, useCook && cook.split_by_bowl ? 1 : station.bowls_per_ticket);
+    const totalBowls = parts.reduce((a, p) => a + countBowls(p.lines), 0);
+    let bowlNo = 0;
     for (const part of parts) {
       const tid = id();
+      const nb = countBowls(part.lines);
+      const cooker = useCook && nb > 0 ? await assignCooker(order, tid, nb) : null;
+      if (cooker) cooked = true;
+      const bowlPart = nb > 0 && totalBowls > 0 ? `${settings.sale.count_unit || 'ชาม'}ที่ ${nb > 1 ? `${bowlNo + 1}-${bowlNo + nb}` : bowlNo + 1}/${totalBowls}` : '';
+      bowlNo += nb;
       const content = {
-        kind, kind_label: kind === 'void' ? '*** ยกเลิกรายการ ***' : kind === 'add' ? '+++ สั่งเพิ่ม +++' : 'ออเดอร์ใหม่',
+        kind: kind === 'add' && !markAdd ? 'new' : kind, kind_label: kind === 'void' ? '*** ยกเลิกรายการ ***' : markAdd ? '+++ สั่งเพิ่ม +++' : 'ออเดอร์ใหม่',
+        bowl_part: bowlPart, cooker: cooker ? cooker.name : '', cooker_no: cooker ? cooker.no : null, cooker_ready: cooker ? new Date(cooker.end_at).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' }) + ' น.' : '',
         queue_no: order.queue_no, bill_no: order.bill_no, dine_type: order.dine_type, dine_label: dineLabel(order.dine_type), table: order.table_name || '',
         customer: order.customer_name || '', staff: staffName, created_at: now(), datetime: fmtDate(now()), note: order.note || '', source: order.source,
         station: station.name, station_id: station.id, part_label: part.label, part: parts.length > 1 ? `ใบที่ ${part.index}/${part.count}` + (part.label ? ` · ${part.label}` : '') : part.label || '',
         lines: part.lines.map((l) => { const rn = renamedLine(l.name, l.options || [], 'kitchen'); return { name: rn.name, qty: l.qty, options: rn.options.map((o) => ({ group: o.group, name: o.name, price: o.price, addon: isAddon(o) })), note: l.note, dine_type: l.dine_type,
           bowl_group: l.bowl_group, bowl_label: l.bowl_label || (l.bowl_group ? `ชามที่ ${l.bowl_group}` : ''), bowl_count: l.bowl_count }; }),
-        received_time: fmtDate(order.created_at, true), count_unit: (await getSettings()).sale.count_unit || 'ชาม',
+        received_time: fmtDate(order.created_at, true), count_unit: settings.sale.count_unit || 'ชาม',
         bowls: countBowls(part.lines), ref: kind === 'void' ? `อ้างอิงบิล ${order.bill_no} คิว ${order.queue_no || '-'}` : '',
       };
       await db.run('INSERT INTO kitchen_tickets(id, order_id, station_id, kind, content, status, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?)',
         [tid, order.id, station.id, kind, S(content), kind === 'void' ? 'void' : 'new', now(), now()]);
       const data = { ...(await kitchenDocData(content)) };
-      await enqueue('kitchen', tid, data, { stationId: station.id, dedupe: 'kitchen:' + tid });
+      // a cooker with its own printer gets the ticket there; otherwise the station's printers print it as before
+      const cookPrinter = cooker && cooker.printer_id ? await db.get('SELECT id FROM printers WHERE id = ? AND active = 1', [cooker.printer_id]) : null;
+      await enqueue('kitchen', tid, data, { stationId: station.id, dedupe: 'kitchen:' + tid, printerId: cookPrinter ? cookPrinter.id : null });
       created.push(tid);
-      emit('kitchen', 'kitchen:ticket', { id: tid, order_id: order.id, station_id: station.id, kind, content });
+      emit('kitchen', 'kitchen:ticket', { id: tid, order_id: order.id, station_id: station.id, kind: content.kind, content });
     }
   }
+  if (cooked) cookersChanged();
   return created;
 }
 async function kitchenDocData(c) {
-  return { store_name: '', ticket_kind: c.kind_label, not_new: c.kind !== 'new', queue_no: c.queue_no, received_time: c.received_time, count_unit: c.count_unit,
+  return { store_name: '', ticket_kind: c.kind_label, not_new: c.kind !== 'new', bowl_part: c.bowl_part || '', cooker: c.cooker ? `ต้มโดย ${c.cooker}` : '', cooker_ready: c.cooker_ready ? `เสร็จประมาณ ${c.cooker_ready}` : '', queue_no: c.queue_no, received_time: c.received_time, count_unit: c.count_unit,
     table_or_type: c.table ? `โต๊ะ: ${c.table}` : c.dine_type === 'takeaway' ? 'กลับบ้าน' : c.dine_label, dine_type: c.dine_type, dine_label: c.dine_label, table: c.table, customer: c.customer,
     station: c.station, ticket_part: c.part, bill_no: c.bill_no, datetime: c.datetime, staff: c.staff, order_note: c.note, bowls: c.bowls, reason: c.ref,
     items: c.lines.map((l) => ({ ...l, line_total: null })) };

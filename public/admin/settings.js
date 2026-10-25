@@ -285,7 +285,36 @@ export async function printersPage() {
         if (p) await api.put('/printers/' + p.id, v); else await api.post('/printers', v); reload();
       } }].filter(Boolean) });
   };
-  return page('เครื่องพิมพ์', h('button', { class: 'btn primary', onclick: () => open(null) }, '+ เพิ่มเครื่องพิมพ์'),
+  // ---- noodle cookers: queue, estimated time, and which printer each cooker's tickets go to ----
+  const all = await api.get('/settings');
+  const ck = { enabled: true, count: 2, minutes_per_bowl: 4, split_by_bowl: true, machines: [], ...(all.cookers || {}) };
+  const markAdd = h('input', { type: 'checkbox', checked: !!(all.print || {}).mark_additions });
+  const cf = form([{ k: 'enabled', label: 'ใช้ระบบเครื่องต้ม (จัดคิว + เวลาโดยประมาณ)', type: 'bool' }, { k: 'count', label: 'จำนวนเครื่องต้ม', type: 'number' },
+    { k: 'minutes_per_bowl', label: 'เวลาต้ม 1 ชาม (นาที)', type: 'number', step: '0.5' },
+    { k: 'split_by_bowl', label: 'แยกใบครัว 1 ใบต่อ 1 ชาม เพื่อกระจายไปเครื่องที่ว่างก่อน', type: 'bool', wide: true }], ck);
+  const rowsBox = h('div', { class: 'form-grid' });
+  const names = [], prs = [];
+  const drawRows = () => {
+    const n = Math.max(1, Math.min(8, Number(cf.value().count) || 2));
+    rowsBox.replaceChildren(...Array.from({ length: n }, (_, i) => {
+      const m = ck.machines[i] || {};
+      names[i] = names[i] || h('input', { class: 'input', value: m.name || `เครื่องต้ม ${i + 1}` });
+      prs[i] = prs[i] || h('select', { class: 'input' }, h('option', { value: '' }, '— ใช้เครื่องพิมพ์ตามจุดครัว —'), printers.filter((x) => x.active).map((x) => h('option', { value: x.id, selected: m.printer_id === x.id }, x.name)));
+      return h('div', { class: 'card', style: { margin: 0 } }, h('strong', {}, `🔥 เครื่องที่ ${i + 1}`), h('label', { class: 'field' }, 'ชื่อ', names[i]), h('label', { class: 'field' }, 'พิมพ์ใบครัวที่', prs[i]));
+    }));
+  };
+  cf.addEventListener('input', drawRows); drawRows();
+  const cookerCard = card(h('h3', {}, '🍜 เครื่องต้ม · จัดคิวอัตโนมัติ'),
+    h('p', { class: 'small muted' }, 'ทุกชามที่ส่งครัวจะไปที่เครื่องที่ว่างก่อน (สลับกันไปเมื่อคิวยาว) · หน้าขาย POS แสดงจำนวนชามที่เหลือและเวลาโดยประมาณของแต่ละเครื่อง · ใบครัวพิมพ์ "ชามที่ x/y" ตัวใหญ่และ "ต้มโดยเครื่องที่…" · ครัวกด "เสร็จ/พร้อมเสิร์ฟ" ที่จอครัว คิวจะขยับเร็วขึ้นทันที'),
+    cf, rowsBox,
+    h('label', { class: 'switch', style: { marginTop: '.6em' } }, markAdd, 'พิมพ์ "+++ สั่งเพิ่ม +++" เมื่อส่งครัวบิลเดิมซ้ำ (ไม่ติ๊ก = พิมพ์เป็นใบปกติ)'),
+    h('div', { style: { marginTop: '.6em' } }, saveBtn('บันทึกเครื่องต้ม', async () => {
+      const v = cf.value(); const n = Math.max(1, Math.min(8, Number(v.count) || 2));
+      await saveKey('cookers', { enabled: !!v.enabled, count: n, minutes_per_bowl: Math.max(0.5, Number(v.minutes_per_bowl) || 4), split_by_bowl: !!v.split_by_bowl,
+        machines: Array.from({ length: n }, (_, i) => ({ name: (names[i] && names[i].value.trim()) || `เครื่องต้ม ${i + 1}`, printer_id: (prs[i] && prs[i].value) || '' })) });
+      await saveKey('print', { ...(all.print || {}), mark_additions: markAdd.checked });
+    })));
+  return page('เครื่องพิมพ์', cookerCard, h('button', { class: 'btn primary', onclick: () => open(null) }, '+ เพิ่มเครื่องพิมพ์'),
     h('p', { class: 'small muted' }, 'หลายงานที่ใช้เครื่องเดียวกันจะเข้าคิวพิมพ์ทีละงานตามลำดับ ไม่ปะปน · สถานะ "เครื่องรับงานแล้ว" หมายถึงส่งข้อมูลถึงเครื่องแต่เครื่องไม่รายงานผลพิมพ์ · "พิมพ์สำเร็จ" เฉพาะเมื่อเครื่องตอบสถานะปกติ'),
     card(table([{ t: 'ชื่อ', k: 'name' }, { t: 'ช่องทาง', f: (p) => `${p.conn} ${p.address || ''}${p.port ? ':' + p.port : ''}` }, { t: 'กระดาษ', f: (p) => p.paper + ' มม.' }, { t: 'งาน', f: (p) => p.roles.join(', ') },
       { t: 'อุปกรณ์', f: (p) => (terms.find((t) => t.id === p.host_terminal_id) || {}).name || p.host_terminal_id || '-' }, { t: 'สถานะล่าสุด', f: (p) => (p.status ? `${p.status} (${fmtTime(p.status_at)})` : '-') }, { t: '', f: (p) => (p.active ? '' : 'ปิด') }], printers, { onRow: open })),

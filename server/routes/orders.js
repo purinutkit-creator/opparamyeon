@@ -4,6 +4,7 @@ import { ah, id, now, bad, notFound, conflict, emit, audit, getSettings, busines
 import { staffAuth, staffForAction, can, requirePerm } from '../lib/auth.js';
 import { saveOrder, payOrder, checkout, voidOrder, refundItems, orderFull, getOrder, sendKitchen, freeTableIfIdle, idemRetry } from '../lib/orders.js';
 import { enqueue, orderDocData, reprint, retry } from '../lib/print.js';
+import { cookerStatus, finishTicket, finishOrder, voidOrderJobs } from '../lib/cookers.js';
 
 const r = Router();
 
@@ -75,6 +76,7 @@ r.post('/orders/:id/void', staffAuth(), ah(async (req, res) => {
   const perm = o.status === 'paid' || o.status === 'open' ? 'void_bill' : 'sell';
   const actor = await staffForAction(req, perm);
   const out = await voidOrder({ orderId: o.id, staff: actor, reason: req.body.reason, terminalId: req.terminalId });
+  await voidOrderJobs(o.id);
   res.json(out);
 }));
 r.post('/orders/:id/refund', staffAuth(), ah(async (req, res) => {
@@ -124,6 +126,8 @@ r.post('/orders/:id/verify-slip', staffAuth('verify_payment'), ah(async (req, re
 }));
 
 // ---------- kitchen display ----------
+// noodle cooker queue for the POS top bar (estimates)
+r.get('/cookers/status', staffAuth(), ah(async (req, res) => res.json(await cookerStatus())));
 r.get('/kitchen/tickets', staffAuth('kitchen'), ah(async (req, res) => {
   const since = new Date(Date.now() - 12 * 3600000).toISOString();
   const rows = await db.all("SELECT * FROM kitchen_tickets WHERE created_at >= ? AND status <> 'done' ORDER BY created_at", [since]);
@@ -136,6 +140,7 @@ r.post('/kitchen/tickets/:id/status', staffAuth('kitchen'), ah(async (req, res) 
   const t = await db.get('SELECT * FROM kitchen_tickets WHERE id = ?', [req.params.id]);
   if (!t) throw notFound();
   await db.run('UPDATE kitchen_tickets SET status = ?, updated_at = ? WHERE id = ?', [st, now(), t.id]);
+  if (st === 'ready' || st === 'done' || st === 'void') await finishTicket(t.id); // the cooker is free earlier than estimated
   // order prep status = least advanced of its active tickets
   const all = await db.all("SELECT status FROM kitchen_tickets WHERE order_id = ? AND kind <> 'void'", [t.order_id]);
   const rank = (s) => ({ new: 0, cooking: 1, ready: 2, done: 3 })[s] ?? 3;
@@ -153,6 +158,7 @@ r.post('/orders/:id/complete', staffAuth('sell'), ah(async (req, res) => {
   const o = await getOrder(req.params.id);
   await db.run("UPDATE orders SET prep_status = 'done' WHERE id = ?", [o.id]);
   await db.run("UPDATE kitchen_tickets SET status = 'done' WHERE order_id = ?", [o.id]);
+  await finishOrder(o.id);
   if (o.mobile_session_id) {
     const ms = await db.get('SELECT * FROM mobile_sessions WHERE id = ?', [o.mobile_session_id]);
     if (ms && ms.mode === 'pickup') await db.run("UPDATE mobile_sessions SET status = 'closed', closed_at = ?, closed_reason = 'pickup_completed' WHERE id = ? AND status = 'active'", [now(), ms.id]);

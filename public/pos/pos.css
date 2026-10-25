@@ -352,3 +352,37 @@ body { background: var(--bg); }
 [data-pos-fx="off"] *, [data-pos-fx="off"] *::before, [data-pos-fx="off"] *::after { animation: none !important; transition: none !important; }
 [data-pos-fx="off"] .topbar::after, [data-pos-fx="off"] .line.fx-latest::after, [data-pos-fx="off"] .actions .pay::after { display: none; }
 @media (prefers-reduced-motion: reduce) { .prod.fx-in, .line.fx-new, .actions .pay, .topbar::after, .line.fx-latest::after, .actions .pay::after, .modal { animation: none !important; } }
+
+/* ===== v1.17 noodle cookers: queue strip, cart estimate, "sent to cooker" card ===== */
+.cookbar { display: flex; gap: .5em; align-items: stretch; overflow-x: auto; scrollbar-width: none; padding: 2px 2px 4px; }
+.cookbar::-webkit-scrollbar { display: none; }
+.cookbar[hidden] { display: none; }
+.cookbar .ck-sum { display: grid; align-content: center; padding: .35em .9em; border-radius: 16px; color: #fff; white-space: nowrap; background: linear-gradient(135deg, var(--deep-2, #3b0d06), var(--deep-3, #7a1f10)); box-shadow: var(--shadow); }
+.cookbar .ck-sum b { font-family: var(--head-font); font-size: 1.02em; }
+.cookbar .ck-sum small { opacity: .85; font-weight: 700; font-size: .78em; }
+.cookbar .ck { display: flex; align-items: center; gap: .55em; padding: .35em .8em .35em .4em; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); white-space: nowrap; min-width: 0; }
+.cookbar .ck-no { width: 34px; height: 34px; border-radius: 12px; display: grid; place-items: center; font-family: var(--head-font); font-weight: 800; color: #fff; background: #16a34a; flex: none; }
+.cookbar .ck.busy .ck-no { background: var(--grad, var(--brand)); animation: ckheat 1.8s ease-in-out infinite; }
+@keyframes ckheat { 50% { box-shadow: 0 0 0 5px rgb(var(--brand-rgb) / .18); } }
+.cookbar .ck-t b { display: block; font-size: .9em; line-height: 1.15; }
+.cookbar .ck-t small { font-weight: 700; font-size: .78em; color: var(--muted); }
+.cookbar .ck.busy .ck-t small { color: var(--brand); }
+.cookbar .ck-pots { display: flex; gap: 3px; }
+.cookbar .ck-pots i { width: 9px; height: 9px; border-radius: 50%; background: color-mix(in srgb, var(--brand) 30%, var(--surface2)); }
+.cookbar .ck-pots i.on { background: var(--brand); animation: ckpot 1s ease-in-out infinite; }
+@keyframes ckpot { 50% { transform: scale(1.35); } }
+.cart-eta { display: flex; align-items: center; gap: .6em; margin: 0 .7em .5em; padding: .5em .75em; border-radius: 14px; background: color-mix(in srgb, #f59e0b 14%, var(--surface)); border: 1px dashed color-mix(in srgb, #f59e0b 55%, transparent); }
+.cart-eta[hidden] { display: none; }
+.cart-eta > span { font-size: 1.4em; }
+.cart-eta b { display: block; font-size: .92em; }
+.cart-eta small { color: var(--muted); font-weight: 700; font-size: .8em; }
+.cookpop { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 2500; min-width: min(360px, 92vw); max-width: 92vw; padding: .8em .9em; border-radius: 22px; color: #fff; cursor: pointer;
+  background: linear-gradient(135deg, var(--deep-2, #3b0d06), var(--deep-3, #7a1f10)); box-shadow: 0 20px 50px rgb(0 0 0 / .35); animation: cpin .45s cubic-bezier(.2,.9,.3,1.3); }
+.cookpop.out { opacity: 0; transform: translateX(-50%) translateY(20px); transition: all .5s; }
+@keyframes cpin { from { opacity: 0; transform: translateX(-50%) translateY(30px) scale(.95); } }
+.cookpop .cp-h { display: flex; justify-content: space-between; align-items: baseline; gap: 1em; margin-bottom: .5em; }
+.cookpop .cp-h small { opacity: .6; font-size: .75em; }
+.cookpop .cp-r { display: flex; align-items: center; gap: .7em; padding: .4em .3em; border-top: 1px solid rgb(255 255 255 / .12); animation: cprow .4s both; }
+@keyframes cprow { from { opacity: 0; transform: translateX(14px); } }
+.cookpop .cp-n { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; font-family: var(--head-font); font-size: 1.25em; font-weight: 800; background: var(--accent, #fbbf24); color: var(--deep-2, #3b0d06); }
+.cookpop .cp-r b { display: block; } .cookpop .cp-r small { opacity: .85; font-weight: 700; }

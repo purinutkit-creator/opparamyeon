@@ -1,7 +1,7 @@
 import { db, J, S } from './db.js';
 import { id, now } from './lib/util.js';
 import { seedStaff } from './lib/auth.js';
-import { DEFAULT_TEMPLATES, DOC_TYPES } from './lib/templates.js';
+import { DEFAULT_TEMPLATES, DOC_TYPES, COOKER_BLOCK } from './lib/templates.js';
 
 export async function seed({ demo = process.env.SEED_DEMO !== 'false' } = {}) {
   await seedStaff();
@@ -15,6 +15,18 @@ export async function seed({ demo = process.env.SEED_DEMO !== 'false' } = {}) {
     await db.run('UPDATE templates SET is_default = 0 WHERE doc_type = ?', ['kitchen']);
     await db.run('INSERT INTO templates(id, doc_type, name, data, is_default, updated_at) VALUES(?,?,?,?,1,?)', [id(), 'kitchen', 'ใบครัวแบบใหม่ (ตัวใหญ่)', S(DEFAULT_TEMPLATES.kitchen), now()]);
     await db.run("INSERT INTO settings(key, value) VALUES('seed_v11', 'true') ON CONFLICT(key) DO NOTHING");
+  }
+  // v1.17: kitchen tickets get the big bowl number + cooker block under the queue number (custom elements are kept)
+  if (!(await db.get("SELECT key FROM settings WHERE key = 'seed_v117'"))) {
+    for (const t of await db.all('SELECT id, data FROM templates WHERE doc_type = ?', ['kitchen'])) {
+      const d = J(t.data, null);
+      if (!d || !Array.isArray(d.elements) || d.elements.some((e) => e.field === 'bowl_part')) continue;
+      let i = d.elements.findIndex((e) => e.type === 'items');
+      if (i < 0) i = d.elements.length;
+      d.elements.splice(i, 0, ...COOKER_BLOCK);
+      await db.run('UPDATE templates SET data = ?, updated_at = ? WHERE id = ?', [S(d), now(), t.id]);
+    }
+    await db.run("INSERT INTO settings(key, value) VALUES('seed_v117', 'true') ON CONFLICT(key) DO NOTHING");
   }
   // v1.3: the receipt's plain claim QR becomes the framed points box (custom elements are kept as they are)
   if (!(await db.get("SELECT key FROM settings WHERE key = 'seed_v13'"))) {

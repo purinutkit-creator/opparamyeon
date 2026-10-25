@@ -99,6 +99,8 @@ CREATE TABLE IF NOT EXISTS payment_intents (id TEXT PRIMARY KEY, order_id TEXT N
 CREATE TABLE IF NOT EXISTS secrets (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT);
 CREATE TABLE IF NOT EXISTS webhook_events (id TEXT PRIMARY KEY, provider TEXT, event_key TEXT UNIQUE, payload TEXT, status TEXT, created_at TEXT, note TEXT);
 CREATE TABLE IF NOT EXISTS device_reports (id TEXT PRIMARY KEY, terminal_id TEXT, kind TEXT, data TEXT, created_at TEXT);
+CREATE TABLE IF NOT EXISTS cooker_jobs (id TEXT PRIMARY KEY, order_id TEXT, ticket_id TEXT, machine INTEGER, bowls INTEGER, queue_no TEXT, start_at TEXT, end_at TEXT, status TEXT DEFAULT 'queued', created_at TEXT);
+CREATE INDEX IF NOT EXISTS cooker_jobs_active ON cooker_jobs(status, end_at);
 `;
 
 // Columns added after v1.0.0 (existing databases get them on boot)

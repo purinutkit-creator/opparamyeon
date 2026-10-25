@@ -10,7 +10,7 @@ export const FIELD_LABELS = {
   store_name: 'ชื่อร้าน', branch: 'สาขา', address: 'ที่อยู่', phone: 'เบอร์โทร', tax_id: 'เลขผู้เสียภาษี', bill_no: 'เลขบิล', queue_no: 'เลขคิว', table: 'โต๊ะ',
   customer: 'ชื่อลูกค้า', member: 'สมาชิก', staff: 'พนักงาน', datetime: 'วันเวลา', dine_type: 'ทานที่ร้าน/กลับบ้าน', order_note: 'หมายเหตุออเดอร์', bowls: 'จำนวนชาม',
   ticket_kind: 'ประเภทใบ (ใหม่/เพิ่ม/ยกเลิก)', received_time: 'เวลารับออเดอร์', print_time: 'เวลาพิมพ์', table_or_type: 'โต๊ะ หรือ ทานที่ร้าน/กลับบ้าน (ตัวใหญ่)',
-  pay_methods: 'ช่องทางชำระ', ticket_part: 'ใบที่/ชามที่', station: 'จุดครัว', reason: 'เหตุผล', refund_amount: 'ยอดคืน', mobile_target: 'โต๊ะ/Pick Up',
+  pay_methods: 'ช่องทางชำระ', ticket_part: 'ใบที่/ชามที่', bowl_part: 'ชามที่ x/y (ตัวใหญ่)', cooker: 'ต้มโดยเครื่องที่', cooker_ready: 'เวลาเสร็จโดยประมาณ', station: 'จุดครัว', reason: 'เหตุผล', refund_amount: 'ยอดคืน', mobile_target: 'โต๊ะ/Pick Up',
   mobile_ref: 'เลขอ้างอิง QR', mobile_expires: 'วันหมดอายุ QR', reward_name: 'ชื่อรางวัล', coupon_code: 'โค้ดคูปอง', points_used: 'แต้มที่ใช้',
   pay_amount: 'ยอดชำระ (QR)', promptpay_name: 'ชื่อบัญชีพร้อมเพย์', promptpay_masked: 'เลขพร้อมเพย์ (ปิดบางส่วน)',
 };

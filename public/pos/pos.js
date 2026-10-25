@@ -71,7 +71,7 @@ async function pickTerminal(terms) {
 async function connect() {
   st.sock = await socket({ kind: 'staff', token: store.get('staff_token'), terminal_id: st.terminal.id });
   const s = st.sock;
-  s.on('connect', () => { setNet(true); pushDisplay(); refreshBadges(); });
+  s.on('connect', () => { setNet(true); pushDisplay(); refreshBadges(); loadCookers(); });
   s.on('disconnect', () => setNet(false));
   s.on('catalog:changed', async () => { st.catalog = await api.get('/catalog'); renderMenu(); });
   s.on('settings:changed', async () => { st.settings = await fetch('/api/settings/public').then((r) => r.json()); applyTheme(st.settings.theme); setFxLevel((st.settings.theme || {}).pos_fx); render(); });
@@ -86,6 +86,7 @@ async function connect() {
   s.on('verification:new', () => { st.pending.verify++; renderTop(); toast('🔐 สมาชิกขอยืนยันตัวตนที่เคาน์เตอร์', 'warn'); });
   s.on('reset:new', () => toast('มีคำขอรีเซ็ตรหัสผ่านสมาชิกใหม่ (ดูที่เว็บไซต์จัดการร้าน)', 'info'));
   s.on('orders:changed', debounce(refreshBadges, 500));
+  s.on('cookers:changed', debounce(loadCookers, 300));
   s.on('print:status', (j) => { if (j.status === 'failed' || j.status === 'unknown') toast(`พิมพ์ไม่สำเร็จ (${j.doc_type}): ${j.error || ''}`, 'error', 7000); });
   s.on('member:selected', (e) => {
     if (e.cart_id !== st.cart.cart_id) return; // only for the bill that opened the prompt
@@ -116,6 +117,68 @@ function render() {
     h('section', { class: 'menu', id: 'menu' }), h('aside', { class: 'cart', id: 'cart' }))),
   h('button', { class: 'btn primary big mobile-cart-btn', id: 'mcart', onclick: () => $('#cart').classList.toggle('open') }, 'ตะกร้า'));
   renderTop(); renderMenu(); renderCart();
+}
+// ---------------- noodle cookers (estimated time) ----------------
+// st.cookers comes from the server; times are re-counted locally every few seconds so the strip keeps ticking
+const cookbar = h('div', { class: 'cookbar' });
+let cookSkew = 0;
+async function loadCookers() {
+  try { st.cookers = await api.get('/cookers/status'); cookSkew = Date.parse(st.cookers.now) - Date.now(); } catch { return; }
+  renderCookers(); renderCartEta();
+}
+setInterval(() => { renderCookers(); renderCartEta(); }, 10000);
+setInterval(loadCookers, 60000);
+const nowMs = () => Date.now() + cookSkew;
+// per machine: bowls still waiting/cooking, when it is free, and when its current bowl is done
+function cookerView() {
+  const c = st.cookers; if (!c || !c.enabled) return null;
+  const t = nowMs(), per = c.minutes_per_bowl * 60000;
+  return c.machines.map((m) => {
+    const q = m.queue.filter((j) => Date.parse(j.end_at) > t);
+    const bowls = q.reduce((a, j) => a + Math.min(j.bowls, Math.ceil((Date.parse(j.end_at) - t) / per)), 0);
+    const free = Math.max(t, ...q.map((j) => Date.parse(j.end_at)));
+    const firstEnd = q.length ? Math.min(...q.map((j) => Date.parse(j.end_at) - (Math.min(j.bowls, Math.ceil((Date.parse(j.end_at) - t) / per)) - 1) * per)) : null;
+    return { no: m.no, name: m.name, bowls, free, mins: Math.max(0, Math.ceil((free - t) / 60000)), next: firstEnd ? Math.max(0, Math.ceil((firstEnd - t) / 60000)) : 0, queues: [...new Set(q.map((j) => j.queue_no).filter(Boolean))] };
+  });
+}
+function renderCookers() {
+  const v = cookerView();
+  cookbar.hidden = !v;
+  if (!v) return;
+  const busy = v.filter((m) => m.bowls);
+  const nextAll = busy.length ? Math.min(...busy.map((m) => m.next)) : 0;
+  cookbar.replaceChildren(
+    h('div', { class: 'ck-sum' }, h('b', {}, '🍜 เครื่องต้ม'), h('small', {}, busy.length ? `ชามถัดไปเสร็จใน ~${Math.max(1, nextAll)} นาที` : 'ว่างทุกเครื่อง พร้อมต้ม')),
+    ...v.map((m) => h('div', { class: 'ck' + (m.bowls ? ' busy' : ' free'), title: m.queues.length ? 'คิว ' + m.queues.join(', ') : '' },
+      h('span', { class: 'ck-no' }, m.no), h('div', { class: 'ck-t' }, h('b', {}, m.name), h('small', {}, m.bowls ? `เหลือ ${m.bowls} ${U()} · ว่างใน ~${m.mins} นาที` : 'ว่าง')),
+      h('span', { class: 'ck-pots' }, Array.from({ length: Math.min(6, m.bowls) }, (_, i) => h('i', { class: i === 0 ? 'on' : '' }))))));
+}
+// estimate for the bowls in the cart that are not in the kitchen yet: each bowl goes to the cooker free first
+function cartEta() {
+  const v = cookerView(); if (!v || !st.cart) return null;
+  const unsent = st.cart.lines.map((l) => ({ ...l, qty: l.qty - (l.sent_qty || 0) })).filter((l) => l.qty > 0);
+  const n = countBowls(unsent); if (!n) return null;
+  const per = st.cookers.minutes_per_bowl * 60000, free = v.map((m) => m.free), used = new Set();
+  for (let i = 0; i < n; i++) { let k = 0; for (let j = 1; j < free.length; j++) if (free[j] < free[k]) k = j; free[k] += per; used.add(v[k].no); }
+  const done = Math.max(...free.filter((f, i) => used.has(v[i].no)));
+  return { bowls: n, mins: Math.max(1, Math.ceil((done - nowMs()) / 60000)), at: new Date(done - cookSkew), machines: [...used].sort() };
+}
+function renderCartEta() {
+  const el = $('#cartEta'); if (!el) return;
+  const e = cartEta();
+  el.hidden = !e;
+  if (e) el.replaceChildren(h('span', {}, '⏱'), h('div', {}, h('b', {}, `ส่งตอนนี้ เสร็จประมาณ ${e.at.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' })} (~${e.mins} นาที)`),
+    h('small', {}, `${e.bowls} ${U()} → ${e.machines.map((no) => (st.cookers.machines[no - 1] || {}).name || 'เครื่อง ' + no).join(' + ')}`)));
+}
+// after ส่งครัว / payment: which cooker each bowl went to
+function cookerPopup(jobs, title) {
+  if (!jobs || !jobs.length) return;
+  const old = $('.cookpop'); if (old) old.remove();
+  const fmt = (iso) => new Date(Date.parse(iso) - cookSkew).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' });
+  const box = h('div', { class: 'cookpop', onclick: () => box.remove() }, h('div', { class: 'cp-h' }, h('b', {}, '🔥 ', title), h('small', {}, 'แตะเพื่อปิด')),
+    ...jobs.map((j, i) => h('div', { class: 'cp-r', style: `animation-delay:${i * 80}ms` }, h('span', { class: 'cp-n' }, j.machine), h('div', {}, h('b', {}, j.name), h('small', {}, `${j.bowls} ${U()} · เสร็จประมาณ ${fmt(j.end_at)}`)))));
+  document.body.append(box);
+  setTimeout(() => box.classList.add('out'), 7000); setTimeout(() => box.remove(), 7600);
 }
 function renderTop() {
   const t = $('#top'); if (!t) return;
@@ -167,7 +230,7 @@ function renderMenu() {
     if (v && addByCode(v)) { search.value = ''; st.q = ''; renderGrid(); }
     else if (v) { const list = filtered(); if (list.length === 1) { pickProduct(list[0]); search.value = ''; st.q = ''; renderGrid(); } }
   });
-  m.replaceChildren(
+  m.replaceChildren(cookbar,
     h('div', { class: 'search' }, search, h('button', { class: 'btn', onclick: () => { search.value = ''; st.q = ''; renderGrid(); } }, 'ล้าง')),
     h('div', { class: 'tabs cats' }, [{ id: 'all', name: 'ทั้งหมด', color: '' }, ...cats].map((c) => h('button', { class: 'tab' + (st.cat === c.id ? ' active' : ''), style: c.color ? `--cat:${c.color}` : null, onclick: () => { st.cat = c.id; renderMenu(); } },
       c.id !== 'all' ? h('i', { class: 'dot' }) : null, c.name, h('span', { class: 'n' }, st.catalog.products.filter((p) => p.active && (c.id === 'all' || p.category_id === c.id)).length)))),
@@ -345,6 +408,7 @@ function renderCart() {
       cart.member ? memberBox(cart, t) : null),
     h('div', { class: 'lines' }, cart.lines.length ? cart.lines.map((l) => lineView(l, ch))
       : h('div', { class: 'cart-empty' }, h('img', { src: '/assets/bowl.svg', alt: '' }), h('b', {}, 'ยังไม่มีสินค้าในบิล'), h('span', {}, 'แตะเมนูทางซ้าย หรือสแกนบาร์โค้ดได้เลย'))),
+    h('div', { class: 'cart-eta', id: 'cartEta', hidden: true }),
     h('div', { class: 'totals' },
       row('รวมสินค้า', baht(t.items_total)),
       t.discount ? row('ส่วนลด' + (t.tierAmt ? ' (รวมสิทธิ์ Tier)' : ''), '-' + baht(t.discount)) : null,
@@ -358,6 +422,7 @@ function renderCart() {
       h('button', { class: 'btn', onclick: bowlPicker }, `🥣 ${U()} ${st.activeBowl || '-'}`),
       h('button', { class: 'btn primary pay', onclick: payDialog, disabled: !cart.lines.length }, h('span', {}, '💳 ชำระเงิน'), h('span', { class: 'amt num', id: 'payAmt' }, `${baht(prevGrand ?? t.total)} ฿`))));
   renderGrid();
+  renderCartEta();
   // effects: count the total, glow the line that just changed, and fly the tapped item in
   const fmt = (v) => baht(v) + ' ฿';
   for (const id of ['cartGrand', 'payAmt']) { const el = $('#' + id); if (el) { el.dataset.v = prevGrand ?? t.total; countTo(el, t.total, fmt); } }
@@ -441,7 +506,12 @@ async function saveOrder(action) {
   try {
     const r = await api.post('/orders/save', { order_id: st.cart.order_id, action, idempotency_key: st.cart.idem, cart: cartPayload(), approver: st.cart.approver });
     if (action === 'hold') { toast(`พักบิล ${r.bill_no} แล้ว`, 'ok'); st.cart = newCart(); st.activeBowl = null; }
-    else { loadOrderIntoCart(r); toast(`ส่งครัวแล้ว · คิว ${r.queue_no}`, 'ok'); }
+    else {
+      const prev = new Set(st.cart.cook_tickets || []);
+      loadOrderIntoCart(r); toast(`ส่งครัวแล้ว · คิว ${r.queue_no}`, 'ok');
+      st.cart.cook_tickets = (r.cooker_jobs || []).map((j) => j.ticket_id);
+      cookerPopup((r.cooker_jobs || []).filter((j) => !prev.has(j.ticket_id)), `ส่งครัวแล้ว · คิว ${r.queue_no || '-'}`);
+    }
     saveCart(); renderCart();
   } catch (e) { errToast(e); if (e.code === 'no_shift') openShiftDialog(); if (e.code === 'version') reloadOrder(); }
 }
@@ -451,7 +521,8 @@ function loadOrderIntoCart(o) {
     dine_type: o.dine_type === 'takeaway' ? 'takeaway' : 'dine_in', table_id: o.table_id, table_name: o.table_name, customer_name: o.customer_name || '', note: o.note || '',
     member: o.member ? { ...o.member, tier: null } : null, discount: o.discount_info && o.discount_info.manual ? { type: o.discount_info.manual.type, value: o.discount_info.manual.value } : null,
     lines: o.items.filter((i) => i.qty - i.void_qty > 0).map((i) => ({ key: i.id, id: i.id, id_locked: true, product_id: i.product_id, name: i.name, qty: i.qty - i.void_qty, unit_price: i.unit_price,
-      options: i.options, note: i.note, dine_type: i.dine_type, bowl_group: i.bowl_group, bowl_count: i.bowl_count, sent_qty: i.sent_qty })), source: o.source, status: o.status };
+      options: i.options, note: i.note, dine_type: i.dine_type, bowl_group: i.bowl_group, bowl_count: i.bowl_count, sent_qty: i.sent_qty })), source: o.source, status: o.status,
+    cook_tickets: (o.cooker_jobs || []).map((j) => j.ticket_id) };
   st.sock && st.sock.emit('display:cart_changed', { cart_id: st.cart.cart_id });
 }
 
@@ -590,6 +661,8 @@ function done(o) {
     change ? h('div', { class: 'bigsum', style: { color: 'var(--ok)', marginTop: '.4em' } }, 'เงินทอน ', baht(change), ' ฿') : null,
     h('p', { class: 'muted' }, `บิล ${o.bill_no} · ${o.bowls} ${U()}`), o.claim_token ? h('p', { class: 'small muted' }, 'ใบเสร็จมี QR ให้ลูกค้าสมัครสมาชิก/รับแต้มย้อนหลัง') : null),
   { onClose: () => { st.displayHold = false; pushDisplay({ phase: 'idle' }); }, actions: [{ label: '✓ เสร็จ · บิลถัดไป', class: 'primary big', onClick: () => {} }] });
+  const prevCook = new Set(st.cart.cook_tickets || []);
+  cookerPopup((o.cooker_jobs || []).filter((j) => !prevCook.has(j.ticket_id)), `ส่งครัว · คิว ${o.queue_no || '-'}`);
   st.displayHold = true;
   st.cart = newCart(); st.activeBowl = null; saveCart(); renderCart();
   st.shift && api.get('/shifts/current').then((s) => { st.shift = s; }).catch(() => {});

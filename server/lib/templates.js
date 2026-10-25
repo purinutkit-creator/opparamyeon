@@ -6,6 +6,14 @@ export const DOC_TYPES = {
 
 const base = (elements, extra = {}) => ({ paper: 80, margin: 8, line_height: 1.3, section_gap: 6, font: 'Sarabun', size: 24, copies: 1, feed_after: 4, cut: 'full', elements, ...extra });
 
+// big "ชามที่ 1/3" + "ต้มโดย เครื่องต้ม 2" block on kitchen tickets (cookers)
+export const COOKER_BLOCK = [
+  { type: 'divider', style: 'solid', when: 'bowl_part' },
+  { type: 'field', field: 'bowl_part', align: 'center', size: 50, weight: 800 },
+  { type: 'field', field: 'cooker', align: 'center', size: 34, weight: 800, invert: true },
+  { type: 'field', field: 'cooker_ready', align: 'center', size: 22 },
+  { type: 'divider', style: 'solid', when: 'bowl_part' },
+];
 export const DEFAULT_TEMPLATES = {
   receipt: base([
     { type: 'logo', width_pct: 45, align: 'center' },
@@ -43,6 +51,7 @@ export const DEFAULT_TEMPLATES = {
     { type: 'field', field: 'table_or_type', align: 'center', size: 46, weight: 700, invert_if: 'takeaway' },
     { type: 'field', field: 'queue_no', label: 'คิว ', align: 'center', size: 34, weight: 800 },
     { type: 'field', field: 'customer', label: 'ลูกค้า: ', align: 'center', size: 24 },
+    ...COOKER_BLOCK,
     { type: 'divider', style: 'dash' },
     { type: 'items', style: 'kitchen', show_options: true, show_note: true, show_price: false, show_dine: true, size: 40, weight: 700, group_by_bowl: true, item_divider: true },
     { type: 'field', field: 'order_note', label: 'หมายเหตุ: ', size: 28, weight: 800, invert: true },

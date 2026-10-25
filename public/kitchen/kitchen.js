@@ -65,7 +65,7 @@ function card(t) {
   const age = Math.floor((Date.now() - new Date(t.created_at)) / 60000);
   const set = (status) => api.post(`/kitchen/tickets/${t.id}/status`, { status }).then(() => { t.status = status; draw(); }).catch(errToast);
   return h('div', { class: `tk ${t.kind} ${t.status}` },
-    h('div', { class: 'hd' }, h('div', {}, h('div', { class: 'q' }, c.queue_no || '-'), h('div', { class: 'small' }, c.kind_label, c.part ? ' · ' + c.part : '')),
+    h('div', { class: 'hd' }, h('div', {}, h('div', { class: 'q' }, c.queue_no || '-'), h('div', { class: 'small' }, c.kind_label, c.part ? ' · ' + c.part : ''), c.cooker ? h('div', { class: 'cookertag' }, c.bowl_part ? c.bowl_part + ' · ' : '', '🔥 ', c.cooker) : null),
       h('div', { style: { textAlign: 'right' } }, c.dine_type === 'takeaway' ? h('div', { class: 'tw' }, 'กลับบ้าน') : h('div', { class: 'badge info' }, dineLabel(c.dine_type)),
         c.table ? h('div', { style: { fontWeight: 800, fontSize: '1.2em' } }, 'โต๊ะ ' + c.table) : null, c.customer ? h('div', {}, c.customer) : null, h('div', { class: 'small age' }, `${age} นาที · ${c.station}`))),
     h('ul', {}, c.lines.map((l) => h('li', {}, h('strong', {}, `${l.qty} × ${l.name}`), l.bowl_label ? h('span', { class: 'badge info' }, ' ' + l.bowl_label) : null,
