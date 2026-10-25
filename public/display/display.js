@@ -14,7 +14,13 @@ async function boot() {
   if (preview) {
     window.addEventListener('message', (e) => { if (e.origin === location.origin && e.data && e.data.display) { settings.display = { ...settings.display, ...e.data.display }; applyTheme(); renderAll(); } });
     state = qs.get('phase') === 'idle' ? { phase: 'idle' } : sampleState();
-    applyTheme(); renderAll(); return;
+    applyTheme(); renderAll();
+    // ?demo=1 plays the cash flow: nothing received → partly received → paid with change
+    if (qs.get('demo') && state.phase === 'pay' && !state.qr) {
+      state.received = 0; state.change = 0; renderAll();
+      [10000, 20000, 50000].forEach((r, i) => setTimeout(() => { state = { ...state, received: r, change: Math.max(0, r - state.total) }; renderAll(); }, 1200 + i * 1400));
+    }
+    return;
   }
   const code = qs.get('code');
   if (code && !store.get('display_token')) {
@@ -76,21 +82,79 @@ function renderAll() {
   if (paying) renderPay(); else renderPromo();
   renderPanel(); renderDone(); renderPrompt();
 }
+// smooth number change (counts from the previous value)
+function tween(node, to, ms = 520) {
+  if (!node) return;
+  const from = node._v ?? 0;
+  node._v = to;
+  if (from === to || matchMedia('(prefers-reduced-motion: reduce)').matches) { node.textContent = baht(to); return; }
+  const t0 = performance.now();
+  cancelAnimationFrame(node._raf);
+  const step = (t) => { const k = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - k, 3); node.textContent = baht(Math.round(from + (to - from) * e)); if (k < 1) node._raf = requestAnimationFrame(step); };
+  node._raf = requestAnimationFrame(step);
+}
+function coinBurst(host) {
+  const box = h('div', { class: 'coins' }, Array.from({ length: 18 }, (_, i) => h('i', { style: `--dx:${((Math.random() * 2 - 1) * 22).toFixed(1)}vh;--dy:${(-(8 + Math.random() * 18)).toFixed(1)}vh;--r:${Math.round(Math.random() * 540)}deg;animation-delay:${i * 18}ms` }, i % 3 ? '🪙' : '✨')));
+  host.append(box); setTimeout(() => box.remove(), 1600);
+}
+const BILL_SVG = '<svg viewBox="0 0 64 40"><rect x="2" y="4" width="60" height="32" rx="6" fill="#22c55e"/><rect x="7" y="9" width="50" height="22" rx="4" fill="none" stroke="#bbf7d0" stroke-width="2"/><circle cx="32" cy="20" r="7" fill="#bbf7d0"/><text x="32" y="24.5" font-size="11" text-anchor="middle" fill="#15803d" font-weight="800">฿</text></svg>';
+
+// The payment half is built once per payment mode and then updated in place, so its animations never restart while the cashier types.
 function renderPay() {
   const el = $('#promo'); if (!el) return;
   clearTimeout(slideTimer);
   const s = state;
   const unit = settings.sale.count_unit || 'ชาม';
   const showQr = s.qr && settings.display.show_qr !== false;
-  el.replaceChildren(h('div', { class: 'paybox' },
-    h('div', { class: 'payhead' }, h('div', { class: 'lbl' }, 'ยอดที่ต้องชำระ', s.bowls ? ` · ${s.bowls} ${unit}` : ''), h('div', { class: 'amt' }, baht(s.total), h('small', {}, '฿'))),
-    showQr ? h('div', { class: 'payarea' }, h('div', { class: 'qrcard' },
-        h('div', { class: 'qrtitle' }, '▣ THAI QR PAYMENT · พร้อมเพย์'), h('img', { src: '/api/qr.svg?d=' + encodeURIComponent(s.qr), alt: 'QR พร้อมเพย์' }),
-        h('div', { class: 'qracc' }, 'ชื่อบัญชี: ', settings.payment.promptpay_name || '-'), h('div', { class: 'qracc big' }, 'สแกนจ่าย ', baht(s.total), ' บาท')))
-      : h('div', { class: 'paymethod' },
-        s.received ? h('div', { class: 'tile' }, h('div', { class: 'lbl' }, '💵 รับเงิน'), h('div', { class: 'big' }, baht(s.received))) : h('div', { class: 'msg' }, 'กรุณาชำระเงินที่พนักงาน 🙏'),
-        s.change ? h('div', { class: 'tile change' }, h('div', { class: 'lbl' }, '💰 เงินทอน'), h('div', { class: 'big' }, baht(s.change))) : null),
-    h('div', { class: 'paystatus' }, h('i'), showQr ? 'รอชำระเงิน · สแกนด้วยแอปธนาคารใดก็ได้' : 'รอชำระเงิน')));
+  const mode = showQr ? 'qr:' + s.qr : 'cash';
+  if (el.dataset.mode !== mode) {
+    el.dataset.mode = mode;
+    const head = h('div', { class: 'payhead' }, h('div', { class: 'lbl' }, 'ยอดที่ต้องชำระ', h('span', { id: 'payUnit' })), h('div', { class: 'amt' }, h('span', { id: 'payAmt' }), h('small', {}, '฿')));
+    let body;
+    if (showQr) {
+      const img = h('img', { class: 'qrimg', alt: 'QR พร้อมเพย์', src: '/api/qr.svg?d=' + encodeURIComponent(s.qr) });
+      const frame = h('div', { class: 'qrframe' }, h('div', { class: 'qrskel' }, h('span', {}, 'กำลังสร้าง QR…')), img, h('b', { class: 'cn tl' }), h('b', { class: 'cn tr' }), h('b', { class: 'cn bl' }), h('b', { class: 'cn br' }), h('i', { class: 'scan' }));
+      // reveal once the code has really loaded (never show a half-drawn QR)
+      const t0 = performance.now();
+      const ready = () => setTimeout(() => frame.classList.add('ready'), Math.max(0, 700 - (performance.now() - t0)));
+      img.onerror = () => { frame.querySelector('.qrskel span').textContent = 'โหลด QR ไม่สำเร็จ · แจ้งพนักงาน'; };
+      if (img.complete && img.naturalWidth) ready(); else img.onload = ready;
+      body = h('div', { class: 'payarea' }, h('div', { class: 'qrcard' }, h('div', { class: 'qrtitle' }, h('span', { class: 'pp' }, 'PromptPay'), 'THAI QR PAYMENT'), frame,
+        h('div', { class: 'qracc' }, 'ชื่อบัญชี: ', settings.payment.promptpay_name || '-'), h('div', { class: 'qracc big' }, 'สแกนจ่าย ', h('span', { id: 'qrAmt' }), ' บาท')));
+    } else {
+      body = h('div', { class: 'cashcard' },
+        h('div', { class: 'cc-head' }, h('span', { class: 'bill', html: BILL_SVG + BILL_SVG }), h('div', {}, h('b', {}, 'ชำระด้วยเงินสด'), h('small', {}, 'Cash payment'))),
+        h('div', { class: 'cc-row recv' }, h('span', {}, '💵 รับเงิน'), h('b', { id: 'ccRecv' }, baht(0))),
+        h('div', { class: 'cc-bar' }, h('i', { id: 'ccBar' })),
+        h('div', { class: 'cc-state', id: 'ccState' }),
+        h('div', { class: 'cc-change', id: 'ccChange' }, h('span', {}, '💰 เงินทอน'), h('b', { id: 'ccChangeAmt' })));
+    }
+    el.replaceChildren(h('div', { class: 'paybox' + (showQr ? ' isqr' : ' iscash') }, head, body,
+      h('div', { class: 'paystatus', id: 'payStatus' }, h('i'), showQr ? 'รอชำระเงิน · สแกนด้วยแอปธนาคารใดก็ได้' : 'รอชำระเงิน')));
+    el._prev = {};
+  }
+  const prev = el._prev || {};
+  $('#payUnit').textContent = s.bowls ? ` · ${s.bowls} ${unit}` : '';
+  tween($('#payAmt'), s.total);
+  if (showQr) { tween($('#qrAmt'), s.total); return; }
+  const recv = s.received || 0, change = s.change || 0, short = Math.max(0, s.total - recv);
+  const rv = $('#ccRecv');
+  tween(rv, recv); rv.classList.toggle('zero', !recv);
+  const pct = s.total ? Math.min(100, Math.round(recv / s.total * 100)) : 0;
+  const bar = $('#ccBar'); bar.style.width = pct + '%'; bar.classList.toggle('full', recv > 0 && short === 0);
+  const st = $('#ccState'), card = st.closest('.cashcard');
+  card.classList.toggle('ok', recv > 0 && short === 0);
+  $('#payStatus').replaceChildren(h('i'), recv > 0 && short === 0 ? (change ? 'รับเงินครบ · รอรับเงินทอน' : 'รับเงินครบ') : 'รอชำระเงิน');
+  $('#payStatus').classList.toggle('ok', recv > 0 && short === 0);
+  if (!recv) { st.className = 'cc-state wait'; st.replaceChildren(h('span', { class: 'hand' }, '🙏'), ' กรุณาส่งเงินให้พนักงาน'); }
+  else if (short) { st.className = 'cc-state short'; st.replaceChildren('ยังขาดอีก ', h('b', {}, baht(short)), ' บาท'); }
+  else { st.className = 'cc-state paid'; st.replaceChildren('✓ รับเงินครบแล้ว', change ? '' : ' · พอดี ไม่มีเงินทอน'); }
+  const ch = $('#ccChange');
+  const show = recv > 0 && short === 0 && change > 0;
+  ch.classList.toggle('show', show);
+  if (show) tween($('#ccChangeAmt'), change);
+  if (show && !(prev.change > 0)) coinBurst(ch);
+  el._prev = { change: show ? change : 0 };
 }
 function renderPromo() {
   const d = settings.display;
