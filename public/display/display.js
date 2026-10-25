@@ -45,7 +45,7 @@ function pairing() {
     try { const r = await api.post('/display/pair', { code: inp.value, touch: navigator.maxTouchPoints > 0 }, { token: null }); store.set('display_token', r.token); location.reload(); }
     catch (e) { errToast(e); inp.value = ''; }
   };
-  root.replaceChildren(h('div', { class: 'pairing' }, h('div', { class: 'card', style: { width: 'min(460px, 100%)' } },
+  root.replaceChildren(h('div', { class: 'pairing' }, h('div', { class: 'pbox' },
     h('h2', {}, '📺 จับคู่จอลูกค้า'), h('ol', { class: 'muted' }, h('li', {}, 'ที่เครื่อง POS กด 🖨️ อุปกรณ์ → "สร้างรหัสจับคู่"'), h('li', {}, 'กรอกรหัส 6 หลักที่แสดงบน POS')),
     inp, h('div', { style: { marginTop: '.8em' } }, keypad(inp, { onEnter: go })), h('p', { class: 'version' }, 'v' + VERSION))));
 }
@@ -80,14 +80,17 @@ function renderPay() {
   const el = $('#promo'); if (!el) return;
   clearTimeout(slideTimer);
   const s = state;
+  const unit = settings.sale.count_unit || 'ชาม';
   const showQr = s.qr && settings.display.show_qr !== false;
   el.replaceChildren(h('div', { class: 'paybox' },
-    h('div', { class: 'payhead' }, h('div', { class: 'lbl' }, 'ราคารวม'), h('div', { class: 'amt' }, baht(s.total)), s.bowls ? h('div', { class: 'lbl' }, `${s.bowls} ${settings.sale.count_unit || 'ชาม'}`) : null),
-    showQr ? h('div', { class: 'payarea' }, h('div', { class: 'qrcard' }, h('div', { class: 'qrtitle' }, 'THAI QR PAYMENT · พร้อมเพย์'), h('img', { src: '/api/qr.svg?d=' + encodeURIComponent(s.qr), alt: 'QR พร้อมเพย์' }),
-      h('div', { class: 'qracc' }, 'บัญชี: ', settings.payment.promptpay_name || '-'), h('div', { class: 'qracc' }, 'สแกนเพื่อจ่าย ', baht(s.total), ' บาท')))
-      : h('div', { class: 'paymethod' }, s.received ? h('div', {}, h('div', { class: 'lbl' }, 'รับเงิน'), h('div', { class: 'big' }, baht(s.received))) : h('div', { class: 'big' }, 'กรุณาชำระเงินที่พนักงาน'),
-        s.change ? h('div', { style: { marginTop: '2vh' } }, h('div', { class: 'lbl' }, 'เงินทอน'), h('div', { class: 'big accent' }, baht(s.change))) : null),
-    h('div', { class: 'paystatus' }, '● รอชำระเงิน')));
+    h('div', { class: 'payhead' }, h('div', { class: 'lbl' }, 'ยอดที่ต้องชำระ', s.bowls ? ` · ${s.bowls} ${unit}` : ''), h('div', { class: 'amt' }, baht(s.total), h('small', {}, '฿'))),
+    showQr ? h('div', { class: 'payarea' }, h('div', { class: 'qrcard' },
+        h('div', { class: 'qrtitle' }, '▣ THAI QR PAYMENT · พร้อมเพย์'), h('img', { src: '/api/qr.svg?d=' + encodeURIComponent(s.qr), alt: 'QR พร้อมเพย์' }),
+        h('div', { class: 'qracc' }, 'ชื่อบัญชี: ', settings.payment.promptpay_name || '-'), h('div', { class: 'qracc big' }, 'สแกนจ่าย ', baht(s.total), ' บาท')))
+      : h('div', { class: 'paymethod' },
+        s.received ? h('div', { class: 'tile' }, h('div', { class: 'lbl' }, '💵 รับเงิน'), h('div', { class: 'big' }, baht(s.received))) : h('div', { class: 'msg' }, 'กรุณาชำระเงินที่พนักงาน 🙏'),
+        s.change ? h('div', { class: 'tile change' }, h('div', { class: 'lbl' }, '💰 เงินทอน'), h('div', { class: 'big' }, baht(s.change))) : null),
+    h('div', { class: 'paystatus' }, h('i'), showQr ? 'รอชำระเงิน · สแกนด้วยแอปธนาคารใดก็ได้' : 'รอชำระเงิน')));
 }
 function renderPromo() {
   const d = settings.display;
@@ -95,13 +98,22 @@ function renderPromo() {
   clearTimeout(slideTimer);
   const media = (d.media || []).filter((m) => m.url);
   const logo = d.logo || settings.store.logo;
+  const bar = () => h('div', { class: 'glassbar' }, logo ? h('img', { src: logo, alt: '' }) : null,
+    h('div', { class: 't' }, h('b', {}, settings.store.name || ''), d.welcome ? h('span', {}, d.welcome) : null), h('div', { class: 'clock', id: 'clock' }, clockText()));
   const show = (i) => {
-    if (!media.length) { el.replaceChildren(h('div', { style: { position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', fontSize: '12vh' } }, '🍜'), logo ? h('img', { class: 'logo', src: logo, alt: '' }) : null, h('div', { class: 'welcome' }, d.welcome || '')); return; }
+    if (!media.length) {
+      // no promotion media: an animated welcome scene in the shop colour
+      el.replaceChildren(h('div', { class: 'hero' }, h('span', { class: 'ring' }), h('span', { class: 'ring' }), h('span', { class: 'ring' }),
+        h('div', { class: 'inner' }, h('div', { style: { position: 'relative' } }, h('div', { class: 'steam' }, h('i'), h('i'), h('i')), h('img', { class: 'bowl', src: logo || '/assets/bowl.svg', alt: '' })),
+          h('h1', {}, settings.store.name || 'Welcome'), d.welcome ? h('p', {}, d.welcome) : null, h('span', { class: 'pill' }, '🍜 สั่งได้เลยที่เคาน์เตอร์ · 감사합니다'))),
+        h('div', { class: 'glassbar', style: { left: 'auto', width: 'auto' } }, h('div', { class: 'clock', id: 'clock' }, clockText())));
+      return;
+    }
     const m = media[i % media.length];
     const node = m.type === 'video'
       ? h('video', { src: m.url, autoplay: true, muted: d.video_muted !== false, playsinline: true, loop: media.length === 1, style: { objectFit: m.fit || d.fit || 'cover' } })
       : h('img', { src: m.url, alt: '', style: { objectFit: m.fit || d.fit || 'cover' } });
-    el.replaceChildren(node, logo ? h('img', { class: 'logo', src: logo, alt: '' }) : null, d.welcome ? h('div', { class: 'welcome' }, d.welcome) : null);
+    el.replaceChildren(node, h('div', { class: 'shade' }), bar());
     if (m.type === 'video') {
       node.volume = Number(d.video_volume ?? 0.5);
       node.play().catch(() => { node.muted = true; node.play().catch(() => {}); });
@@ -110,20 +122,39 @@ function renderPromo() {
   };
   show(0);
 }
+const clockText = () => new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+setInterval(() => { const c = $('#clock'); if (c) c.textContent = clockText(); }, 15000);
+let prevQty = new Map(), prevTotal = null;
 function renderPanel() {
   const p = $('#panel'); if (!p) return;
   const s = state;
-  if (!s.phase || s.phase === 'idle') { p.replaceChildren(); return; }
+  if (!s.phase || s.phase === 'idle') { p.replaceChildren(); prevQty = new Map(); prevTotal = null; return; }
+  const unit = settings.sale.count_unit || 'ชาม';
+  const lines = s.lines || [];
+  // lines that were just added (or got more) slide in and glow
+  const now = new Map(), hot = new Set();
+  for (const l of lines) { const k = l.name + '|' + (l.options || []).join(','); now.set(k, (now.get(k) || 0) + l.qty); if ((prevQty.get(k) || 0) < now.get(k)) hot.add(k); }
+  prevQty = now;
+  const bump = prevTotal !== null && prevTotal !== s.total; prevTotal = s.total;
+  const shown = lines.slice(-8);
+  const m = s.member;
   p.replaceChildren(
-    h('div', { class: 'dine' + (s.dine_type === 'takeaway' ? ' takeaway' : '') }, s.dine_type === 'takeaway' ? '🥡 กลับบ้าน' : s.dine_type === 'mixed' ? '🍽️ ทานที่ร้าน + 🥡 กลับบ้าน' : '🍽️ ทานที่ร้าน', s.table ? ` · โต๊ะ ${s.table}` : ''),
-    s.member ? h('div', { class: 'member' }, `⭐ สมาชิก ${s.member.name}`, s.member.tier ? ` · ${s.member.tier}` : '', ` · ${s.member.points} แต้ม`) : null,
-    h('div', { class: 'items-title' }, 'รายการอาหาร'),
-    h('div', { class: 'items' }, (s.lines || []).slice(-12).map((l) => h('div', { class: 'it' }, h('div', {}, `${l.qty} × ${l.name}`, l.dine_type === 'takeaway' && s.dine_type === 'mixed' ? ' (กลับบ้าน)' : '',
-      l.options && l.options.length ? h('small', {}, l.options.join(', ')) : null), h('strong', {}, baht(l.price))))),
+    h('div', { class: 'ph' }, h('h2', {}, h('small', {}, 'Your order'), 'รายการของคุณ'),
+      h('div', { class: 'chips' }, h('span', { class: 'chip-d ' + (s.dine_type === 'takeaway' ? 'takeaway' : 'dinein') }, s.dine_type === 'takeaway' ? '🥡 กลับบ้าน' : s.dine_type === 'mixed' ? '🍽️ ทานที่ร้าน + 🥡' : '🍽️ ทานที่ร้าน'),
+        s.table ? h('span', { class: 'chip-d' }, '🪑 โต๊ะ ' + s.table) : null)),
+    m ? h('div', { class: 'mem' }, h('div', { class: 'av' }, '⭐'), h('div', {}, h('b', {}, `สวัสดีคุณ ${m.name}`), h('span', {}, m.tier ? `สมาชิก ${m.tier}` : 'สมาชิก')),
+      h('div', { class: 'pts' }, Number(m.points || 0).toLocaleString(), h('small', {}, 'แต้มสะสม'))) : null,
+    lines.length > shown.length ? h('div', { class: 'more' }, `+ อีก ${lines.length - shown.length} รายการด้านบน`) : null,
+    h('div', { class: 'items' }, shown.map((l) => {
+      const k = l.name + '|' + (l.options || []).join(',');
+      const opts = (l.options || []).map((o) => (String(o).startsWith('+ ') ? h('span', { class: 'add' }, o) : h('span', {}, o)));
+      if (l.dine_type === 'takeaway' && s.dine_type === 'mixed') opts.push(h('span', { class: 'tw' }, 'กลับบ้าน'));
+      return h('div', { class: 'it' + (hot.has(k) ? ' new' : '') }, h('span', { class: 'q' }, l.qty), h('div', { class: 'n' }, h('b', {}, l.name), opts.length ? h('small', {}, opts) : null), h('span', { class: 'p' }, baht(l.price)));
+    })),
     h('div', { class: 'sum' },
-      r('รวม', baht(s.items_total)), s.discount ? r('ส่วนลด', '-' + baht(s.discount)) : null, s.packaging ? r('ค่าบรรจุภัณฑ์', baht(s.packaging)) : null, s.tax ? r('VAT', baht(s.tax)) : null,
-      r(`ยอดชำระ · ${s.bowls || 0} ${settings.sale.count_unit || 'ชาม'}`, h('span', { class: 'total' }, baht(s.total) + ' ฿')),
-      s.phase === 'pay' && s.received ? r('รับเงิน', baht(s.received)) : null, s.phase === 'pay' && s.change ? r('เงินทอน', h('strong', {}, baht(s.change))) : null),
+      s.discount || s.packaging || s.tax ? r('รวมค่าอาหาร', baht(s.items_total)) : null, s.discount ? r('ส่วนลด', '−' + baht(s.discount)) : null,
+      s.packaging ? r('ค่าบรรจุภัณฑ์', baht(s.packaging)) : null, s.tax ? r('VAT', baht(s.tax)) : null,
+      h('div', { class: 'grand' }, h('span', {}, 'ยอดรวม', h('small', {}, `${lines.reduce((a, l) => a + l.qty, 0)} รายการ · ${s.bowls || 0} ${unit}`)), h('span', { class: 'total' + (bump ? ' bump' : '') }, baht(s.total)))),
   );
 }
 const r = (a, b) => h('div', { class: 'r' }, h('span', {}, a), h('span', {}, b));
@@ -131,10 +162,15 @@ function renderDone() {
   const old = $('.done'); if (old) old.remove();
   clearTimeout(doneTimer);
   if (state.phase !== 'done') return;
-  document.body.append(h('div', { class: 'done' }, h('div', {}, h('div', { style: { fontSize: '4vh' } }, 'ชำระเงินเรียบร้อย · เลขคิวของคุณ'), h('div', { class: 'q' }, state.queue_no || ''),
-    h('div', { class: 'dine' + (state.dine_type === 'takeaway' ? ' takeaway' : ''), style: { display: 'inline-block', margin: '2vh 0' } }, dineLabel(state.dine_type)),
-    state.change ? h('div', { style: { fontSize: '5vh' } }, 'เงินทอน ', baht(state.change), ' บาท') : null,
-    h('div', { style: { fontSize: '4.5vh', marginTop: '2vh' } }, settings.display.thanks || 'ขอบคุณค่ะ'))));
+  const colors = ['#facc15', '#f97316', '#ef4444', '#22c55e', '#3b82f6', '#ec4899', '#ffffff'];
+  const confetti = h('div', { class: 'confetti' }, Array.from({ length: 70 }, (_, i) => h('i', { style: { left: Math.random() * 100 + 'vw', background: colors[i % colors.length],
+    animationDuration: 2.4 + Math.random() * 2.6 + 's', animationDelay: Math.random() * .8 + 's', transform: `rotate(${Math.random() * 360}deg)` } })));
+  const check = h('div', { class: 'check', html: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' });
+  document.body.append(h('div', { class: 'done' }, confetti, h('div', { class: 'card2' }, check, h('div', { class: 'lead' }, 'ชำระเงินเรียบร้อย'),
+    state.queue_no ? [h('div', { class: 'qlabel' }, 'เลขคิวของคุณ · Queue'), h('div', { class: 'q' }, state.queue_no)] : null,
+    h('span', { class: 'chip-d ' + (state.dine_type === 'takeaway' ? 'takeaway' : 'dinein') }, state.dine_type === 'takeaway' ? '🥡 กลับบ้าน' : dineLabel(state.dine_type)),
+    state.change ? h('div', { class: 'change' }, '💰 เงินทอน ', baht(state.change), ' บาท') : null,
+    h('div', { class: 'thanks' }, settings.display.thanks || 'ขอบคุณค่ะ'))));
   doneTimer = setTimeout(() => { state = { phase: 'idle' }; renderAll(); }, 9000);
 }
 
@@ -185,8 +221,8 @@ function renderPrompt() {
 }
 
 function sampleState() {
-  return { phase: 'pay', dine_type: 'mixed', table: 'A1', member: { name: 'จี***', points: 120, tier: 'Gold' },
-    lines: [{ name: 'มาม่าเกาหลีต้นตำรับ', qty: 1, options: ['ชินราเมียน', 'เผ็ดกลาง', 'ไข่'], price: 8900 }, { name: 'ชาเย็น', qty: 2, options: ['หวานน้อย'], price: 9000, dine_type: 'takeaway' }],
-    items_total: 17900, discount: 0, packaging: 0, tax: 0, total: 17900, bowls: 1, received: 20000, change: 2100, qr: qs.get('qr') ? '00020101021229370016A000000677010111011300668012345675802TH530376454031796304ABCD' : null };
+  return { phase: ['cart', 'pay', 'done'].includes(qs.get('phase')) ? qs.get('phase') : 'pay', queue_no: 'D012', dine_type: 'mixed', table: 'A1', member: { name: 'จี***', points: 120, tier: 'Gold' },
+    lines: [{ name: 'มาม่าเกาหลีต้นตำรับ', qty: 1, options: ['ชินราเมียน', 'เผ็ดกลาง', '+ ชีส'], price: 10400 }, { name: 'ไข่ออนเซ็น', qty: 2, options: [], price: 3000 }, { name: 'ชาเย็น', qty: 2, options: ['หวานน้อย'], price: 9000, dine_type: 'takeaway' }],
+    items_total: 22400, discount: 0, packaging: 0, tax: 0, total: 22400, bowls: 1, received: qs.get('qr') ? 0 : 50000, change: qs.get('qr') ? 0 : 27600, qr: qs.get('qr') ? '00020101021229370016A000000677010111011300668012345675802TH530376454031796304ABCD' : null };
 }
 boot().catch((e) => { console.error(e); root.replaceChildren(h('div', { class: 'empty' }, 'โหลดไม่สำเร็จ ', e.message)); setTimeout(() => location.reload(), 10000); });
