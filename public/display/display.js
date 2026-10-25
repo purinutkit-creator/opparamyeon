@@ -109,7 +109,7 @@ function renderPay() {
   const mode = showQr ? 'qr:' + s.qr : 'cash';
   if (el.dataset.mode !== mode) {
     el.dataset.mode = mode;
-    const top = h('div', { class: 'paytop' }, h('div', { id: 'payQueue' }), h('div', { class: 'pclock' }, h('b', { id: 'payTime' }, timeText()), h('span', { id: 'payDate' }, dateText())));
+    const top = h('div', { class: 'paytop' }, h('div', { class: 'pclock' }, h('b', { id: 'payTime' }, timeText()), h('span', { id: 'payDate' }, dateText())), h('div', { id: 'payQueue' }));
     const head = h('div', { class: 'payhead' }, h('i', { class: 'shine' }), h('div', { class: 'lbl' }, 'ยอดที่ต้องชำระ', h('span', { id: 'payUnit' })), h('div', { class: 'amt' }, h('span', { id: 'payAmt' }), h('small', {}, '฿')),
       h('div', { class: 'paybreak', id: 'payBreak' }));
     let body;

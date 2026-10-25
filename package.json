@@ -1,6 +1,6 @@
 {
   "name": "opparamyeon-pos",
-  "version": "1.13.0",
+  "version": "1.13.1",
   "description": "ระบบ POS ร้านมาม่าเกาหลี Oppa Ramyeon — POS, ครัว, จอลูกค้า, Mobile Ordering, สมาชิก และเว็บไซต์ดูยอดขาย",
   "type": "module",
   "main": "server/index.js",

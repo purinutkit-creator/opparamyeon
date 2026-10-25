@@ -134,9 +134,9 @@
   .qchip small { font-family: var(--font); font-weight: 800; font-size: .42em; opacity: .9; letter-spacing: .06em; }
   .qchip.soft { background: var(--glass-2); box-shadow: none; border: 1px solid var(--stroke); font-size: clamp(14px, 2.4vh, 26px); font-family: var(--font); font-weight: 800; animation: pop .5s cubic-bezier(.2,.9,.3,1.4); }
   @keyframes qglow { 50% { box-shadow: 0 0 0 1.1vh color-mix(in srgb, var(--a) 10%, transparent), 0 1.4vh 4vh color-mix(in srgb, var(--a) 45%, transparent); } }
-  .pclock { text-align: right; line-height: 1.15; padding: .5vh 1.6vh; border-radius: 1.6vh; background: var(--glass); border: 1px solid var(--stroke); }
-  .pclock b { display: block; font-family: var(--hf); font-size: clamp(16px, 2.8vh, 32px); font-variant-numeric: tabular-nums; letter-spacing: .03em; }
-  .pclock span { font-size: clamp(11px, 1.7vh, 18px); font-weight: 700; opacity: .7; }
+  .pclock { display: flex; align-items: baseline; gap: .7em; padding: .35em .9em; border-radius: 99px; background: var(--glass); border: 1px solid var(--stroke); font-size: clamp(11px, 1.7vh, 18px); line-height: 1.2; white-space: nowrap; }
+  .pclock b { font-family: var(--hf); font-size: 1.15em; font-variant-numeric: tabular-nums; letter-spacing: .03em; }
+  .pclock span { font-weight: 700; opacity: .7; }
   .payhead .shine { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / .28) 50%, transparent 65%); background-size: 250% 100%; animation: shimmer 4.5s ease-in-out infinite; z-index: 1; }
   .paybreak:empty { display: none; }
   .paybreak { position: relative; z-index: 2; margin-top: 1.4vh; padding-top: 1.2vh; border-top: 1px dashed rgb(255 255 255 / .4); display: grid; gap: .5vh; font-size: clamp(14px, 2.2vh, 24px); }
