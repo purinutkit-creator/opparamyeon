@@ -560,22 +560,35 @@ async function printPayQr(amount, auto) {
 const qrPayload = (amount) => (st.settings.payment.promptpay_enabled ? promptPayPayload(st.settings.payment.promptpay_id || '', amount) : null);
 function done(o) {
   const change = o.change_amount;
-  pushDisplay({ phase: 'done', queue_no: o.queue_no, change, total: o.total, received: o.paid_amount + change, dine_type: o.dine_type,
-    livePay: { done: true, bill_no: o.bill_no, method: (o.payments || []).map((p) => (st.settings.sale.payment_methods.find((x) => x.id === p.method) || {}).name || p.method).join(' + '), change } });
+  const methods = (o.payments || []).map((p) => (st.settings.sale.payment_methods.find((x) => x.id === p.method) || {}).name || p.method);
+  // the thank-you screen stays on the customer display until the cashier presses "เสร็จ"
+  pushDisplay({ phase: 'done', queue_no: o.queue_no, change, total: o.total, received: o.paid_amount + change, dine_type: o.dine_type, bill_no: o.bill_no, methods: [...new Set(methods)],
+    livePay: { done: true, bill_no: o.bill_no, method: methods.join(' + '), change } });
   modal('ชำระเงินสำเร็จ', h('div', { style: { textAlign: 'center' } }, h('div', { class: 'muted' }, 'เลขคิว'), h('div', { class: 'qbig' }, o.queue_no || '-'),
     h('div', { class: 'badge ' + (o.dine_type === 'takeaway' ? 'takeaway' : 'info'), style: { fontSize: '1.2em' } }, dineLabel(o.dine_type)),
     change ? h('div', { class: 'bigsum', style: { color: 'var(--ok)', marginTop: '.4em' } }, 'เงินทอน ', baht(change), ' ฿') : null,
     h('p', { class: 'muted' }, `บิล ${o.bill_no} · ${o.bowls} ${U()}`), o.claim_token ? h('p', { class: 'small muted' }, 'ใบเสร็จมี QR ให้ลูกค้าสมัครสมาชิก/รับแต้มย้อนหลัง') : null),
-  { onClose: () => setTimeout(() => pushDisplay({ phase: 'idle' }), 6000), actions: [{ label: 'บิลถัดไป', class: 'primary big', onClick: () => {} }] });
+  { onClose: () => { st.displayHold = false; pushDisplay({ phase: 'idle' }); }, actions: [{ label: '✓ เสร็จ · บิลถัดไป', class: 'primary big', onClick: () => {} }] });
+  st.displayHold = true;
   st.cart = newCart(); st.activeBowl = null; saveCart(); renderCart();
   st.shift && api.get('/shifts/current').then((s) => { st.shift = s; }).catch(() => {});
 }
 
 // ---------------- customer display ----------------
 let lastPhase = 'idle';
+// discount lines for the customer display (manual bill discount and member tier discount)
+function discountRows(c, t) {
+  const rows = [];
+  const manual = (t.discount || 0) - (t.tierAmt || 0);
+  if (manual > 0 && c.discount) rows.push({ label: 'ส่วนลด' + (c.discount.type === 'percent' ? ` ${c.discount.value}%` : '') + (c.discount.reason ? ` · ${c.discount.reason}` : ''), amount: manual });
+  if (t.tierAmt > 0) rows.push({ label: `ส่วนลดสมาชิก ${(c.member.tier && c.member.tier.name) || ''} ${c.member.tier.discount_pct}%`.replace(/\s+/g, ' '), amount: t.tierAmt });
+  return rows;
+}
 function pushDisplay(extra = {}) {
   if (!st.cart || !st.sock) return;
   const { livePay, ...ex } = extra;
+  // keep the thank-you screen until the cashier finishes (or starts keying the next bill)
+  if (st.displayHold && !extra.phase) { if (!st.cart.lines.length) return; st.displayHold = false; }
   const t = previewTotals();
   const phase = extra.phase || (st.cart.lines.length ? 'cart' : 'idle');
   lastPhase = phase;
@@ -583,7 +596,8 @@ function pushDisplay(extra = {}) {
   const state = { cart_id: st.cart.cart_id, phase, dine_type: orderDineType(st.cart.lines.length ? st.cart.lines : [{ qty: 1, dine_type: st.cart.dine_type }]),
     lines: st.cart.lines.map((l) => { const rn = renamedLine(l.name, l.options || [], 'everywhere'); return { name: rn.name, qty: l.qty, options: rn.options.map((o) => (isAddon(o) ? '+ ' + o.name : o.name)), price: lineTotal(l), dine_type: l.dine_type, bowl_group: l.bowl_group }; }),
     items_total: t.items_total, discount: t.discount, packaging: t.packaging, tax: t.tax, total: t.total, bowls: t.bowls, table: st.cart.table_name,
-    member: m && st.settings.members.show_on_display ? { name: (m.first_name || m.nickname || '').slice(0, 2) + '***', points: m.points, tier: m.tier && m.tier.name } : null,
+    member: m && st.settings.members.show_on_display ? { name: (m.first_name || m.nickname || '').slice(0, 2) + '***', points: m.points, tier: m.tier && m.tier.name, earn: previewEarn(st.cart, t) } : null,
+    queue_no: st.cart.queue_no || '', discounts: discountRows(st.cart, t),
     qr: null, received: 0, change: 0, ...ex, at: Date.now() };
   if (st.bc) st.bc.postMessage(state);
   // staff-only details for the admin Live View (the server strips them before the customer display)

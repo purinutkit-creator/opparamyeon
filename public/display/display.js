@@ -7,7 +7,7 @@ const qs = new URLSearchParams(location.search);
 const preview = qs.get('preview') === '1';
 const api = makeApi({ tokenKey: 'display_token' });
 const root = $('#root');
-let settings, state = { phase: 'idle' }, prompt = null, sock = null, slideTimer = null, doneTimer = null;
+let settings, state = { phase: 'idle' }, prompt = null, sock = null, slideTimer = null;
 
 async function boot() {
   settings = await fetch('/api/settings/public').then((r) => r.json());
@@ -109,15 +109,17 @@ function renderPay() {
   const mode = showQr ? 'qr:' + s.qr : 'cash';
   if (el.dataset.mode !== mode) {
     el.dataset.mode = mode;
-    const head = h('div', { class: 'payhead' }, h('div', { class: 'lbl' }, 'ยอดที่ต้องชำระ', h('span', { id: 'payUnit' })), h('div', { class: 'amt' }, h('span', { id: 'payAmt' }), h('small', {}, '฿')));
+    const top = h('div', { class: 'paytop' }, h('div', { id: 'payQueue' }), h('div', { class: 'pclock' }, h('b', { id: 'payTime' }, timeText()), h('span', { id: 'payDate' }, dateText())));
+    const head = h('div', { class: 'payhead' }, h('i', { class: 'shine' }), h('div', { class: 'lbl' }, 'ยอดที่ต้องชำระ', h('span', { id: 'payUnit' })), h('div', { class: 'amt' }, h('span', { id: 'payAmt' }), h('small', {}, '฿')),
+      h('div', { class: 'paybreak', id: 'payBreak' }));
     let body;
     if (showQr) {
       const img = h('img', { class: 'qrimg', alt: 'QR พร้อมเพย์', src: '/api/qr.svg?d=' + encodeURIComponent(s.qr) });
-      const frame = h('div', { class: 'qrframe' }, h('div', { class: 'qrskel' }, h('span', {}, 'กำลังสร้าง QR…')), img, h('b', { class: 'cn tl' }), h('b', { class: 'cn tr' }), h('b', { class: 'cn bl' }), h('b', { class: 'cn br' }), h('i', { class: 'scan' }));
+      const frame = h('div', { class: 'qrframe' }, h('div', { class: 'qrskel' }, h('div', { class: 'orb' }, h('i'), h('i'), h('i'), h('b', { html: QR_ICON })), h('strong', {}, 'กำลังสร้าง QR', h('em', {}, h('i', {}, '.'), h('i', {}, '.'), h('i', {}, '.'))), h('div', { class: 'qbar' }, h('i'))), img, h('b', { class: 'cn tl' }), h('b', { class: 'cn tr' }), h('b', { class: 'cn bl' }), h('b', { class: 'cn br' }), h('i', { class: 'scan' }));
       // reveal once the code has really loaded (never show a half-drawn QR)
       const t0 = performance.now();
       const ready = () => setTimeout(() => frame.classList.add('ready'), Math.max(0, 700 - (performance.now() - t0)));
-      img.onerror = () => { frame.querySelector('.qrskel span').textContent = 'โหลด QR ไม่สำเร็จ · แจ้งพนักงาน'; };
+      img.onerror = () => { frame.querySelector('.qrskel strong').textContent = 'โหลด QR ไม่สำเร็จ · แจ้งพนักงาน'; };
       if (img.complete && img.naturalWidth) ready(); else img.onload = ready;
       body = h('div', { class: 'payarea' }, h('div', { class: 'qrcard' }, h('div', { class: 'qrtitle' }, h('span', { class: 'pp' }, 'PromptPay'), 'THAI QR PAYMENT'), frame,
         h('div', { class: 'qracc' }, 'ชื่อบัญชี: ', settings.payment.promptpay_name || '-'), h('div', { class: 'qracc big' }, 'สแกนจ่าย ', h('span', { id: 'qrAmt' }), ' บาท')));
@@ -129,12 +131,14 @@ function renderPay() {
         h('div', { class: 'cc-state', id: 'ccState' }),
         h('div', { class: 'cc-change', id: 'ccChange' }, h('span', {}, '💰 เงินทอน'), h('b', { id: 'ccChangeAmt' })));
     }
-    el.replaceChildren(h('div', { class: 'paybox' + (showQr ? ' isqr' : ' iscash') }, head, body,
+    el.replaceChildren(h('div', { class: 'paybox' + (showQr ? ' isqr' : ' iscash') }, h('div', { class: 'sparks' }, Array.from({ length: 14 }, (_, i) => h('i', { style: `left:${(i * 37) % 100}%;animation-delay:${(i * 0.53) % 6}s;animation-duration:${5 + (i % 5)}s` }))), top, head, body,
       h('div', { class: 'paystatus', id: 'payStatus' }, h('i'), showQr ? 'รอชำระเงิน · สแกนด้วยแอปธนาคารใดก็ได้' : 'รอชำระเงิน')));
     el._prev = {};
   }
   const prev = el._prev || {};
   $('#payUnit').textContent = s.bowls ? ` · ${s.bowls} ${unit}` : '';
+  $('#payQueue').replaceChildren(s.queue_no ? h('span', { class: 'qchip' }, h('small', {}, 'คิว'), s.queue_no) : h('span', { class: 'qchip soft' }, '🍜 ', settings.store.name || 'ขอบคุณที่มาอุดหนุน'));
+  renderBreak(s);
   tween($('#payAmt'), s.total);
   if (showQr) { tween($('#qrAmt'), s.total); return; }
   const recv = s.received || 0, change = s.change || 0, short = Math.max(0, s.total - recv);
@@ -146,16 +150,42 @@ function renderPay() {
   card.classList.toggle('ok', recv > 0 && short === 0);
   $('#payStatus').replaceChildren(h('i'), recv > 0 && short === 0 ? (change ? 'รับเงินครบ · รอรับเงินทอน' : 'รับเงินครบ') : 'รอชำระเงิน');
   $('#payStatus').classList.toggle('ok', recv > 0 && short === 0);
-  if (!recv) { st.className = 'cc-state wait'; st.replaceChildren(h('span', { class: 'hand' }, '🙏'), ' กรุณาส่งเงินให้พนักงาน'); }
+  if (!recv) { st.className = 'cc-state none'; st.replaceChildren(); }
   else if (short) { st.className = 'cc-state short'; st.replaceChildren('ยังขาดอีก ', h('b', {}, baht(short)), ' บาท'); }
-  else { st.className = 'cc-state paid'; st.replaceChildren('✓ รับเงินครบแล้ว', change ? '' : ' · พอดี ไม่มีเงินทอน'); }
+  else if (change) { st.className = 'cc-state none'; st.replaceChildren(); }
+  else { st.className = 'cc-state paid'; st.replaceChildren('✓ รับเงินครบแล้ว · พอดี ไม่มีเงินทอน'); }
   const ch = $('#ccChange');
   const show = recv > 0 && short === 0 && change > 0;
   ch.classList.toggle('show', show);
   if (show) tween($('#ccChangeAmt'), change);
   if (show && !(prev.change > 0)) coinBurst(ch);
-  el._prev = { change: show ? change : 0 };
+  if (recv && recv !== prev.recv) { const b = rv; b.classList.remove('pulse'); void b.offsetWidth; b.classList.add('pulse'); }
+  if (show && !(prev.change > 0)) cashRain(card);
+  el._prev = { change: show ? change : 0, recv };
 }
+// subtotal / discounts / packaging / VAT under the big amount (only when there is something to explain)
+function renderBreak(s) {
+  const box = $('#payBreak'); if (!box) return;
+  const disc = s.discounts || [];
+  const key = JSON.stringify([s.items_total, disc, s.packaging, s.tax, s.member && s.member.earn]);
+  if (box.dataset.k === key) return;
+  box.dataset.k = key;
+  const saved = disc.reduce((a, d) => a + d.amount, 0) || s.discount || 0;
+  const rows = [];
+  if (saved || s.packaging || s.tax) rows.push(['รวมค่าอาหาร', baht(s.items_total), '']);
+  if (disc.length) for (const d of disc) rows.push(['🏷️ ' + d.label, '−' + baht(d.amount), 'disc']);
+  else if (s.discount) rows.push(['🏷️ ส่วนลด', '−' + baht(s.discount), 'disc']);
+  if (s.packaging) rows.push(['ค่าบรรจุภัณฑ์', baht(s.packaging), '']);
+  if (s.tax) rows.push(['VAT', baht(s.tax), '']);
+  const earn = s.member && s.member.earn;
+  box.replaceChildren(...rows.map(([a, b, c], i) => h('div', { class: 'br ' + c, style: `animation-delay:${0.15 + i * 0.12}s` }, h('span', {}, a), h('b', {}, b))),
+    saved || earn ? h('div', { class: 'perks' }, saved ? h('span', { class: 'save' }, '🎉 ประหยัดไป ', baht(saved), ' บาท') : null, earn ? h('span', { class: 'earn' }, '⭐ บิลนี้ได้ +', earn.toLocaleString(), ' แต้ม') : null) : null);
+}
+function cashRain(host) {
+  const box = h('div', { class: 'rain' }, Array.from({ length: 16 }, (_, i) => h('i', { style: `left:${Math.random() * 96}%;animation-delay:${i * 60}ms;--r:${Math.round(Math.random() * 60 - 30)}deg` }, i % 2 ? '💸' : '💵')));
+  host.append(box); setTimeout(() => box.remove(), 2600);
+}
+const QR_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3M21 14v.01M14 21h7M21 17v4"/></svg>';
 function renderPromo() {
   const d = settings.display;
   const el = $('#promo'); if (!el) return;
@@ -187,7 +217,10 @@ function renderPromo() {
   show(0);
 }
 const clockText = () => new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+const timeText = () => new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const dateText = () => new Date().toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 setInterval(() => { const c = $('#clock'); if (c) c.textContent = clockText(); }, 15000);
+setInterval(() => { const t = $('#payTime'); if (t) { t.textContent = timeText(); $('#payDate').textContent = dateText(); } }, 1000);
 let prevQty = new Map(), prevTotal = null;
 function renderPanel() {
   const p = $('#panel'); if (!p) return;
@@ -222,20 +255,55 @@ function renderPanel() {
   );
 }
 const r = (a, b) => h('div', { class: 'r' }, h('span', {}, a), h('span', {}, b));
+let fireTimer = null, wordTimer = null;
 function renderDone() {
-  const old = $('.done'); if (old) old.remove();
-  clearTimeout(doneTimer);
+  const old = $('.done');
+  if (old && state.phase === 'done' && old._at === state.at) return;
+  if (old) old.remove();
+  clearInterval(fireTimer); clearInterval(wordTimer);
   if (state.phase !== 'done') return;
+  const s = state;
   const colors = ['#facc15', '#f97316', '#ef4444', '#22c55e', '#3b82f6', '#ec4899', '#ffffff'];
-  const confetti = h('div', { class: 'confetti' }, Array.from({ length: 70 }, (_, i) => h('i', { style: { left: Math.random() * 100 + 'vw', background: colors[i % colors.length],
-    animationDuration: 2.4 + Math.random() * 2.6 + 's', animationDelay: Math.random() * .8 + 's', transform: `rotate(${Math.random() * 360}deg)` } })));
-  const check = h('div', { class: 'check', html: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' });
-  document.body.append(h('div', { class: 'done' }, confetti, h('div', { class: 'card2' }, check, h('div', { class: 'lead' }, 'ชำระเงินเรียบร้อย'),
-    state.queue_no ? [h('div', { class: 'qlabel' }, 'เลขคิวของคุณ · Queue'), h('div', { class: 'q' }, state.queue_no)] : null,
-    h('span', { class: 'chip-d ' + (state.dine_type === 'takeaway' ? 'takeaway' : 'dinein') }, state.dine_type === 'takeaway' ? '🥡 กลับบ้าน' : dineLabel(state.dine_type)),
-    state.change ? h('div', { class: 'change' }, '💰 เงินทอน ', baht(state.change), ' บาท') : null,
-    h('div', { class: 'thanks' }, settings.display.thanks || 'ขอบคุณค่ะ'))));
-  doneTimer = setTimeout(() => { state = { phase: 'idle' }; renderAll(); }, 9000);
+  // confetti keeps falling while the screen is up (each piece loops)
+  const confetti = h('div', { class: 'confetti' }, Array.from({ length: 60 }, (_, i) => h('i', { style: `left:${Math.random() * 100}vw;background:${colors[i % colors.length]};animation-duration:${3 + Math.random() * 3}s;animation-delay:${Math.random() * 3 - (i < 30 ? 0 : 3)}s;--s:${0.6 + Math.random() * 0.8}` })));
+  const floaters = h('div', { class: 'floaters' }, Array.from({ length: 16 }, (_, i) => h('i', { style: `left:${(i * 61) % 100}%;animation-delay:${(i * 0.7) % 8}s;animation-duration:${7 + (i % 4)}s;font-size:${3 + (i % 3)}vh` }, ['🍜', '💛', '⭐', '🥢', '🎉', '❤️', '✨', '🍥'][i % 8])));
+  const fireworks = h('div', { class: 'fireworks' });
+  const check = h('div', { class: 'check', html: '<span class="ripple"></span><span class="ripple r2"></span><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' });
+  const thanks = settings.display.thanks || 'ขอบคุณค่ะ';
+  const words = [thanks, ...['감사합니다', 'Thank you!'].filter((w) => !thanks.includes(w))];
+  const word = h('div', { class: 'word' }, wave(words[0]));
+  const saved = (s.discounts || []).reduce((a, d) => a + d.amount, 0) || s.discount || 0;
+  const earn = s.member && s.member.earn;
+  const stat = (icon, lbl, val, cls = '', i = 0) => h('div', { class: 'stat ' + cls, style: `animation-delay:${0.9 + i * 0.12}s` }, h('span', { class: 'ic' }, icon), h('small', {}, lbl), h('b', {}, val));
+  const stats = [stat('🧾', 'ยอดชำระ', baht(s.total) + ' ฿', '', 0)];
+  if ((s.methods || []).length) stats.push(stat('💳', 'ชำระด้วย', s.methods.join(' + '), '', stats.length));
+  if (s.change) stats.push(stat('💰', 'เงินทอน', baht(s.change) + ' ฿', 'green', stats.length));
+  if (saved) stats.push(stat('🏷️', 'ประหยัดไป', baht(saved) + ' ฿', 'gold', stats.length));
+  if (earn) stats.push(stat('⭐', 'แต้มที่ได้รับ', '+' + earn.toLocaleString(), 'gold', stats.length));
+  const dineCls = s.dine_type === 'takeaway' ? 'takeaway' : 'dinein';
+  const box = h('div', { class: 'done' }, h('div', { class: 'rays' }), confetti, floaters, fireworks,
+    h('div', { class: 'card2' },
+      h('div', { class: 'toprow' }, check, h('div', { class: 'lead' }, 'ชำระเงินเรียบร้อย', h('small', {}, 'Payment complete'))),
+      s.queue_no ? h('div', { class: 'qwrap' }, h('div', { class: 'qlabel' }, 'เลขคิวของคุณ · Your queue'), h('div', { class: 'q' }, h('span', {}, s.queue_no))) : null,
+      h('span', { class: 'chip-d ' + dineCls }, s.dine_type === 'takeaway' ? '🥡 กลับบ้าน' : dineLabel(s.dine_type)),
+      h('div', { class: 'stats' }, stats),
+      word,
+      h('div', { class: 'hint' }, s.queue_no ? 'กรุณารอเรียกคิวสักครู่นะคะ 🙏' : 'ขอให้อร่อยนะคะ 🍜')));
+  box._at = s.at;
+  document.body.append(box);
+  const burst = () => {
+    const x = 10 + Math.random() * 80, y = 10 + Math.random() * 45, c = colors[Math.floor(Math.random() * 6)];
+    const fw = h('div', { class: 'fw', style: `left:${x}%;top:${y}%;--c:${c}` }, Array.from({ length: 16 }, (_, i) => h('i', { style: `--a:${i * 22.5}deg` })));
+    fireworks.append(fw); setTimeout(() => fw.remove(), 1400);
+  };
+  burst(); setTimeout(burst, 300); fireTimer = setInterval(burst, 1100);
+  let wi = 0;
+  wordTimer = setInterval(() => { wi = (wi + 1) % words.length; word.replaceChildren(wave(words[wi])); }, 2600);
+}
+// each character bounces in turn (grapheme-aware so Thai vowels and tone marks stay on their letter)
+function wave(text) {
+  const parts = typeof Intl !== 'undefined' && Intl.Segmenter ? [...new Intl.Segmenter('th', { granularity: 'grapheme' }).segment(text)].map((x) => x.segment) : [...text];
+  return parts.map((c, i) => h('span', { style: `animation-delay:${i * 0.06}s` }, c === ' ' ? ' ' : c));
 }
 
 // ---------- customer member entry (opened only by staff) ----------
@@ -285,8 +353,8 @@ function renderPrompt() {
 }
 
 function sampleState() {
-  return { phase: ['cart', 'pay', 'done'].includes(qs.get('phase')) ? qs.get('phase') : 'pay', queue_no: 'D012', dine_type: 'mixed', table: 'A1', member: { name: 'จี***', points: 120, tier: 'Gold' },
+  return { phase: ['cart', 'pay', 'done'].includes(qs.get('phase')) ? qs.get('phase') : 'pay', queue_no: 'D012', dine_type: 'mixed', table: 'A1', member: { name: 'จี***', points: 120, tier: 'Gold', earn: 22 }, methods: [qs.get('qr') ? 'พร้อมเพย์' : 'เงินสด'],
     lines: [{ name: 'มาม่าเกาหลีต้นตำรับ', qty: 1, options: ['ชินราเมียน', 'เผ็ดกลาง', '+ ชีส'], price: 10400 }, { name: 'ไข่ออนเซ็น', qty: 2, options: [], price: 3000 }, { name: 'ชาเย็น', qty: 2, options: ['หวานน้อย'], price: 9000, dine_type: 'takeaway' }],
-    items_total: 22400, discount: 0, packaging: 0, tax: 0, total: 22400, bowls: 1, received: qs.get('qr') ? 0 : 50000, change: qs.get('qr') ? 0 : 27600, qr: qs.get('qr') ? '00020101021229370016A000000677010111011300668012345675802TH530376454031796304ABCD' : null };
+    items_total: 23580, discount: 1180, discounts: [{ label: 'ส่วนลดสมาชิก Gold 5%', amount: 1180 }], packaging: 0, tax: 0, total: 22400, bowls: 1, received: qs.get('qr') ? 0 : 50000, change: qs.get('qr') ? 0 : 27600, qr: qs.get('qr') ? '00020101021229370016A000000677010111011300668012345675802TH530376454031796304ABCD' : null };
 }
 boot().catch((e) => { console.error(e); root.replaceChildren(h('div', { class: 'empty' }, 'โหลดไม่สำเร็จ ', e.message)); setTimeout(() => location.reload(), 10000); });
