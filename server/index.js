@@ -53,7 +53,7 @@ export async function createApp(opts = {}) {
   app.get('/api/qr.svg', (req, res, next) => qrSvg(req, res).catch(next));
   for (const r of [staff, catalogR, orders, system, display, mobile, payments, members, customer, reports, importer]) app.use('/api', r);
   app.use('/api', (req, res) => res.status(404).json({ error: 'ไม่พบ API นี้' }));
-  app.use(express.static(PUBLIC, { extensions: ['html'], setHeaders: (res, p) => { if (/\.(html|js|css)$/.test(p)) res.setHeader('Cache-Control', 'no-cache'); } }));
+  app.use(express.static(PUBLIC, { extensions: ['html'], setHeaders: (res, p) => { if (/\.(html|js|css|webmanifest)$/.test(p)) res.setHeader('Cache-Control', 'no-cache'); } }));
   app.get('/', (req, res) => res.sendFile(path.join(PUBLIC, 'index.html')));
   // errors → JSON with Thai message
   app.use((err, req, res, next) => {
