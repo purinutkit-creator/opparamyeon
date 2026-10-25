@@ -43,6 +43,12 @@ export async function createApp(opts = {}) {
   // persistent = data survives restarts/updates. On Render without DATABASE_URL the SQLite file lives on a temporary disk.
   const persistent = db.kind === 'pg' || !process.env.RENDER || !!process.env.SQLITE_ON_DISK;
   app.get('/api/version', (req, res) => res.json({ version: VERSION, db: db.kind, persistent }));
+  // Android app (Play Store / TWA): proves this site and the app belong together so the app opens without a browser bar.
+  // Set ANDROID_PACKAGE (e.g. com.oppa.pos) and ANDROID_SHA256 (fingerprint from PWABuilder / Play Console; several separated by commas).
+  app.get('/.well-known/assetlinks.json', (req, res) => {
+    const pkg = process.env.ANDROID_PACKAGE, fps = String(process.env.ANDROID_SHA256 || '').split(',').map((x) => x.trim()).filter(Boolean);
+    res.json(pkg && fps.length ? [{ relation: ['delegate_permission/common.handle_all_urls'], target: { namespace: 'android_app', package_name: pkg, sha256_cert_fingerprints: fps } }] : []);
+  });
   app.get('/files/:id', (req, res, next) => serveFile(req, res).catch(next));
   app.get('/api/qr.svg', (req, res, next) => qrSvg(req, res).catch(next));
   for (const r of [staff, catalogR, orders, system, display, mobile, payments, members, customer, reports, importer]) app.use('/api', r);
