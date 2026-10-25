@@ -64,8 +64,8 @@ function valueOf(field, d) {
 
 export async function renderDoc(tpl, data, opts = {}) {
   const width = opts.width || tpl.width_dots || paperDots(tpl.paper);
-  const margin = Number(tpl.margin ?? 8);
-  const inner = width - margin * 2;
+  let margin = Number(tpl.margin ?? 8);
+  let inner = width - margin * 2; // narrowed while drawing inside a framed element (e.box)
   const baseFamily = tpl.font || 'Sarabun';
   const families = new Set([baseFamily, ...tpl.elements.map((e) => e.font).filter(Boolean)]);
   await Promise.all([...families].map((f) => loadFont(f)));
@@ -103,14 +103,18 @@ export async function renderDoc(tpl, data, opts = {}) {
       y += pad;
       return h;
     };
-    const twoCol = (left, right, e, { size = e.size || tpl.size || 24, weight } = {}) => {
+    const twoCol = (left, right, e, { size = e.size || tpl.size || 24, weight, invert = false } = {}) => {
       font(e, size, weight);
       const rw = ctx.measureText(right).width;
-      const lines = wrap(ctx, left, inner - rw - 12);
+      const ins = invert ? 10 : 0, pad = invert ? Math.round(size * 0.25) : 0;
+      const lines = wrap(ctx, left, inner - rw - 12 - ins * 2);
+      if (draw && invert) { ctx.fillStyle = '#000'; ctx.fillRect(margin, y, inner, lines.length * lh(size) + pad * 2); }
+      y += pad;
       lines.forEach((ln, i) => {
-        if (draw) { ctx.fillStyle = '#000'; ctx.textBaseline = 'top'; ctx.fillText(ln, margin, y + (lh(size) - size) / 2); if (i === 0 && right) ctx.fillText(right, margin + inner - rw, y + (lh(size) - size) / 2); }
+        if (draw) { ctx.fillStyle = invert ? '#fff' : '#000'; ctx.textBaseline = 'top'; ctx.fillText(ln, margin + ins, y + (lh(size) - size) / 2); if (i === 0 && right) ctx.fillText(right, margin + inner - rw - ins, y + (lh(size) - size) / 2); }
         y += lh(size);
       });
+      y += pad;
     };
     // QR matrix drawn as square modules inside the column [x0, x0 + w]
     const qrAt = (m, sizeMm, align, x0 = margin, w = inner) => {
@@ -134,6 +138,9 @@ export async function renderDoc(tpl, data, opts = {}) {
       if (e.hidden) continue;
       if (e.when && !data[e.when]) continue;
       const startY = y;
+      // framed element: draw it narrower, then put a border around whatever it printed
+      const boxed = e.box && e.box !== 'none' ? { m: margin, i: inner, pad: 12 } : null;
+      if (boxed) { margin += 16; inner -= 32; y += boxed.pad; }
       switch (e.type) {
         case 'logo': case 'image': {
           const img = images.get(e);
@@ -158,7 +165,11 @@ export async function renderDoc(tpl, data, opts = {}) {
           if (draw) {
             ctx.fillStyle = '#000';
             if (st === 'solid') ctx.fillRect(margin, y + 6, inner, 3);
+            else if (st === 'thick') ctx.fillRect(margin, y + 3, inner, 8);
             else if (st === 'double') { ctx.fillRect(margin, y + 3, inner, 2); ctx.fillRect(margin, y + 9, inner, 2); }
+            else if (st === 'dots') for (let x = margin + 4; x < margin + inner; x += 16) { ctx.beginPath(); ctx.arc(x, y + 7, 2.6, 0, Math.PI * 2); ctx.fill(); }
+            else if (st === 'zigzag') { ctx.strokeStyle = '#000'; ctx.lineWidth = 2.5; ctx.beginPath(); for (let x = margin, i = 0; x <= margin + inner; x += 10, i++) ctx[i ? 'lineTo' : 'moveTo'](x, y + (i % 2 ? 2 : 12)); ctx.stroke(); }
+            else if (st === 'stars') { const n = Math.floor(inner / 34); for (let i = 0; i < n; i++) { const cx = margin + 17 + i * (inner / n), cy = y + 7, r = i % 2 ? 4 : 7; ctx.beginPath(); ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r * 0.35, cy - r * 0.35); ctx.lineTo(cx + r, cy); ctx.lineTo(cx + r * 0.35, cy + r * 0.35); ctx.lineTo(cx, cy + r); ctx.lineTo(cx - r * 0.35, cy + r * 0.35); ctx.lineTo(cx - r, cy); ctx.lineTo(cx - r * 0.35, cy - r * 0.35); ctx.closePath(); ctx.fill(); } }
             else for (let x = margin; x < margin + inner; x += 14) ctx.fillRect(x, y + 6, 8, 2);
           }
           y += 14;
@@ -202,6 +213,21 @@ export async function renderDoc(tpl, data, opts = {}) {
             });
             break;
           }
+          if (e.style === 'modern') {
+            // name (bold) ........ price  /  small "2 × 39.50" and choices underneath
+            items.forEach((it, idx) => {
+              const price = e.show_price !== false && it.line_total !== null && it.line_total !== undefined ? baht(it.line_total) : '';
+              const dine = e.show_dine && (mixed || it.dine_type === 'takeaway') && it.dine_type === 'takeaway' ? '  · กลับบ้าน' : '';
+              twoCol(it.name, price, e, { size, weight: 700 });
+              const small = Math.round(size * 0.78);
+              const unit = it.line_total && it.qty ? baht(Math.round(it.line_total / it.qty)) : '';
+              text(`${it.qty} × ${unit}${dine}`, e, { size: small });
+              if (e.show_options !== false && (it.options || []).length) text((it.options || []).map((o) => (isAddon(o) ? '+ ' : '') + o.name).join(' · '), e, { size: small, weight: 600 });
+              if (e.show_note !== false && it.note) text(`* ${it.note}`, e, { size: small, weight: 700 });
+              if (idx < items.length - 1) y += Math.round(size * 0.3);
+            });
+            break;
+          }
           for (const it of items) {
             if (e.group_by_bowl && it.bowl_label && it.bowl_label !== lastGroup) { text(`[ ${it.bowl_label} ]`, e, { size: Math.round(size * 0.85), weight: 800 }); lastGroup = it.bowl_label; }
             const price = e.show_price !== false && it.line_total !== null && it.line_total !== undefined ? baht(it.line_total) : '';
@@ -221,7 +247,7 @@ export async function renderDoc(tpl, data, opts = {}) {
           const L = { items_total: 'รวมสินค้า', discount: 'ส่วนลด', packaging: 'ค่าบรรจุภัณฑ์', tax: data.tax_inclusive ? `VAT ${data.tax_rate || 7}% (รวมในราคา)` : `VAT ${data.tax_rate || 7}%`, total: 'ยอดสุทธิ' };
           for (const k of e.show || ['items_total', 'discount', 'total']) {
             if (k !== 'total' && k !== 'items_total' && !t[k]) continue;
-            twoCol(L[k], (k === 'discount' ? '-' : '') + baht(t[k] || 0), e, k === 'total' ? { size: e.total_size || 32, weight: 800 } : {});
+            twoCol(L[k], (k === 'discount' ? '-' : '') + baht(t[k] || 0), e, k === 'total' ? { size: e.total_size || 32, weight: 800, invert: !!e.total_invert } : {});
           }
           break;
         }
@@ -312,6 +338,20 @@ export async function renderDoc(tpl, data, opts = {}) {
         }
         case 'cut': if (draw && opts.cutMarks) { ctx.strokeStyle = '#999'; ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.moveTo(0, y + 6); ctx.lineTo(width, y + 6); ctx.stroke(); ctx.setLineDash([]); } (opts.cuts || []).push(y); y += 12; break;
         default: break;
+      }
+      if (boxed) {
+        margin = boxed.m; inner = boxed.i;
+        if (y > startY + boxed.pad) {
+          y += boxed.pad;
+          if (draw) {
+            ctx.strokeStyle = '#000'; ctx.lineWidth = e.box === 'bold' ? 5 : 3;
+            const x = margin + 2, w = inner - 4, hh = y - startY, r = e.box === 'round' || e.box === 'dashed' ? 18 : 0;
+            ctx.setLineDash(e.box === 'dashed' ? [10, 7] : []);
+            ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, startY + 1, w, hh - 2, r); else ctx.rect(x, startY + 1, w, hh - 2); ctx.stroke();
+            if (e.box === 'double') { ctx.lineWidth = 2; ctx.strokeRect(x + 6, startY + 7, w - 12, hh - 14); }
+            ctx.setLineDash([]);
+          }
+        } else y = startY;
       }
       if (e.gap ?? tpl.section_gap) y += (y > startY ? Number(e.gap ?? tpl.section_gap) : 0);
     }
