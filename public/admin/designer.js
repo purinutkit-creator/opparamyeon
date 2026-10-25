@@ -15,7 +15,7 @@ const base = { store_name: 'Oppa Ramyeon', branch: 'สาขาหลัก', a
   table: 'A3', customer: 'คุณมินจู', member: 'จีซู (M000123)', staff: 'แคชเชียร์', datetime: '23/10/2569 19:42', footer: 'ขอบคุณที่อุดหนุน 감사합니다', claim_available: true,
   points_mode: 'claim', claim_points: 43, claim_deadline: '26/10/2569 19:42', points_earned: 43, member_points: 386, member_display: 'จีซู · M000123', member_tier: 'Gold',
   claim_url: location.origin + '/member/#/claim/SAMPLE', mobile_url: location.origin + '/m/#SAMPLE', mobile_ref: 'MO-ABC123', mobile_target: 'โต๊ะ A3', mobile_expires: '23/10/2569 22:42',
-  ticket_kind: 'ออเดอร์ใหม่', received_time: '24/10/69 15:38:37', table_or_type: 'โต๊ะ: V.22', detail_url: location.origin + '/admin/#/bill/B261023-0042', pay_methods: 'เงินสด', count_unit: 'ชาม', ticket_part: 'ใบที่ 1/2 · ชามที่ 1', station: 'ครัวมาม่า', order_note: 'ลูกค้าแพ้กุ้ง', reason: 'ลูกค้าเปลี่ยนใจ', refund_amount: '79.00', reward_name: 'ไข่ออนเซ็นฟรี',
+  ticket_kind: 'ออเดอร์ใหม่', received_time: '24/10/69 15:38:37', table_or_type: 'โต๊ะ: V.22', detail_url: location.origin + '/admin/#/bill/B261023-0042', pay_methods: 'เงินสด', count_unit: 'ชาม', ticket_part: 'ใบที่ 1/2 · ชามที่ 1', bowl_part: 'ชามที่ 1/2', cooker: 'ต้มโดย เครื่องต้ม 1', cooker_ready: 'คาดว่าจะเสร็จตอน 15:42 น.', station: 'ครัวมาม่า', order_note: 'ลูกค้าแพ้กุ้ง', reason: 'ลูกค้าเปลี่ยนใจ', refund_amount: '79.00', reward_name: 'ไข่ออนเซ็นฟรี',
   coupon_code: 'K7M2Q9XA', points_used: 20, payments: [{ method: 'เงินสด', amount: 7900, change: 2100 }], tax_rate: 7, tax_inclusive: true,
   shift: { terminal_name: 'เครื่องขาย 1', staff_name: 'แคชเชียร์', opened_at: new Date().toISOString(), opening_cash: 100000, bills: 42, net_bowls: 51, net_sales: 452300, discount: 1200, voids: { count: 1, amount: 7900 }, refunds: { count: 0, amount: 0 },
     payments: [{ name: 'เงินสด', count: 30, amount: 300000 }, { name: 'QR พร้อมเพย์', count: 12, amount: 152300 }], cash_in: 0, cash_out: 5000, expected_cash: 395000, counted_cash: 395000, diff: 0 } };
@@ -70,7 +70,7 @@ export async function designerPage() {
     if (!e) return propBox.replaceChildren(h('p', { class: 'muted small' }, 'คลิกองค์ประกอบเพื่อแก้ไขรายละเอียด'));
     const common = [selIn(e, 'align', 'ตำแหน่ง', [['left', 'ซ้าย'], ['center', 'กลาง'], ['right', 'ขวา']]), selIn(e, 'font', 'ฟอนต์', fontOpts), numIn(e, 'size', 'ขนาด (จุด)'), selIn(e, 'weight', 'น้ำหนัก', [['', '-'], [400, 'ปกติ'], [600, 'กึ่งหนา'], [700, 'หนา'], [800, 'หนามาก']]),
       boolIn(e, 'italic', 'ตัวเอียง'), boolIn(e, 'underline', 'ขีดเส้นใต้'), boolIn(e, 'invert', 'พื้นดำตัวขาว'), numIn(e, 'gap', 'ระยะห่างหลังองค์ประกอบ'),
-      selIn(e, 'when', 'แสดงเมื่อ', [['', 'เสมอ'], ['claim_available', 'บิลยังไม่ได้ให้แต้ม (มี QR รับแต้ม)'], ['reprint', 'เฉพาะพิมพ์ซ้ำ'], ['not_new', 'เฉพาะใบสั่งเพิ่ม/ยกเลิก']])];
+      selIn(e, 'when', 'แสดงเมื่อ', [['', 'เสมอ'], ['bowl_part', 'เฉพาะใบที่มีชาม (เครื่องต้ม)'], ['claim_available', 'บิลยังไม่ได้ให้แต้ม (มี QR รับแต้ม)'], ['reprint', 'เฉพาะพิมพ์ซ้ำ'], ['not_new', 'เฉพาะใบสั่งเพิ่ม/ยกเลิก']])];
     const specific = {
       field: [selIn(e, 'field', 'ข้อมูล', Object.entries(FIELD_LABELS)), txtIn(e, 'label', 'ข้อความนำหน้า'), selIn(e, 'invert_if', 'เน้นพื้นดำเมื่อ', [['', '-'], ['takeaway', 'กลับบ้าน']])],
       text: [txtIn(e, 'text', 'ข้อความ (ใช้ตัวแปรได้)', true)],

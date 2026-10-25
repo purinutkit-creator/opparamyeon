@@ -28,6 +28,18 @@ export async function seed({ demo = process.env.SEED_DEMO !== 'false' } = {}) {
     }
     await db.run("INSERT INTO settings(key, value) VALUES('seed_v117', 'true') ON CONFLICT(key) DO NOTHING");
   }
+  // v1.17.1: the bowl number is the highlight, the cooker line is small (only blocks still as v1.17.0 made them)
+  if (!(await db.get("SELECT key FROM settings WHERE key = 'seed_v1171'"))) {
+    for (const t of await db.all('SELECT id, data FROM templates WHERE doc_type = ?', ['kitchen'])) {
+      const d = J(t.data, null);
+      if (!d || !Array.isArray(d.elements)) continue;
+      const b = d.elements.find((e) => e.field === 'bowl_part'), c = d.elements.find((e) => e.field === 'cooker');
+      if (!b || !c || b.size !== 50 || b.invert || c.size !== 34 || !c.invert) continue;
+      Object.assign(b, { size: 56, weight: 800, invert: true }); Object.assign(c, { size: 22, weight: undefined, invert: undefined });
+      await db.run('UPDATE templates SET data = ?, updated_at = ? WHERE id = ?', [S(d), now(), t.id]);
+    }
+    await db.run("INSERT INTO settings(key, value) VALUES('seed_v1171', 'true') ON CONFLICT(key) DO NOTHING");
+  }
   // v1.3: the receipt's plain claim QR becomes the framed points box (custom elements are kept as they are)
   if (!(await db.get("SELECT key FROM settings WHERE key = 'seed_v13'"))) {
     for (const t of await db.all('SELECT id, data FROM templates WHERE doc_type = ?', ['receipt'])) {

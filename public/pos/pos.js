@@ -129,6 +129,8 @@ async function loadCookers() {
 setInterval(() => { renderCookers(); renderCartEta(); }, 10000);
 setInterval(loadCookers, 60000);
 const nowMs = () => Date.now() + cookSkew;
+// a server-clock time as the shop's local hh:mm
+const clockAt = (ms) => new Date(ms - cookSkew).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' });
 // per machine: bowls still waiting/cooking, when it is free, and when its current bowl is done
 function cookerView() {
   const c = st.cookers; if (!c || !c.enabled) return null;
@@ -147,10 +149,11 @@ function renderCookers() {
   if (!v) return;
   const busy = v.filter((m) => m.bowls);
   const nextAll = busy.length ? Math.min(...busy.map((m) => m.next)) : 0;
+  const at = (mins) => clockAt(nowMs() + mins * 60000);
   cookbar.replaceChildren(
-    h('div', { class: 'ck-sum' }, h('b', {}, '🍜 เครื่องต้ม'), h('small', {}, busy.length ? `ชามถัดไปเสร็จใน ~${Math.max(1, nextAll)} นาที` : 'ว่างทุกเครื่อง พร้อมต้ม')),
+    h('div', { class: 'ck-sum' }, h('b', {}, '🍜 เครื่องต้ม'), h('small', {}, busy.length ? `ชามถัดไปคาดว่าเสร็จตอน ${at(Math.max(1, nextAll))}` : 'ว่างทุกเครื่อง พร้อมต้ม')),
     ...v.map((m) => h('div', { class: 'ck' + (m.bowls ? ' busy' : ' free'), title: m.queues.length ? 'คิว ' + m.queues.join(', ') : '' },
-      h('span', { class: 'ck-no' }, m.no), h('div', { class: 'ck-t' }, h('b', {}, m.name), h('small', {}, m.bowls ? `เหลือ ${m.bowls} ${U()} · ว่างใน ~${m.mins} นาที` : 'ว่าง')),
+      h('span', { class: 'ck-no' }, m.no), h('div', { class: 'ck-t' }, h('b', {}, m.name), h('small', {}, m.bowls ? `เหลือ ${m.bowls} ${U()} · คาดว่าว่างตอน ${clockAt(m.free)}` : 'ว่าง')),
       h('span', { class: 'ck-pots' }, Array.from({ length: Math.min(6, m.bowls) }, (_, i) => h('i', { class: i === 0 ? 'on' : '' }))))));
 }
 // estimate for the bowls in the cart that are not in the kitchen yet: each bowl goes to the cooker free first
@@ -167,7 +170,7 @@ function renderCartEta() {
   const el = $('#cartEta'); if (!el) return;
   const e = cartEta();
   el.hidden = !e;
-  if (e) el.replaceChildren(h('span', {}, '⏱'), h('div', {}, h('b', {}, `ส่งตอนนี้ เสร็จประมาณ ${e.at.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' })} (~${e.mins} นาที)`),
+  if (e) el.replaceChildren(h('span', {}, '⏱'), h('div', {}, h('b', {}, `ส่งตอนนี้ คาดว่าจะเสร็จตอน ${clockAt(e.at.getTime() + cookSkew)} น.`),
     h('small', {}, `${e.bowls} ${U()} → ${e.machines.map((no) => (st.cookers.machines[no - 1] || {}).name || 'เครื่อง ' + no).join(' + ')}`)));
 }
 // after ส่งครัว / payment: which cooker each bowl went to
@@ -176,7 +179,7 @@ function cookerPopup(jobs, title) {
   const old = $('.cookpop'); if (old) old.remove();
   const fmt = (iso) => new Date(Date.parse(iso) - cookSkew).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' });
   const box = h('div', { class: 'cookpop', onclick: () => box.remove() }, h('div', { class: 'cp-h' }, h('b', {}, '🔥 ', title), h('small', {}, 'แตะเพื่อปิด')),
-    ...jobs.map((j, i) => h('div', { class: 'cp-r', style: `animation-delay:${i * 80}ms` }, h('span', { class: 'cp-n' }, j.machine), h('div', {}, h('b', {}, j.name), h('small', {}, `${j.bowls} ${U()} · เสร็จประมาณ ${fmt(j.end_at)}`)))));
+    ...jobs.map((j, i) => h('div', { class: 'cp-r', style: `animation-delay:${i * 80}ms` }, h('span', { class: 'cp-n' }, j.machine), h('div', {}, h('b', {}, j.name), h('small', {}, `${j.bowls} ${U()} · คาดว่าจะเสร็จตอน ${fmt(j.end_at)} น.`)))));
   document.body.append(box);
   setTimeout(() => box.classList.add('out'), 7000); setTimeout(() => box.remove(), 7600);
 }

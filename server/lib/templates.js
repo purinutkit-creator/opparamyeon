@@ -9,8 +9,8 @@ const base = (elements, extra = {}) => ({ paper: 80, margin: 8, line_height: 1.3
 // big "ชามที่ 1/3" + "ต้มโดย เครื่องต้ม 2" block on kitchen tickets (cookers)
 export const COOKER_BLOCK = [
   { type: 'divider', style: 'solid', when: 'bowl_part' },
-  { type: 'field', field: 'bowl_part', align: 'center', size: 50, weight: 800 },
-  { type: 'field', field: 'cooker', align: 'center', size: 34, weight: 800, invert: true },
+  { type: 'field', field: 'bowl_part', align: 'center', size: 56, weight: 800, invert: true },
+  { type: 'field', field: 'cooker', align: 'center', size: 22 },
   { type: 'field', field: 'cooker_ready', align: 'center', size: 22 },
   { type: 'divider', style: 'solid', when: 'bowl_part' },
 ];

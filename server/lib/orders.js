@@ -312,7 +312,7 @@ export async function kitchenTickets(order, lines, kind, staff) {
   return created;
 }
 async function kitchenDocData(c) {
-  return { store_name: '', ticket_kind: c.kind_label, not_new: c.kind !== 'new', bowl_part: c.bowl_part || '', cooker: c.cooker ? `ต้มโดย ${c.cooker}` : '', cooker_ready: c.cooker_ready ? `เสร็จประมาณ ${c.cooker_ready}` : '', queue_no: c.queue_no, received_time: c.received_time, count_unit: c.count_unit,
+  return { store_name: '', ticket_kind: c.kind_label, not_new: c.kind !== 'new', bowl_part: c.bowl_part || '', cooker: c.cooker ? `ต้มโดย ${c.cooker}` : '', cooker_ready: c.cooker_ready ? `คาดว่าจะเสร็จตอน ${c.cooker_ready}` : '', queue_no: c.queue_no, received_time: c.received_time, count_unit: c.count_unit,
     table_or_type: c.table ? `โต๊ะ: ${c.table}` : c.dine_type === 'takeaway' ? 'กลับบ้าน' : c.dine_label, dine_type: c.dine_type, dine_label: c.dine_label, table: c.table, customer: c.customer,
     station: c.station, ticket_part: c.part, bill_no: c.bill_no, datetime: c.datetime, staff: c.staff, order_note: c.note, bowls: c.bowls, reason: c.ref,
     items: c.lines.map((l) => ({ ...l, line_total: null })) };
