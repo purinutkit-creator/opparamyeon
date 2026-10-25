@@ -16,6 +16,14 @@ async function boot() {
     state = qs.get('phase') === 'idle' ? { phase: 'idle' } : sampleState();
     applyTheme(); renderAll();
     // ?demo=1 plays the cash flow: nothing received → partly received → paid with change
+    // ?phase=cart&demo=1 keeps adding items so the list has to follow the newest one
+    if (qs.get('demo') && state.phase === 'cart') {
+      const menu = [['ต็อกบกกีชีส', 8900], ['ไส้กรอกทอด', 2500], ['โคล่า', 2000], ['คิมบับ', 6900], ['ไก่ทอดเกาหลี', 12900], ['น้ำแร่', 1500], ['ราเมงต้มยำ', 9900]];
+      let i = 0;
+      const add = () => { const [name, price] = menu[i % menu.length]; i++; const lines = [...state.lines, { name, qty: 1 + (i % 2), options: i % 3 ? [] : ['เผ็ดน้อย'], price: price * (1 + (i % 2)) }];
+        const total = lines.reduce((a, l) => a + l.price, 0); state = { ...state, lines, items_total: total, total, discount: 0, discounts: [], at: Date.now() }; renderAll(); };
+      setInterval(add, 1200);
+    }
     // ?phase=done&demo=1 shows the thank-you screen, then plays the cashier pressing เสร็จ
     if (qs.get('demo') && state.phase === 'done') setTimeout(() => { state = { phase: 'idle', at: Date.now() }; renderAll(); }, 3000);
     if (qs.get('demo') && state.phase === 'pay' && !state.qr) {
@@ -242,26 +250,50 @@ function renderPanel() {
   for (const l of lines) { const k = l.name + '|' + (l.options || []).join(','); now.set(k, (now.get(k) || 0) + l.qty); if ((prevQty.get(k) || 0) < now.get(k)) hot.add(k); }
   prevQty = now;
   const bump = prevTotal !== null && prevTotal !== s.total; prevTotal = s.total;
-  const shown = lines.slice(-8);
   const m = s.member;
+  const oldItems = p.querySelector('.items'), oldTop = oldItems ? oldItems.scrollTop : 0;
+  const pcs = lines.reduce((a, l) => a + l.qty, 0);
   p.replaceChildren(
     h('div', { class: 'ph' }, h('h2', {}, h('small', {}, 'Your order'), 'รายการของคุณ'),
       h('div', { class: 'chips' }, h('span', { class: 'chip-d ' + (s.dine_type === 'takeaway' ? 'takeaway' : 'dinein') }, s.dine_type === 'takeaway' ? '🥡 กลับบ้าน' : s.dine_type === 'mixed' ? '🍽️ ทานที่ร้าน + 🥡' : '🍽️ ทานที่ร้าน'),
         s.table ? h('span', { class: 'chip-d' }, '🪑 โต๊ะ ' + s.table) : null)),
     m ? h('div', { class: 'mem' }, h('div', { class: 'av' }, '⭐'), h('div', {}, h('b', {}, `สวัสดีคุณ ${m.name}`), h('span', {}, m.tier ? `สมาชิก ${m.tier}` : 'สมาชิก')),
       h('div', { class: 'pts' }, Number(m.points || 0).toLocaleString(), h('small', {}, 'แต้มสะสม'))) : null,
-    lines.length > shown.length ? h('div', { class: 'more' }, `+ อีก ${lines.length - shown.length} รายการด้านบน`) : null,
-    h('div', { class: 'items' }, shown.map((l) => {
+    h('div', { class: 'itemswrap' }, h('div', { class: 'more up' }), h('div', { class: 'items' }, lines.map((l) => {
       const k = l.name + '|' + (l.options || []).join(',');
       const opts = (l.options || []).map((o) => (String(o).startsWith('+ ') ? h('span', { class: 'add' }, o) : h('span', {}, o)));
       if (l.dine_type === 'takeaway' && s.dine_type === 'mixed') opts.push(h('span', { class: 'tw' }, 'กลับบ้าน'));
       return h('div', { class: 'it' + (hot.has(k) ? ' new' : '') }, h('span', { class: 'q' }, l.qty), h('div', { class: 'n' }, h('b', {}, l.name), opts.length ? h('small', {}, opts) : null), h('span', { class: 'p' }, baht(l.price)));
-    })),
+    })), h('div', { class: 'more down' })),
     h('div', { class: 'sum' },
       s.discount || s.packaging || s.tax ? r('รวมค่าอาหาร', baht(s.items_total)) : null, s.discount ? r('ส่วนลด', '−' + baht(s.discount)) : null,
       s.packaging ? r('ค่าบรรจุภัณฑ์', baht(s.packaging)) : null, s.tax ? r('VAT', baht(s.tax)) : null,
-      h('div', { class: 'grand' }, h('span', {}, 'ยอดรวม', h('small', {}, `${lines.reduce((a, l) => a + l.qty, 0)} รายการ · ${s.bowls || 0} ${unit}`)), h('span', { class: 'total' + (bump ? ' bump' : '') }, baht(s.total)))),
+      h('div', { class: 'grand' }, h('span', {}, 'ยอดรวม', h('small', {}, `${lines.length} รายการ · ${pcs} ชิ้น`, s.bowls && unit !== 'ชิ้น' ? ` · ${s.bowls} ${unit}` : '')), h('span', { class: 'total' + (bump ? ' bump' : '') }, baht(s.total)))),
   );
+  followItems(oldTop);
+}
+// long bills: keep the newest (or just changed) item in view, sliding smoothly from where the list was,
+// and say how many items are out of view above / below
+function followItems(oldTop) {
+  const box = $('#panel .items'); if (!box) return;
+  box.scrollTop = oldTop;
+  const hot = [...box.querySelectorAll('.it.new')].pop();
+  const max = box.scrollHeight - box.clientHeight;
+  let to = Math.min(oldTop, max);
+  if (hot) { const t = hot.offsetTop, b = t + hot.offsetHeight; if (b > to + box.clientHeight) to = b - box.clientHeight; else if (t < to) to = t; }
+  to = Math.max(0, Math.min(max, to));
+  box.scrollTo({ top: to, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  countHidden(box, to);
+}
+function countHidden(box, top) {
+  const its = [...box.children];
+  const above = its.filter((x) => x.offsetTop + x.offsetHeight / 2 < top).length;
+  const below = its.filter((x) => x.offsetTop + x.offsetHeight / 2 > top + box.clientHeight).length;
+  const wrap = box.parentElement;
+  const set = (el, n, txt) => { el.classList.toggle('show', n > 0); if (n > 0) el.textContent = txt(n); };
+  set(wrap.querySelector('.more.up'), above, (n) => `▲ อีก ${n} รายการด้านบน`);
+  set(wrap.querySelector('.more.down'), below, (n) => `▼ อีก ${n} รายการด้านล่าง`);
+  box.classList.toggle('fade-up', above > 0); box.classList.toggle('fade-down', below > 0);
 }
 const r = (a, b) => h('div', { class: 'r' }, h('span', {}, a), h('span', {}, b));
 let fireTimer = null, wordTimer = null;
