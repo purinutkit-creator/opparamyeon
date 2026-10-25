@@ -188,7 +188,7 @@ function renderGrid() {
     onclick: () => pickProduct(p), oncontextmenu: (e) => { e.preventDefault(); soldOutToggle(p); } },
     h('div', { class: 'img' + (p.image ? '' : ' noimg'), style: p.image ? { backgroundImage: `url(${p.image})` } : {} }, p.image ? null : h('img', { src: '/assets/bowl.svg', alt: '' }),
       inCart.get(p.id) ? h('span', { class: 'incart' }, '×' + inCart.get(p.id)) : null, p.sold_out ? h('span', { class: 'soldout' }, 'หมด') : null),
-    h('div', { class: 'nm' }, p.big_options ? h('span', { class: 'addon-tag' }, '✨ Add-on') : null, p.name),
+    h('div', { class: 'nm' }, p.name),
     h('div', { class: 'pr' }, h('span', { class: 'price' }, baht(p.price) + ' ฿'), p.bowl_count ? h('span', { class: 'unit' }, `${p.bowl_count} ${U()}`) : null, h('span', { class: 'plus' }, '+')))) : [h('div', { class: 'empty' }, 'ไม่พบสินค้า')]));
 }
 async function soldOutToggle(p) {
