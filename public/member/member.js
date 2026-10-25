@@ -3,6 +3,7 @@ import { h, $, toast, errToast, modal, fmtTime } from '/shared/ui.js';
 import { baht, code128, VERSION, maskPhone } from '/shared/core.js';
 import { applyTheme } from '/shared/theme.js';
 import { applyFonts } from '/shared/fonts.js';
+import { countTo, setFxLevel } from '/pos/fx.js';
 
 const api = makeApi({ tokenKey: 'member_token', onUnauthorized: () => { store.del('member_token'); } });
 const app = $('#app');
@@ -14,6 +15,7 @@ window.addEventListener('hashchange', route);
 async function boot() {
   cfg = await api.get('/c/config', { token: null });
   applyFonts(cfg.fonts, 'member');
+  setFxLevel((cfg.theme || {}).pos_fx);
   if (cfg.theme && Object.keys(cfg.theme).length) applyTheme(cfg.theme); else document.documentElement.style.setProperty('--brand', cfg.colors.accent || '#d4202f');
   if (store.get('member_token')) {
     const s = await socket({ kind: 'member', token: store.get('member_token') }).catch(() => null);
@@ -32,10 +34,10 @@ async function loadMe() {
 const shell = (...kids) => {
   const r = location.hash.split('/')[1] || 'home';
   const titles = { home: 'บัตรสมาชิกของคุณ', rewards: 'ของรางวัล', coupons: 'คูปองของฉัน', history: 'ประวัติการซื้อ', points: 'ประวัติแต้ม', benefits: 'สิทธิประโยชน์', account: 'บัญชีของฉัน', claim: 'รับแต้มจากใบเสร็จ', scan: 'สแกน QR สะสมแต้ม', register: 'สมัครสมาชิก', forgot: 'ลืมรหัสผ่าน', contact: 'ติดต่อร้าน' };
-  app.replaceChildren(h('header', { class: 'mhead' }, h('div', { class: 'row1' }, h('div', { class: 'logo' }, cfg.store.logo ? h('img', { src: cfg.store.logo, alt: '' }) : '🍜'),
+  app.replaceChildren(h('header', { class: 'mhead' }, h('div', { class: 'bubbles' }, Array.from({ length: 8 }, (_, i) => h('i', { style: `left:${(i * 13 + 5) % 100}%;animation-delay:${-i * 1.7}s;animation-duration:${8 + (i % 4) * 2}s;--s:${0.5 + (i % 3) * 0.35}` }))), h('div', { class: 'row1' }, h('div', { class: 'logo' }, cfg.store.logo ? h('img', { src: cfg.store.logo, alt: '' }) : '🍜'),
       h('div', {}, h('div', { class: 'name' }, cfg.store.name), h('div', { class: 'sub' }, me ? `สวัสดี ${me.first_name || me.nickname || ''} 👋` : (titles[r] || 'สมาชิก')))),
-    h('img', { class: 'bowl', src: '/assets/bowl.svg', alt: '' })),
-    h('div', { class: 'wrap' }, ...kids),
+    h('div', { class: 'bowlwrap' }, h('div', { class: 'steam' }, h('i'), h('i'), h('i')), h('img', { class: 'bowl', src: '/assets/bowl.svg', alt: '' }))),
+    h('div', { class: 'wrap enter' }, ...kids),
     me ? h('nav', { class: 'bot' }, [['home', '🏠', 'หน้าหลัก'], ['rewards', '🎁', 'รางวัล'], ['scan', '', 'สแกนแต้ม'], ['coupons', '🎟️', 'คูปอง'], ['account', '👤', 'บัญชี']].map(([k, i, t]) =>
       k === 'scan' ? h('a', { href: '#/scan', class: 'scanfab' + (r === k ? ' on' : '') }, h('span', { class: 'fab' }, scanIcon()), t)
         : h('a', { href: '#/' + k, class: r === k ? 'on' : '' }, h('span', {}, i), t))) : null);
@@ -179,8 +181,10 @@ async function claimPage(tok) {
     const vid = await verify('claim', c.bill_no);
     const r = await api.post('/c/claim/' + tok, { verification_id: vid });
     store.del('return_to');
-    shell(h('div', { class: 'success-card' }, h('div', { class: 'burst' }, '🎉'), h('h2', {}, 'รับแต้มสำเร็จ'), h('div', { class: 'big-pts' }, `+${r.points}`),
+    shell(h('div', { class: 'success-card' }, h('div', { class: 'rays' }), h('div', { class: 'burst' }, '🎉'), h('h2', {}, 'รับแต้มสำเร็จ'), h('div', { class: 'big-pts', id: 'gotpts' }, '+0'),
       h('p', {}, `บิล ${r.bill_no} · แต้มคงเหลือ `, h('strong', {}, r.balance.toLocaleString())), h('a', { class: 'btn primary big block', href: '#/home' }, 'ไปหน้าสมาชิก')));
+    const g = $('#gotpts'); g.dataset.v = 0; countTo(g, r.points, (v) => '+' + v.toLocaleString(), 1200);
+    confetti(); if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
   };
   if (cfg.claim_verify === 'none') {
     shell(box, h('div', { class: 'card', style: { textAlign: 'center' } }, h('div', { class: 'spinner' }), h('p', {}, 'กำลังรับแต้มเข้าบัญชี ', h('strong', {}, `${me.first_name || ''} (${me.member_no})`))));
@@ -202,13 +206,13 @@ function homePage() {
   shell(
     suggest ? h('div', { class: 'card', style: { background: 'var(--warn-soft)' } }, h('strong', {}, 'แนะนำให้เปลี่ยนรหัสผ่าน'), h('p', { class: 'small' }, 'คุณยังใช้รหัสเริ่มต้น (4 ตัวท้ายของเบอร์) — เปลี่ยนตอนนี้หรือภายหลังก็ได้'),
       h('div', { class: 'row' }, h('a', { class: 'btn sm primary', href: '#/account' }, 'เปลี่ยนตอนนี้'), h('button', { class: 'btn sm', onclick: () => { store.del('suggest_pw'); homePage(); } }, 'ไว้ภายหลัง'))) : null,
-    h('div', { class: 'mcard', style: { '--tier': tier.color || '#e8321f' } },
+    h('div', { class: 'mcard', id: 'mcard', style: `--tier:${/^#[0-9a-f]{3,8}$/i.test(tier.color || '') ? tier.color : '#e8321f'}` }, h('i', { class: 'holo' }),
       h('div', { class: 'row between' }, h('div', { class: 'chip' }), h('span', { class: 'badge', style: { background: '#fff', color: '#111' } }, tier.icon || '⭐', ' ', tier.name || 'Member')),
-      h('div', { style: { marginTop: '1em' } }, h('div', { class: 'small' }, 'แต้มคงเหลือ'), h('div', { class: 'pts' }, m.points.toLocaleString()),
+      h('div', { style: { marginTop: '1em' } }, h('div', { class: 'small' }, 'แต้มคงเหลือ'), h('div', { class: 'pts', id: 'mpts' }, '0'),
         m.reserved_points ? h('div', { class: 'small' }, `สำรองไว้สำหรับคูปอง ${m.reserved_points} แต้ม`) : null,
         m.expiring_points ? h('div', { class: 'small' }, `⏳ ${m.expiring_points} แต้มจะหมดอายุ ${fmtTime(m.expiring_first)}`) : null),
       h('div', { class: 'no', style: { marginTop: '1em' } }, `${m.first_name || ''} ${m.last_name || ''} · ${m.member_no}`),
-      pr ? h('div', { style: { marginTop: '.6em' } }, h('div', { class: 'small' }, `ความคืบหน้าสู่ ${pr.name} ${m.progress.pct}%`), h('div', { class: 'prog' }, h('i', { style: { width: m.progress.pct + '%' } })),
+      pr ? h('div', { style: { marginTop: '.6em' } }, h('div', { class: 'small' }, `ความคืบหน้าสู่ ${pr.name} ${m.progress.pct}%`), h('div', { class: 'prog' }, h('i', { style: `--w:${Math.max(0, Math.min(100, Number(m.progress.pct) || 0))}%` })),
         h('div', { class: 'small' }, m.progress.need.map((n) => (n.kind === 'spent' ? `ยอดซื้อ ${baht(n.have)}/${baht(n.need)} บาท` : `มาใช้บริการ ${n.have}/${n.need} ครั้ง`)).join(' · '))) : h('div', { class: 'small', style: { marginTop: '.6em' } }, 'คุณอยู่ระดับสูงสุดแล้ว 🎉')),
     h('div', { class: 'barcode-card' }, h('canvas', { id: 'mbc', width: 320, height: 70 }), h('div', { class: 'small muted' }, 'แสดงบาร์โค้ดนี้หรือบอกเบอร์โทรเพื่อสะสมแต้มที่ร้าน')),
     h('a', { class: 'scan-cta', href: '#/scan' }, h('span', { class: 'ic' }, scanIcon()),
@@ -221,6 +225,37 @@ function homePage() {
       h('a', { class: 'btn', href: '#/points' }, h('b', {}, '⭐'), 'ประวัติแต้ม'),
       h('a', { class: 'btn', href: '#/benefits' }, h('b', {}, '👑'), 'สิทธิประโยชน์')));
   drawBarcode($('#mbc'), m.member_no);
+  // points count up from what the member saw last time (first visit: from 0)
+  const pts = $('#mpts'); const seen = Number(store.get('seen_points') ?? 0);
+  pts.dataset.v = seen; countTo(pts, m.points, (v) => v.toLocaleString(), 1100);
+  if (m.points > seen && seen) setTimeout(() => sparkle($('#mcard')), 700);
+  store.set('seen_points', m.points);
+  tilt($('#mcard'));
+}
+// the membership card leans toward your finger / mouse and its holographic sheen follows
+function tilt(card) {
+  if (!card || matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.dataset.posFx === 'off') return;
+  const move = (x, y) => { const r = card.getBoundingClientRect(); const px = (x - r.left) / r.width - 0.5, py = (y - r.top) / r.height - 0.5;
+    card.style.transform = `perspective(800px) rotateY(${px * 14}deg) rotateX(${-py * 12}deg) translateZ(0)`; card.style.setProperty('--mx', (px + 0.5) * 100 + '%'); card.style.setProperty('--my', (py + 0.5) * 100 + '%'); };
+  card.addEventListener('pointermove', (e) => move(e.clientX, e.clientY));
+  card.addEventListener('pointerleave', () => { card.style.transform = ''; });
+  // phones: lean with the device when the browser allows it without asking
+  if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission !== 'function') {
+    const on = (e) => { if (!document.body.contains(card)) return window.removeEventListener('deviceorientation', on); if (e.gamma == null) return;
+      const r = card.getBoundingClientRect(); move(r.left + r.width * (0.5 + Math.max(-0.5, Math.min(0.5, e.gamma / 60))), r.top + r.height * (0.5 + Math.max(-0.5, Math.min(0.5, (e.beta - 40) / 60)))); };
+    window.addEventListener('deviceorientation', on);
+  }
+}
+function sparkle(host) {
+  if (!host) return;
+  const box = h('div', { class: 'sparkles' }, Array.from({ length: 14 }, (_, i) => h('i', { style: `left:${10 + Math.random() * 80}%;top:${10 + Math.random() * 70}%;animation-delay:${i * 60}ms` }, i % 2 ? '✨' : '⭐')));
+  host.append(box); setTimeout(() => box.remove(), 1600);
+}
+function confetti() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.dataset.posFx === 'off') return;
+  const colors = ['#facc15', '#f97316', '#ef4444', '#22c55e', '#3b82f6', '#ec4899'];
+  const box = h('div', { class: 'mconfetti' }, Array.from({ length: 70 }, (_, i) => h('i', { style: `left:${Math.random() * 100}%;background:${colors[i % colors.length]};animation-delay:${Math.random() * 0.5}s;animation-duration:${1.8 + Math.random() * 1.6}s;--r:${Math.round(Math.random() * 720)}deg` })));
+  document.body.append(box); setTimeout(() => box.remove(), 4200);
 }
 
 // ---------- scan a receipt QR inside the member site ----------

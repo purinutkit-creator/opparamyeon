@@ -6,7 +6,7 @@ const still = () => level() === 'off' || matchMedia('(prefers-reduced-motion: re
 export function setFxLevel(v) { document.documentElement.dataset.posFx = ['extra', 'normal', 'off'].includes(v) ? v : 'normal'; }
 
 // material-style ripple from the point that was touched
-const RIPPLE = '.btn, .prod, .opt, .tab, .chip, .qp-tile, .seg button, .key, .qty button';
+const RIPPLE = '.btn, .prod, .opt, .tab, .chip, .qp-tile, .seg button, .key, .qty button, nav.bot a, .scan-cta';
 document.addEventListener('pointerdown', (e) => {
   if (still()) return;
   const el = e.target.closest(RIPPLE);
@@ -62,13 +62,13 @@ function burst(el) {
 }
 
 // count a money label from its last value to the new one ("1,234.00 ฿")
-export function countTo(el, to, fmt) {
+export function countTo(el, to, fmt, ms = 420) {
   if (!el) return;
   const from = Number(el.dataset.v ?? to);
   el.dataset.v = to;
   if (still() || from === to) { el.textContent = fmt(to); return; }
   el.classList.remove('fx-bump'); void el.offsetWidth; el.classList.add('fx-bump');
-  const t0 = performance.now(), ms = 420;
+  const t0 = performance.now();
   const step = (t) => { const k = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - k, 3); el.textContent = fmt(Math.round(from + (to - from) * e)); if (k < 1) requestAnimationFrame(step); };
   el.textContent = fmt(from);
   requestAnimationFrame(step);

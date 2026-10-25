@@ -510,7 +510,7 @@ function payDialog() {
       h('div', { class: 'muted small', style: { textAlign: 'center' } }, `${t.bowls} ${U()} · ${dineLabel(orderDineType(st.cart.lines))}`),
       pays.length ? h('div', { class: 'card', style: { margin: '.6em 0' } }, pays.map((p, i) => row(h('span', {}, methods.find((m) => m.id === p.method).name, ' ', h('button', { class: 'chip', onclick: () => { pays.splice(i, 1); drawLeft(); drawRight(); } }, 'ลบ')),
         baht(p.method === 'cash' ? p.received : p.amount))), row('คงเหลือ', baht(rem))) : null,
-      h('div', { class: 'pay-methods' }, methods.map((m) => h('button', { class: 'btn big' + (method === m.id ? ' on' : ''), onclick: () => { method = m.id; amt.value = ''; drawLeft(); drawRight(); } }, m.name))),
+      h('div', { class: 'pay-methods' }, methods.map((m) => h('button', { class: 'btn big' + (method === m.id ? ' on' : ''), onclick: () => { method = m.id; fillAmt(); drawLeft(); drawRight(); } }, m.name))),
       h('div', { style: { marginTop: '1em' } }, h('label', { class: 'switch' }, printReceipt, 'พิมพ์ใบเสร็จ'), ' ', h('label', { class: 'switch' }, printQueue, 'พิมพ์ใบเลขคิว'), ' ',
         h('label', { class: 'switch' }, printMerchant, 'พิมพ์ใบสรุปร้านค้า'), ' ', h('label', { class: 'switch' }, printMobile, 'พิมพ์ใบ Mobile Ordering')));
   };
@@ -540,9 +540,11 @@ function payDialog() {
     if (!(v > 0)) return toast('กรุณาใส่จำนวนเงิน', 'warn');
     if (method !== 'cash' && v > rem) return toast('ช่องทางนี้รับได้ไม่เกินยอดคงเหลือ', 'warn');
     pays.push(method === 'cash' ? { method, amount: Math.min(v, rem), received: v } : { method, amount: v });
-    amt.value = ''; drawLeft(); drawRight();
+    fillAmt(); drawLeft(); drawRight();
   };
-  amt.value = '';
+  // cash: the cashier keys what they received; QR/transfer/card: the amount is the bill (what is left of it)
+  const fillAmt = () => { amt.value = method === 'cash' ? '' : (remaining() / 100).toFixed(2); };
+  fillAmt();
   drawLeft(); drawRight();
   const idem = st.cart.idem; // same key on retry → never double charged
   modal('ชำระเงิน', h('div', { class: 'pay-grid' }, left, right), { wide: true, onClose: () => pushDisplay(), actions: [
