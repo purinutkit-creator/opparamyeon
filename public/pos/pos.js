@@ -261,7 +261,8 @@ function quickPick(p, groups, chosenSoFar = []) {
 function optionsDialog(p, editLine = null) {
   const groups = p.option_groups.map((gid) => st.catalog.option_groups.find((g) => g.id === gid)).filter(Boolean);
   const chosen = new Map(groups.map((g) => [g.id, new Set((editLine ? editLine.options : []).filter((o) => o.group_id === g.id).map((o) => o.id))]));
-  for (const g of groups) if (g.min_select && !chosen.get(g.id).size && g.options[0]) chosen.get(g.id).add(g.options[0].id);
+  // nothing is pre-selected: the cashier taps what the customer asked for
+  let tried = false;
   let qty = editLine ? editLine.qty : 1;
   let dine = editLine ? editLine.dine_type : st.cart.dine_type;
   const note = h('input', { class: 'input', placeholder: 'หมายเหตุ เช่น ไม่ใส่ต้นหอม', value: editLine ? editLine.note : '' });
@@ -273,15 +274,17 @@ function optionsDialog(p, editLine = null) {
   const draw = () => {
     const price = p.price + groups.reduce((s, g) => s + g.options.filter((o) => chosen.get(g.id).has(o.id)).reduce((a, o) => a + o.price, 0), 0);
     body.replaceChildren(
-      ...groups.map((g) => h('div', { class: 'opt-group' + (g.min_select ? ' req' : ' addon') + (g.display === 'quick' ? ' quick' : '') }, h('h4', {}, big ? h('span', { class: 'gtag' }, g.min_select ? 'เลือก' : '✨ ADD-ON') : null, g.name,
-          h('span', { class: big ? 'gnote' : 'muted small' }, g.min_select ? ` บังคับ${g.max_select > 1 ? ` · เลือกได้ ${g.max_select}` : ' · เลือก 1'}` : g.max_select ? ` ไม่บังคับ · เพิ่มได้ไม่เกิน ${g.max_select}` : ' ไม่บังคับ')),
+      ...groups.map((g) => { const need = chosen.get(g.id).size < (g.min_select || 0);
+        return h('div', { class: 'opt-group' + (g.min_select ? ' req' : ' addon') + (g.display === 'quick' ? ' quick' : '') + (tried && need ? ' missing' : ''), 'data-g': g.id }, h('h4', {}, big ? h('span', { class: 'gtag' }, g.min_select ? 'เลือก' : '✨ ADD-ON') : null, g.name,
+          h('span', { class: big ? 'gnote' : 'muted small' }, g.min_select ? ` บังคับ${g.max_select > 1 ? ` · เลือกได้ ${g.max_select}` : ' · เลือก 1'}` : g.max_select ? ` ไม่บังคับ · เพิ่มได้ไม่เกิน ${g.max_select}` : ' ไม่บังคับ'),
+          g.min_select ? (need ? h('span', { class: 'pickhint' }, '👆 กดที่รายการที่ต้องการ') : h('span', { class: 'pickhint ok' }, '✓ เลือกแล้ว')) : null),
         h('div', { class: 'opts' }, g.options.map((o) => h('button', { class: 'opt' + (chosen.get(g.id).has(o.id) ? ' on' : ''), onclick: () => {
           const set = chosen.get(g.id);
           if (set.has(o.id)) { if (!(g.min_select && set.size <= g.min_select)) set.delete(o.id); }
           else { if (g.max_select === 1) set.clear(); if (!g.max_select || set.size < g.max_select) set.add(o.id); else toast(`เลือกได้ไม่เกิน ${g.max_select}`, 'warn'); }
           draw();
         } }, big || g.display === 'quick' ? [chosen.get(g.id).has(o.id) ? h('span', { class: 'tick' }, '✓') : null, o.image ? h('img', { class: 'oimg', src: o.image, alt: '' }) : null, h('b', {}, o.name), h('small', {}, o.price ? `+${baht(o.price)} ฿` : 'ไม่เพิ่มราคา')]
-          : [o.name, o.price ? ` +${baht(o.price)}` : '']))))),
+          : [o.name, o.price ? ` +${baht(o.price)}` : ''])))); }),
       // dine-in/takeaway comes from the bill (top of the cart); change a single line with its chip in the cart
       h('div', { class: 'row', style: { marginBottom: '.8em', justifyContent: 'space-between' } },
         h('span', { class: 'dine-note ' + dine }, dine === 'takeaway' ? '🥡 กลับบ้าน' : '🍽️ ทานที่ร้าน', h('small', {}, ' ตามบิล')),
@@ -292,7 +295,8 @@ function optionsDialog(p, editLine = null) {
   };
   draw();
   modal((big ? '✨ ' : '') + p.name, body, { autofocus: false, wide: big, actions: [{ label: 'ยกเลิก', onClick: () => {} }, { label: editLine ? 'บันทึก' : 'เพิ่มลงบิล', class: 'primary', onClick: () => {
-    for (const g of groups) if (chosen.get(g.id).size < g.min_select) { toast('กรุณาเลือก ' + g.name, 'warn'); return false; }
+    const missing = groups.find((g) => chosen.get(g.id).size < g.min_select);
+    if (missing) { tried = true; draw(); body.querySelectorAll('.opt-group.missing').forEach((x) => x.classList.add('shake')); toast('กรุณาเลือก ' + missing.name, 'warn'); const el = body.querySelector(`.opt-group[data-g="${missing.id}"]`); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); return false; }
     const options = groups.flatMap((g) => g.options.filter((o) => chosen.get(g.id).has(o.id)).map((o) => ({ group_id: g.id, group: g.name, id: o.id, name: o.name, price: o.price, addon: !g.min_select, ...(o.rename_to ? { rename_to: o.rename_to, rename_all: !!g.rename_all } : {}), ...markOf(g, o) })));
     if (editLine) Object.assign(editLine, { options, qty, dine_type: dine, note: note.value });
     else {

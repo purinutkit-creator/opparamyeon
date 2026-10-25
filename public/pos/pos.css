@@ -267,3 +267,14 @@ body { background: var(--bg); }
 .opt-group .opt .oimg { width: 72px; height: 72px; object-fit: cover; border-radius: 12px; }
 .bigopts .opt-group .opt .oimg { width: 90px; height: 90px; }
 .oc.kitchen { background: var(--info-soft); color: var(--info); box-shadow: none; }
+
+/* required option groups start empty: a small hint until the cashier taps a choice */
+.opt-group h4 .pickhint { display: inline-flex; align-items: center; font-family: var(--font); font-size: .62em; font-weight: 800; padding: .25em .8em; border-radius: 99px; margin-left: .4em;
+  background: #f59e0b; color: #fff; box-shadow: 0 2px 8px rgb(245 158 11 / .35); animation: hintbob 1.6s ease-in-out infinite; }
+.opt-group h4 .pickhint.ok { background: #16a34a; box-shadow: none; animation: none; }
+@keyframes hintbob { 50% { transform: translateY(-2px); } }
+.opt-group.missing { outline: 2px solid #ef4444; outline-offset: 2px; border-radius: 14px; }
+.opt-group.missing.shake { animation: shake .4s; }
+.opt-group.missing .pickhint { background: #ef4444; box-shadow: 0 2px 8px rgb(239 68 68 / .4); }
+@keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+@media (prefers-reduced-motion: reduce) { .opt-group h4 .pickhint, .opt-group.missing.shake { animation: none; } }
