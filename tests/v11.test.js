@@ -416,3 +416,20 @@ test('ตัวเลือกเปลี่ยนชื่อรายกา�
   const renamed = rc.find((i) => i.name === 'ไข่ออนเซ็น');
   assert.ok(renamed && !renamed.options.length, 'ใบเสร็จไม่พิมพ์ตัวเลือกซ้ำ');
 });
+
+test('ตัวเลือก ✓/✗ บนจอลูกค้า: "โรยสาหร่ายไหม" → ✓ โรยสาหร่าย / ✗ โรยสาหร่าย', async () => {
+  const { optionTopic, displayOption } = await import('../public/shared/core.js');
+  assert.equal(optionTopic({ name: 'โรยสาหร่ายไหม' }), 'โรยสาหร่าย', 'ตัดคำว่า "ไหม" ออกเมื่อไม่ได้ตั้งหัวข้อ');
+  assert.equal(optionTopic({ name: 'x', topic: 'ใส่ผักชี' }), 'ใส่ผักชี');
+  const g = (await S.call('POST', '/api/option-groups', { name: 'โรยสาหร่ายไหม', topic: 'โรยสาหร่าย', min_select: 1, max_select: 1,
+    options: [{ name: 'โรย', price: 0, mark: 'yes' }, { name: 'ไม่โรย', price: 0, mark: 'no' }, { name: 'เยอะๆ', price: 500, mark: 'bogus' }] }, { token: owner })).body.id;
+  const pid = (await S.call('POST', '/api/products', { code: 'SEAW', name: 'ราเมง', price: 9000, option_groups: [g] }, { token: owner })).body.id;
+  const grp = (await S.call('GET', '/api/catalog', undefined, { token: owner })).body.option_groups.find((x) => x.id === g);
+  assert.equal(grp.topic, 'โรยสาหร่าย');
+  assert.deepEqual(grp.options.map((o) => o.mark), ['yes', 'no', ''], 'ค่าที่ไม่รู้จักไม่ถูกบันทึก');
+  const o = await sell([line(pid, 1, { options: [{ group_id: g, id: grp.options[0].id }] }), line(pid, 1, { options: [{ group_id: g, id: grp.options[1].id }] })]);
+  const items = (await S.call('GET', '/api/orders/' + o.id, undefined, { token: owner })).body.items;
+  const shown = items.map((i) => i.options.map(displayOption).join(',')).sort();
+  assert.deepEqual(shown, ['✓ โรยสาหร่าย', '✗ โรยสาหร่าย'].sort());
+  assert.equal(displayOption({ name: 'ชีส', addon: true }), '+ ชีส');
+});

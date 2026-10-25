@@ -1,7 +1,7 @@
 import { db, J, S } from '../db.js';
 import { id, now, getSettings, businessDateOf, nextCounter, bad, conflict, notFound, forbidden, emit, audit, token, addMinutes } from './util.js';
 import { can } from './auth.js';
-import { computeTotals, orderDineType, splitTickets, countBowls, dineLabel, isAddon, renamedLine } from '../../public/shared/core.js';
+import { computeTotals, orderDineType, splitTickets, countBowls, dineLabel, isAddon, renamedLine, markOf } from '../../public/shared/core.js';
 import { enqueue, orderDocData, fmtDate } from './print.js';
 import { awardOrder, reverseForRefund } from './members.js';
 
@@ -43,7 +43,7 @@ export async function priceLines(rawLines, { staff = null, source = 'pos', exist
       byGroup.set(g.id, (byGroup.get(g.id) || 0) + 1);
       // add-on = from an optional group (toppings, extras); choice = from a required group (noodle, spice level)
       chosen.push({ group_id: g.id, group: g.name, id: opt.id, name: opt.name, price: Number(opt.price) || 0, cost: Number(opt.cost) || 0, recipe: opt.recipe || [], addon: !(Number(g.min_select) > 0),
-        ...(opt.rename_to ? { rename_to: opt.rename_to, rename_all: !!g.rename_all } : {}) });
+        ...(opt.rename_to ? { rename_to: opt.rename_to, rename_all: !!g.rename_all } : {}), ...markOf(g, opt) });
     }
     for (const gid of groups) {
       const g = await db.get('SELECT * FROM option_groups WHERE id = ?', [gid]);

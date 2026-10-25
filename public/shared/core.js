@@ -1,7 +1,7 @@
 // Pure logic shared by the server (Node) and the browser.
 // Money is always an integer number of satang (1 บาท = 100 satang).
 
-export const VERSION = '1.14.1';
+export const VERSION = '1.15.0';
 
 export const baht = (satang) => {
   const v = (Number(satang) || 0) / 100;
@@ -241,6 +241,13 @@ export function code128(text) {
 
 // option kind for tickets/receipts: add-on (extra the customer added) vs choice (required pick); older orders: priced = add-on
 export const isAddon = (o) => (o && o.addon !== undefined ? !!o.addon : !!(o && o.price > 0));
+
+// Yes/no choices (e.g. group "โรยสาหร่ายไหม": โรย / ไม่โรย) can show on the customer display as a topic with ✓ or ✗.
+// The topic is the group's own setting, or its name without the trailing question word.
+export const optionTopic = (g) => String((g && (g.topic || g.name)) || '').replace(/\s*(ไหม|มั้ย|มั๊ย|หรือไม่|ไม๊)\s*[?？]*$/, '').trim();
+export const markOf = (g, o) => (o && (o.mark === 'yes' || o.mark === 'no') ? { mark: o.mark, topic: optionTopic(g) } : {});
+// text for one chosen option on the customer display: "✓ โรยสาหร่าย" / "✗ โรยสาหร่าย" / "+ ชีส" / "เผ็ดกลาง"
+export const displayOption = (o) => (o.mark && o.topic ? (o.mark === 'yes' ? '✓ ' : '✗ ') + o.topic : (isAddon(o) ? '+ ' : '') + o.name);
 
 // An option can rename the item it is chosen on (e.g. ไข่ไก่ + ออนเซ็น → "ไข่ออนเซ็น").
 // kitchen = kitchen ticket / kitchen screen; everywhere = also POS cart, receipt and customer display when the group says so.

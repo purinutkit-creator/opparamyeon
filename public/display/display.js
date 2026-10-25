@@ -261,7 +261,10 @@ function renderPanel() {
       h('div', { class: 'pts' }, Number(m.points || 0).toLocaleString(), h('small', {}, 'แต้มสะสม'))) : null,
     h('div', { class: 'itemswrap' }, h('div', { class: 'more up' }), h('div', { class: 'items' }, lines.map((l) => {
       const k = l.name + '|' + (l.options || []).join(',');
-      const opts = (l.options || []).map((o) => (String(o).startsWith('+ ') ? h('span', { class: 'add' }, o) : h('span', {}, o)));
+      const opts = (l.options || []).map((o) => { const t = String(o);
+        if (t.startsWith('✓ ')) return h('span', { class: 'yes' }, h('i', {}, '✓'), t.slice(2));
+        if (t.startsWith('✗ ')) return h('span', { class: 'no' }, h('i', {}, '✕'), t.slice(2));
+        return t.startsWith('+ ') ? h('span', { class: 'add' }, t) : h('span', {}, t); });
       if (l.dine_type === 'takeaway' && s.dine_type === 'mixed') opts.push(h('span', { class: 'tw' }, 'กลับบ้าน'));
       return h('div', { class: 'it' + (hot.has(k) ? ' new' : '') }, h('span', { class: 'q' }, l.qty), h('div', { class: 'n' }, h('b', {}, l.name), opts.length ? h('small', {}, opts) : null), h('span', { class: 'p' }, baht(l.price)));
     })), h('div', { class: 'more down' })),
@@ -402,7 +405,7 @@ function renderPrompt() {
 
 function sampleState() {
   return { phase: ['cart', 'pay', 'done'].includes(qs.get('phase')) ? qs.get('phase') : 'pay', queue_no: 'D012', dine_type: 'mixed', table: 'A1', member: { name: 'จี***', points: 120, tier: 'Gold', earn: 22 }, methods: [qs.get('qr') ? 'พร้อมเพย์' : 'เงินสด'],
-    lines: [{ name: 'มาม่าเกาหลีต้นตำรับ', qty: 1, options: ['ชินราเมียน', 'เผ็ดกลาง', '+ ชีส'], price: 10400 }, { name: 'ไข่ออนเซ็น', qty: 2, options: [], price: 3000 }, { name: 'ชาเย็น', qty: 2, options: ['หวานน้อย'], price: 9000, dine_type: 'takeaway' }],
+    lines: [{ name: 'มาม่าเกาหลีต้นตำรับ', qty: 1, options: ['ชินราเมียน', 'เผ็ดกลาง', '+ ชีส', '✓ โรยสาหร่าย', '✗ ใส่ผักชี'], price: 10400 }, { name: 'ไข่ออนเซ็น', qty: 2, options: [], price: 3000 }, { name: 'ชาเย็น', qty: 2, options: ['หวานน้อย'], price: 9000, dine_type: 'takeaway' }],
     items_total: 23580, discount: 1180, discounts: [{ label: 'ส่วนลดสมาชิก Gold 5%', amount: 1180 }], packaging: 0, tax: 0, total: 22400, bowls: 1, received: qs.get('qr') ? 0 : 50000, change: qs.get('qr') ? 0 : 27600, qr: qs.get('qr') ? '00020101021229370016A000000677010111011300668012345675802TH530376454031796304ABCD' : null };
 }
 boot().catch((e) => { console.error(e); root.replaceChildren(h('div', { class: 'empty' }, 'โหลดไม่สำเร็จ ', e.message)); setTimeout(() => location.reload(), 10000); });

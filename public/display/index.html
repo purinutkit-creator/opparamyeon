@@ -102,6 +102,12 @@
   .it .n small { display: flex; flex-wrap: wrap; gap: .5vh; margin-top: .6vh; font-size: .62em; }
   .it .n small span { padding: .15em .7em; border-radius: 999px; background: var(--glass-2); font-weight: 700; }
   .it .n small span.add { background: color-mix(in srgb, #f6c453 85%, transparent); color: #3b2304; }
+  .it .n small span.yes, .it .n small span.no { display: inline-flex; align-items: center; gap: .4em; padding-left: .3em; }
+  .it .n small span.yes { background: rgb(34 197 94 / .22); color: #bbf7d0; }
+  .it .n small span.no { background: rgb(239 68 68 / .2); color: #fecaca; text-decoration: line-through; text-decoration-color: rgb(254 202 202 / .6); }
+  .it .n small span i { font-style: normal; width: 1.45em; height: 1.45em; border-radius: 50%; display: grid; place-items: center; font-weight: 900; font-size: .85em; color: #fff; text-decoration: none; }
+  .it .n small span.yes i { background: #16a34a; } .it .n small span.no i { background: #dc2626; }
+  .it.new .n small span.yes i, .it.new .n small span.no i { animation: popin .5s .3s cubic-bezier(.2,1.5,.4,1) both; }
   .it .n small span.tw { background: #ea580c; color: #fff; }
   .it .p { font-family: var(--hf); font-variant-numeric: tabular-nums; }
   .more { position: absolute; left: 50%; z-index: 2; pointer-events: none; white-space: nowrap; font-weight: 800; font-size: clamp(12px, 1.9vh, 20px); padding: .3em 1em; border-radius: 99px;

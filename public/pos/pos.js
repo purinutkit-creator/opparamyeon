@@ -1,6 +1,6 @@
 import { makeApi, store, socket, uid, storageWarning } from '/shared/api.js';
 import { loginHero, h, $, toast, errToast, modal, confirmBox, promptBox, keypad, fmtTime, STATUS_TH, PREP_TH, SOURCE_TH, JOB_TH, debounce } from '/shared/ui.js';
-import { baht, toSatang, addToCart, computeTotals, countBowls, dineLabel, lineUnitTotal, lineTotal, orderDineType, promptPayPayload, VERSION, maskPhone, pointsFor, isAddon, renamedLine } from '/shared/core.js';
+import { baht, toSatang, addToCart, computeTotals, countBowls, dineLabel, lineUnitTotal, lineTotal, orderDineType, promptPayPayload, VERSION, maskPhone, pointsFor, isAddon, renamedLine, markOf, displayOption } from '/shared/core.js';
 import { applyTheme } from '/shared/theme.js';
 import { applyFonts } from '/shared/fonts.js';
 import { PrintHost, pairPrinter, unpairPrinter, isLinkedHere, testPrint, support, agentUrl, linkOf } from '/shared/printers.js';
@@ -236,7 +236,7 @@ function quickPick(p, groups, chosenSoFar = []) {
     saveCart(); renderCart();
     return;
   }
-  const opt = (o) => ({ group_id: g.id, group: g.name, id: o.id, name: o.name, price: o.price, addon: !g.min_select, ...(o.rename_to ? { rename_to: o.rename_to, rename_all: !!g.rename_all } : {}) });
+  const opt = (o) => ({ group_id: g.id, group: g.name, id: o.id, name: o.name, price: o.price, addon: !g.min_select, ...(o.rename_to ? { rename_to: o.rename_to, rename_all: !!g.rename_all } : {}), ...markOf(g, o) });
   const multi = g.max_select !== 1;
   const picked = new Set();
   const grid = h('div', { class: 'qp-grid' });
@@ -293,7 +293,7 @@ function optionsDialog(p, editLine = null) {
   draw();
   modal((big ? '✨ ' : '') + p.name, body, { autofocus: false, wide: big, actions: [{ label: 'ยกเลิก', onClick: () => {} }, { label: editLine ? 'บันทึก' : 'เพิ่มลงบิล', class: 'primary', onClick: () => {
     for (const g of groups) if (chosen.get(g.id).size < g.min_select) { toast('กรุณาเลือก ' + g.name, 'warn'); return false; }
-    const options = groups.flatMap((g) => g.options.filter((o) => chosen.get(g.id).has(o.id)).map((o) => ({ group_id: g.id, group: g.name, id: o.id, name: o.name, price: o.price, addon: !g.min_select, ...(o.rename_to ? { rename_to: o.rename_to, rename_all: !!g.rename_all } : {}) })));
+    const options = groups.flatMap((g) => g.options.filter((o) => chosen.get(g.id).has(o.id)).map((o) => ({ group_id: g.id, group: g.name, id: o.id, name: o.name, price: o.price, addon: !g.min_select, ...(o.rename_to ? { rename_to: o.rename_to, rename_all: !!g.rename_all } : {}), ...markOf(g, o) })));
     if (editLine) Object.assign(editLine, { options, qty, dine_type: dine, note: note.value });
     else {
       const bowl = p.bowl_count ? nextBowlGroup() : currentBowlGroup();
@@ -594,7 +594,7 @@ function pushDisplay(extra = {}) {
   lastPhase = phase;
   const m = st.cart.member;
   const state = { cart_id: st.cart.cart_id, phase, dine_type: orderDineType(st.cart.lines.length ? st.cart.lines : [{ qty: 1, dine_type: st.cart.dine_type }]),
-    lines: st.cart.lines.map((l) => { const rn = renamedLine(l.name, l.options || [], 'everywhere'); return { name: rn.name, qty: l.qty, options: rn.options.map((o) => (isAddon(o) ? '+ ' + o.name : o.name)), price: lineTotal(l), dine_type: l.dine_type, bowl_group: l.bowl_group }; }),
+    lines: st.cart.lines.map((l) => { const rn = renamedLine(l.name, l.options || [], 'everywhere'); return { name: rn.name, qty: l.qty, options: rn.options.map(displayOption), price: lineTotal(l), dine_type: l.dine_type, bowl_group: l.bowl_group }; }),
     items_total: t.items_total, discount: t.discount, packaging: t.packaging, tax: t.tax, total: t.total, bowls: t.bowls, table: st.cart.table_name,
     member: m && st.settings.members.show_on_display ? { name: (m.first_name || m.nickname || '').slice(0, 2) + '***', points: m.points, tier: m.tier && m.tier.name, earn: previewEarn(st.cart, t) } : null,
     queue_no: st.cart.queue_no || '', discounts: discountRows(st.cart, t),

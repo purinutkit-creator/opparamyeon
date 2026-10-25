@@ -107,6 +107,7 @@ const MIGRATIONS = [
   ['products', 'big_options', 'INTEGER DEFAULT 0'],
   ['option_groups', 'display', "TEXT DEFAULT 'normal'"],
   ['option_groups', 'rename_all', 'INTEGER DEFAULT 0'],
+  ['option_groups', 'topic', "TEXT DEFAULT ''"],
 ];
 
 class SqliteDB {
