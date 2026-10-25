@@ -72,6 +72,10 @@
   .topm { background: linear-gradient(90deg, var(--deep), var(--deep-2)); color: #fff; }
   .chip { border: 1px solid var(--line); background: var(--surface2); color: var(--text); border-radius: 999px; padding: .35em .85em; font: inherit; font-size: .88em; font-weight: 700; cursor: pointer; }
   .chip:hover { border-color: var(--brand); color: var(--brand); }
+  .og-pic { width: 44px; height: 44px; border-radius: 10px; border: 1px dashed var(--line); background: var(--surface2); display: grid; place-items: center; cursor: pointer; padding: 0; overflow: hidden; flex: 0 0 44px; }
+  .og-pic img { width: 100%; height: 100%; object-fit: cover; }
+  .og-row { display: flex; flex-wrap: wrap; gap: .4em; align-items: center; margin-bottom: .5em; padding-bottom: .5em; border-bottom: 1px dashed var(--line); }
+  .og-row > .input { width: auto; } .og-row > .og-name { flex: 1 1 180px; }
   /* product assistant */
   .as-step1 { display: grid; grid-template-columns: 220px 1fr; gap: 1em; align-items: start; }
   .as-photo { aspect-ratio: 1; border-radius: 20px; background: var(--surface2); border: 2px dashed var(--line); display: grid; place-items: center; overflow: hidden; text-align: center; color: var(--muted); }

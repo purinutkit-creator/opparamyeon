@@ -214,12 +214,49 @@ function addByCode(code) {
 function currentBowlGroup() { return st.activeBowl || null; }
 function pickProduct(p, { fromScan = false } = {}) {
   if (p.sold_out) return toast('สินค้าหมด: ' + p.name, 'warn');
-  if (p.option_groups.length) return optionsDialog(p);
+  if (p.option_groups.length) {
+    // "เลือกด่วน" groups (e.g. egg style): big picture buttons right away, one tap adds the item
+    const groups = p.option_groups.map((gid) => st.catalog.option_groups.find((g) => g.id === gid)).filter(Boolean);
+    if (groups.length && groups.every((g) => g.display === 'quick')) return quickPick(p, groups);
+    return optionsDialog(p);
+  }
   // toppings (0 bowls) go into the currently selected bowl so they print with it
   const bowl = !p.bowl_count ? currentBowlGroup() : null;
   addToCart(st.cart, p, { dine_type: st.cart.dine_type, bowl_group: bowl });
   if (fromScan) toast(`+1 ${p.name}`, 'ok', 900);
   saveCart(); renderCart();
+}
+function quickPick(p, groups, chosenSoFar = []) {
+  const g = groups[0];
+  if (!g) {
+    const bowl = p.bowl_count ? nextBowlGroup() : currentBowlGroup();
+    const l = addToCart(st.cart, p, { qty: 1, options: chosenSoFar, dine_type: st.cart.dine_type, note: '', bowl_group: bowl });
+    if (p.bowl_count && l.qty === 1) st.activeBowl = l.bowl_group;
+    toast(`+1 ${p.name}${chosenSoFar.length ? ' · ' + chosenSoFar.map((o) => o.name).join(', ') : ''}`, 'ok', 1200);
+    saveCart(); renderCart();
+    return;
+  }
+  const opt = (o) => ({ group_id: g.id, group: g.name, id: o.id, name: o.name, price: o.price, addon: !g.min_select });
+  const multi = g.max_select !== 1;
+  const picked = new Set();
+  const grid = h('div', { class: 'qp-grid' });
+  let m;
+  const next = (list) => { m.close(); quickPick(p, groups.slice(1), [...chosenSoFar, ...list]); };
+  const tile = (o) => h('button', { class: 'qp-tile' + (picked.has(o.id) ? ' on' : ''), onclick: () => {
+    if (!multi) return next([opt(o)]);
+    if (picked.has(o.id)) picked.delete(o.id); else if (!g.max_select || picked.size < g.max_select) picked.add(o.id); else return toast(`เลือกได้ไม่เกิน ${g.max_select}`, 'warn');
+    draw();
+  } }, h('span', { class: 'qp-img' }, o.image ? h('img', { src: o.image, alt: '' }) : h('b', {}, o.name.slice(0, 2))), h('strong', {}, o.name), h('small', {}, o.price ? `+${baht(o.price)} ฿` : 'ไม่เพิ่มราคา'),
+    picked.has(o.id) ? h('i', {}, '✓') : null);
+  const draw = () => grid.replaceChildren(...g.options.map(tile),
+    !g.min_select && !multi ? h('button', { class: 'qp-tile plain', onclick: () => next([]) }, h('span', { class: 'qp-img' }, h('b', {}, '—')), h('strong', {}, 'แบบปกติ'), h('small', {}, 'ไม่เลือก')) : null);
+  draw();
+  m = modal(`${p.name} · ${g.name}`, h('div', {}, h('p', { class: 'muted', style: { margin: '0 0 .6em' } }, multi ? `แตะเลือก${g.max_select ? `ได้ไม่เกิน ${g.max_select}` : ''} แล้วกด "เพิ่มลงบิล"` : 'แตะครั้งเดียว เพิ่มลงบิลทันที'), grid),
+    { wide: true, autofocus: false, actions: [{ label: '📝 หมายเหตุ / จำนวน', onClick: () => { optionsDialog(p); } },
+      multi ? { label: 'เพิ่มลงบิล', class: 'primary', onClick: () => {
+        if (picked.size < (g.min_select || 0)) { toast(`กรุณาเลือก ${g.name}`, 'warn'); return false; }
+        next(g.options.filter((o) => picked.has(o.id)).map(opt)); return false;
+      } } : { label: 'ยกเลิก', onClick: () => {} }] });
 }
 function optionsDialog(p, editLine = null) {
   const groups = p.option_groups.map((gid) => st.catalog.option_groups.find((g) => g.id === gid)).filter(Boolean);
@@ -236,14 +273,14 @@ function optionsDialog(p, editLine = null) {
   const draw = () => {
     const price = p.price + groups.reduce((s, g) => s + g.options.filter((o) => chosen.get(g.id).has(o.id)).reduce((a, o) => a + o.price, 0), 0);
     body.replaceChildren(
-      ...groups.map((g) => h('div', { class: 'opt-group' + (g.min_select ? ' req' : ' addon') }, h('h4', {}, big ? h('span', { class: 'gtag' }, g.min_select ? 'เลือก' : '✨ ADD-ON') : null, g.name,
+      ...groups.map((g) => h('div', { class: 'opt-group' + (g.min_select ? ' req' : ' addon') + (g.display === 'quick' ? ' quick' : '') }, h('h4', {}, big ? h('span', { class: 'gtag' }, g.min_select ? 'เลือก' : '✨ ADD-ON') : null, g.name,
           h('span', { class: big ? 'gnote' : 'muted small' }, g.min_select ? ` บังคับ${g.max_select > 1 ? ` · เลือกได้ ${g.max_select}` : ' · เลือก 1'}` : g.max_select ? ` ไม่บังคับ · เพิ่มได้ไม่เกิน ${g.max_select}` : ' ไม่บังคับ')),
         h('div', { class: 'opts' }, g.options.map((o) => h('button', { class: 'opt' + (chosen.get(g.id).has(o.id) ? ' on' : ''), onclick: () => {
           const set = chosen.get(g.id);
           if (set.has(o.id)) { if (!(g.min_select && set.size <= g.min_select)) set.delete(o.id); }
           else { if (g.max_select === 1) set.clear(); if (!g.max_select || set.size < g.max_select) set.add(o.id); else toast(`เลือกได้ไม่เกิน ${g.max_select}`, 'warn'); }
           draw();
-        } }, big ? [chosen.get(g.id).has(o.id) ? h('span', { class: 'tick' }, '✓') : null, h('b', {}, o.name), h('small', {}, o.price ? `+${baht(o.price)} ฿` : 'ไม่เพิ่มราคา')]
+        } }, big || g.display === 'quick' ? [chosen.get(g.id).has(o.id) ? h('span', { class: 'tick' }, '✓') : null, o.image ? h('img', { class: 'oimg', src: o.image, alt: '' }) : null, h('b', {}, o.name), h('small', {}, o.price ? `+${baht(o.price)} ฿` : 'ไม่เพิ่มราคา')]
           : [o.name, o.price ? ` +${baht(o.price)}` : '']))))),
       // dine-in/takeaway comes from the bill (top of the cart); change a single line with its chip in the cart
       h('div', { class: 'row', style: { marginBottom: '.8em', justifyContent: 'space-between' } },

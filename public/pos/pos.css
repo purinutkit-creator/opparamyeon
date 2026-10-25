@@ -247,3 +247,22 @@ body { background: var(--bg); }
 .cart-head .seg button.on { background: #1d4ed8; border-color: #1d4ed8; color: #fff; box-shadow: 0 4px 12px rgb(29 78 216 / .35); }
 .cart-head .seg button.on.takeaway { background: #ea580c; border-color: #ea580c; box-shadow: 0 4px 12px rgb(234 88 12 / .35); }
 .cart-head .seg button.on::before { content: '✓ '; font-weight: 900; }
+
+/* v1.11 quick pick (e.g. egg style): big picture buttons, one tap adds the item */
+.qp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: .8em; }
+.qp-tile { position: relative; border: 3px solid var(--line); background: var(--surface); color: var(--text); border-radius: 22px; padding: .6em; display: grid; gap: .3em; justify-items: center; text-align: center;
+  cursor: pointer; font: inherit; touch-action: manipulation; transition: transform .08s; min-height: 200px; }
+.qp-tile:active { transform: scale(.96); }
+.qp-tile:hover { border-color: var(--brand); }
+.qp-tile.on { border-color: var(--brand); background: var(--brand-soft); }
+.qp-img { width: 100%; aspect-ratio: 1; border-radius: 16px; overflow: hidden; display: grid; place-items: center; background: var(--surface2); }
+.qp-img img { width: 100%; height: 100%; object-fit: cover; }
+.qp-img b { font-family: var(--head-font); font-size: 2.4em; color: var(--brand); }
+.qp-tile strong { font-size: 1.25em; line-height: 1.2; }
+.qp-tile small { color: var(--muted); font-weight: 700; }
+.qp-tile i { position: absolute; top: 10px; right: 10px; width: 32px; height: 32px; border-radius: 50%; background: var(--brand); color: #fff; display: grid; place-items: center; font-style: normal; font-weight: 800; }
+.qp-tile.plain .qp-img b { color: var(--muted); }
+.opt-group.quick .opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: .6em; }
+.opt-group.quick .opt { display: grid; justify-items: center; gap: .2em; min-height: 90px; padding: .5em; }
+.opt-group .opt .oimg { width: 72px; height: 72px; object-fit: cover; border-radius: 12px; }
+.bigopts .opt-group .opt .oimg { width: 90px; height: 90px; }

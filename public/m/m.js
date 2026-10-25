@@ -70,7 +70,7 @@ function pick(p) {
           const s = chosen.get(g.id);
           if (s.has(o.id)) { if (!(g.min_select && s.size <= g.min_select)) s.delete(o.id); } else { if (g.max_select === 1) s.clear(); if (!g.max_select || s.size < g.max_select) s.add(o.id); }
           draw();
-        } }, o.name, o.price ? ` +${baht(o.price)}` : ''))))),
+        } }, o.image ? h('img', { class: 'oimg', src: o.image, alt: '' }) : null, o.name, o.price ? ` +${baht(o.price)}` : ''))))),
       h('label', { class: 'field' }, 'หมายเหตุ', note),
       h('div', { class: 'row between' }, h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => { qty = Math.max(1, qty - 1); draw(); } }, '−'), h('strong', { style: { fontSize: '1.4em' } }, qty), h('button', { class: 'btn', onclick: () => { qty++; draw(); } }, '+')),
         h('strong', { style: { fontSize: '1.4em' } }, baht(unit * qty), ' ฿')));

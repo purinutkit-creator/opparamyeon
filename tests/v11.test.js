@@ -369,3 +369,25 @@ test('ผู้ช่วยเพิ่มสินค้า: ไม่ใช้
     mock.close();
   }
 });
+
+test('ตัวเลือกเลือกด่วน (เช่น แบบไข่): บันทึกรูปแบบ "quick" และรูปของแต่ละตัวเลือก ส่งถึง POS; ขายแล้วใบครัวบอกแบบที่เลือก', async () => {
+  const g = await S.call('POST', '/api/option-groups', { name: 'แบบไข่', min_select: 1, max_select: 1, display: 'quick',
+    options: [{ name: 'ไข่ออนเซ็น', price: 0, image: '/files/abc-123' }, { name: 'ไข่ตี', price: 0, image: 'javascript:alert(1)' }, { name: 'ไข่ต้มสุก', price: 500 }] }, { token: owner });
+  assert.equal(g.status, 200, JSON.stringify(g.body));
+  const p = await S.call('POST', '/api/products', { code: 'EGG1', name: 'ไข่ไก่', price: 1000, option_groups: [g.body.id] }, { token: owner });
+  const cat = (await S.call('GET', '/api/catalog', undefined, { token: owner })).body;
+  const grp = cat.option_groups.find((x) => x.id === g.body.id);
+  assert.equal(grp.display, 'quick');
+  assert.equal(grp.options[0].image, '/files/abc-123');
+  assert.equal(grp.options[1].image, '', 'ลิงก์รูปที่ไม่ปลอดภัยถูกตัดทิ้ง');
+  assert.ok(cat.products.find((x) => x.id === p.body.id).option_groups.includes(g.body.id));
+  const onsen = grp.options[0].id, boiled = grp.options[2].id;
+  const o = await sell([line(p.body.id, 1, { options: [{ group_id: g.body.id, id: onsen }] }), line(p.body.id, 1, { options: [{ group_id: g.body.id, id: boiled }] })]);
+  assert.equal(o.total, 1000 + 1500, 'ราคาตัวเลือกจากฐานข้อมูล');
+  const kt = await db.all('SELECT content FROM kitchen_tickets WHERE order_id = ?', [o.id]);
+  const opts = kt.flatMap((k) => JSON.parse(k.content).lines).flatMap((l) => l.options);
+  assert.ok(opts.some((x) => x.group === 'แบบไข่' && x.name === 'ไข่ออนเซ็น' && x.addon === false), 'ใบครัวบอก "แบบไข่: ไข่ออนเซ็น"');
+  assert.ok(opts.some((x) => x.name === 'ไข่ต้มสุก'));
+  const missing = await S.call('POST', '/api/orders/checkout', { idempotency_key: key(), cart: { lines: [line(p.body.id, 1)] }, payments: [{ method: 'cash', amount: 1e6, received: 1e6 }] }, { token: owner, terminal: 'pos1' });
+  assert.equal(missing.status, 400, 'ต้องเลือกแบบไข่');
+});
