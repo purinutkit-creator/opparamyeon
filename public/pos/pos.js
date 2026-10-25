@@ -2,6 +2,7 @@ import { makeApi, store, socket, uid, storageWarning } from '/shared/api.js';
 import { loginHero, h, $, toast, errToast, modal, confirmBox, promptBox, keypad, fmtTime, STATUS_TH, PREP_TH, SOURCE_TH, JOB_TH, debounce } from '/shared/ui.js';
 import { baht, toSatang, addToCart, computeTotals, countBowls, dineLabel, lineUnitTotal, lineTotal, orderDineType, promptPayPayload, VERSION, maskPhone, pointsFor, isAddon, renamedLine, markOf, displayOption } from '/shared/core.js';
 import { applyTheme } from '/shared/theme.js';
+import { rememberTap, flyToCart, countTo, lineChanges, setFxLevel } from './fx.js';
 import { applyFonts } from '/shared/fonts.js';
 import { PrintHost, pairPrinter, unpairPrinter, isLinkedHere, testPrint, support, agentUrl, linkOf } from '/shared/printers.js';
 import { playSound, unlock, beep } from '/shared/sound.js';
@@ -19,7 +20,7 @@ const newCart = () => ({ cart_id: uid(), order_id: null, version: null, lines: [
 // ---------------- boot ----------------
 async function boot() {
   st.settings = await fetch('/api/settings/public').then((r) => r.json());
-  applyFonts(st.settings.fonts, 'pos'); applyTheme(st.settings.theme);
+  applyFonts(st.settings.fonts, 'pos'); applyTheme(st.settings.theme); setFxLevel((st.settings.theme || {}).pos_fx);
   document.addEventListener('pointerdown', unlock, { once: true });
   if (!store.get('staff_token')) return loginScreen();
   try { st.staff = (await api.get('/auth/me')).staff; } catch { return loginScreen(); }
@@ -73,7 +74,7 @@ async function connect() {
   s.on('connect', () => { setNet(true); pushDisplay(); refreshBadges(); });
   s.on('disconnect', () => setNet(false));
   s.on('catalog:changed', async () => { st.catalog = await api.get('/catalog'); renderMenu(); });
-  s.on('settings:changed', async () => { st.settings = await fetch('/api/settings/public').then((r) => r.json()); applyTheme(st.settings.theme); render(); });
+  s.on('settings:changed', async () => { st.settings = await fetch('/api/settings/public').then((r) => r.json()); applyTheme(st.settings.theme); setFxLevel((st.settings.theme || {}).pos_fx); render(); });
   s.on('mobile:new_order', (o) => {
     st.pending.mobile++; renderTop();
     playSound(st.settings.sound, 'new_order', 'pos');
@@ -184,8 +185,10 @@ function renderGrid() {
   const inCart = new Map();
   for (const l of st.cart.lines) inCart.set(l.product_id, (inCart.get(l.product_id) || 0) + l.qty);
   const catColor = Object.fromEntries(st.catalog.categories.map((c) => [c.id, c.color]));
-  g.replaceChildren(...(list.length ? list.map((p) => h('button', { class: 'prod' + (p.sold_out ? ' out' : '') + (inCart.get(p.id) ? ' picked' : ''), style: catColor[p.category_id] ? `--cat:${catColor[p.category_id]}` : null,
-    onclick: () => pickProduct(p), oncontextmenu: (e) => { e.preventDefault(); soldOutToggle(p); } },
+  const enter = g.dataset.key !== st.cat + '|' + st.q; g.dataset.key = st.cat + '|' + st.q; // new category/search → cards cascade in
+  let ix = 0;
+  g.replaceChildren(...(list.length ? list.map((p) => h('button', { class: 'prod' + (enter ? ' fx-in' : '') + (p.sold_out ? ' out' : '') + (inCart.get(p.id) ? ' picked' : ''), style: `--i:${Math.min(ix++, 24)};` + (catColor[p.category_id] ? `--cat:${catColor[p.category_id]}` : ''),
+    onclick: (e) => { rememberTap(e.currentTarget); pickProduct(p); }, oncontextmenu: (e) => { e.preventDefault(); soldOutToggle(p); } },
     h('div', { class: 'img' + (p.image ? '' : ' noimg'), style: p.image ? { backgroundImage: `url(${p.image})` } : {} }, p.image ? null : h('img', { src: '/assets/bowl.svg', alt: '' }),
       inCart.get(p.id) ? h('span', { class: 'incart' }, '×' + inCart.get(p.id)) : null, p.sold_out ? h('span', { class: 'soldout' }, 'หมด') : null),
     h('div', { class: 'nm' }, p.name),
@@ -324,6 +327,7 @@ function renderCart() {
   const c = $('#cart'); if (!c) return;
   const cart = st.cart;
   const t = previewTotals();
+  const ch = lineChanges(cart.lines, fxKey);
   const mc = $('#mcart'); if (mc) mc.textContent = `ตะกร้า ${cart.lines.reduce((s, l) => s + l.qty, 0)} รายการ · ${baht(t.total)} ฿`;
   const setDine = (d) => { cart.dine_type = d; for (const l of cart.lines) if (!l.sent_qty) l.dine_type = d; saveCart(); renderCart(); };
   const tables = st.tables || [];
@@ -339,22 +343,29 @@ function renderCart() {
         h('button', { class: 'chip', onclick: async () => { const v = await promptBox('หมายเหตุออเดอร์', { value: cart.note, required: false }); if (v !== null) { cart.note = v; saveCart(); renderCart(); } } }, cart.note ? `📝 ${cart.note}` : '+ หมายเหตุ'),
         cart.member ? null : h('button', { class: 'chip', onclick: memberDialog }, '+ สมาชิก')),
       cart.member ? memberBox(cart, t) : null),
-    h('div', { class: 'lines' }, cart.lines.length ? cart.lines.map((l) => lineView(l))
+    h('div', { class: 'lines' }, cart.lines.length ? cart.lines.map((l) => lineView(l, ch))
       : h('div', { class: 'cart-empty' }, h('img', { src: '/assets/bowl.svg', alt: '' }), h('b', {}, 'ยังไม่มีสินค้าในบิล'), h('span', {}, 'แตะเมนูทางซ้าย หรือสแกนบาร์โค้ดได้เลย'))),
     h('div', { class: 'totals' },
       row('รวมสินค้า', baht(t.items_total)),
       t.discount ? row('ส่วนลด' + (t.tierAmt ? ' (รวมสิทธิ์ Tier)' : ''), '-' + baht(t.discount)) : null,
       t.packaging ? row('ค่าบรรจุภัณฑ์', baht(t.packaging)) : null,
       t.tax ? row(st.settings.sale.tax_inclusive ? 'VAT (รวมในราคา)' : 'VAT', baht(t.tax)) : null,
-      row(h('span', {}, ('จำนวน' + U() + ' '), h('strong', {}, t.bowls)), h('span', { class: 'grand num' }, baht(t.total) + ' ฿'))),
+      row(h('span', {}, ('จำนวน' + U() + ' '), h('strong', {}, t.bowls)), h('span', { class: 'grand num', id: 'cartGrand' }, baht(prevGrand ?? t.total) + ' ฿'))),
     h('div', { class: 'actions' },
       h('button', { class: 'btn', onclick: () => saveOrder('hold'), disabled: !cart.lines.length }, '⏸ พักบิล'),
       h('button', { class: 'btn', onclick: () => saveOrder('send'), disabled: !cart.lines.length }, '🔥 ส่งครัว'),
       h('button', { class: 'btn', onclick: discountDialog, disabled: !cart.lines.length || !can('discount') }, '％ ส่วนลด'),
       h('button', { class: 'btn', onclick: bowlPicker }, `🥣 ${U()} ${st.activeBowl || '-'}`),
-      h('button', { class: 'btn primary pay', onclick: payDialog, disabled: !cart.lines.length }, h('span', {}, '💳 ชำระเงิน'), h('span', { class: 'amt num' }, `${baht(t.total)} ฿`))));
+      h('button', { class: 'btn primary pay', onclick: payDialog, disabled: !cart.lines.length }, h('span', {}, '💳 ชำระเงิน'), h('span', { class: 'amt num', id: 'payAmt' }, `${baht(prevGrand ?? t.total)} ฿`))));
   renderGrid();
+  // effects: count the total, glow the line that just changed, and fly the tapped item in
+  const fmt = (v) => baht(v) + ' ฿';
+  for (const id of ['cartGrand', 'payAmt']) { const el = $('#' + id); if (el) { el.dataset.v = prevGrand ?? t.total; countTo(el, t.total, fmt); } }
+  prevGrand = t.total;
+  if (ch.fresh.size || ch.more.size) { flyToCart(); const hot = $('#cart .line.fx-latest'); if (hot) hot.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
 }
+let prevGrand = null;
+const fxKey = (l) => l.product_id + '|' + JSON.stringify((l.options || []).map((o) => o.id)) + '|' + (l.dine_type || '') + '|' + (l.bowl_group || '') + '|' + (l.note || '');
 // points the attached member will get from this bill (same rule as the server; the receipt shows the final number)
 function previewEarn(cart, t) {
   const P = st.settings.points || {};
@@ -373,7 +384,8 @@ function memberBox(cart, t) {
     h('button', { class: 'btn sm', onclick: () => { cart.member = null; saveCart(); renderCart(); } }, 'นำออก'));
 }
 const row = (a, b) => h('div', { class: 'r' }, h('span', {}, a), h('span', { class: 'num' }, b));
-function lineView(l) {
+function lineView(l, ch = { fresh: new Set(), more: new Set(), latest: null }) {
+  const k = fxKey(l);
   const sent = l.sent_qty || 0;
   const setQty = (q) => {
     if (q < sent && !can('void_item')) return toast('รายการนี้ส่งครัวแล้ว ต้องมีสิทธิ์ยกเลิกรายการ', 'warn');
@@ -382,7 +394,7 @@ function lineView(l) {
   };
   const rn = renamedLine(l.name, l.options || [], 'everywhere');
   const kitchenAs = renamedLine(rn.name, rn.options, 'kitchen');
-  return h('div', { class: 'line' },
+  return h('div', { class: 'line' + (ch.fresh.has(k) ? ' fx-new' : ch.more.has(k) ? ' fx-more' : '') + (ch.latest === k ? ' fx-latest' : '') },
     h('div', { class: 'top' }, h('div', { class: 'nm' }, rn.name, kitchenAs.options.length || kitchenAs.name !== rn.name ? h('div', { class: 'optchips' },
       kitchenAs.name !== rn.name ? h('span', { class: 'oc kitchen', title: 'ชื่อที่พิมพ์ในใบครัว' }, '👩‍🍳 ', kitchenAs.name) : null, kitchenAs.options.map((o) => isAddon(o)
       ? h('span', { class: 'oc add' }, '+ ', o.name, o.price ? h('small', {}, ` ${baht(o.price)}`) : null)

@@ -2,6 +2,7 @@ import { h, toast, errToast, modal, fmtTime, JOB_TH } from '/shared/ui.js';
 import { baht } from '/shared/core.js';
 import { GOOGLE_FONTS, SAMPLE, AREAS, loadFont, hasThai, fontCatalog, familyCss } from '/shared/fonts.js';
 import { api, ctx, can, page, card, form, table, saveBtn, upload } from './common.js';
+import { DISPLAY_TEXTS, DISPLAY_STYLE_DEFAULTS } from '/shared/displaytexts.js';
 
 const reload = () => window.dispatchEvent(new HashChangeEvent('hashchange'));
 const saveKey = async (key, value, reason) => { const v = await api.put('/settings/' + key, { value, reason }); ctx.settings[key] = v; return v; };
@@ -132,9 +133,59 @@ export async function displayPage() {
     { k: 'welcome', label: 'ข้อความต้อนรับ', wide: true }, { k: 'thanks', label: 'ข้อความขอบคุณ', wide: true }, { k: 'pairing_minutes', label: 'รหัสจับคู่หมดอายุ (นาที)', type: 'number' },
     { k: 'member_prompt_seconds', label: 'หน้ากรอกสมาชิกปิดอัตโนมัติ (วินาที)', type: 'number' }], d);
   const list = h('div');
-  const iframe = h('iframe', { src: '/display/?preview=1', style: { width: '100%', aspectRatio: '16/9', border: '1px solid var(--line)', borderRadius: '12px' } });
-  const iframeIdle = h('iframe', { src: '/display/?preview=1&phase=idle', style: { width: '100%', aspectRatio: '16/9', border: '1px solid var(--line)', borderRadius: '12px' } });
-  const preview = () => { const v = { ...d, ...f.value(), media: d.media }; for (const fr of [iframe, iframeIdle]) fr.contentWindow && fr.contentWindow.postMessage({ display: v }, location.origin); };
+  // ---- colours & style: every colour can go back to the built-in look ----
+  const style = { ...DISPLAY_STYLE_DEFAULTS, ...(d.style || {}) };
+  const texts = { ...(d.texts || {}) };
+  const COLORS = [['bg2', 'พื้นหลังไล่สี (มุมบน)', '#1f2937'], ['card', 'สีการ์ด/กล่องกระจก', '#ffffff'], ['highlight', 'สีรายการล่าสุด', d.accent || '#ef4444'], ['qty', 'สีกล่องจำนวน', d.accent || '#ef4444'],
+    ['total_from', 'ตัวเลขยอดรวม: สีเริ่ม', '#ffffff'], ['total_to', 'ตัวเลขยอดรวม: สีปลาย', '#fecaca'], ['pay_head', 'การ์ดยอดที่ต้องชำระ', d.accent || '#ef4444'],
+    ['ok', 'สีสำเร็จ / เงินทอน', '#22c55e'], ['warn', 'สีเตือน / ยังขาด', '#facc15'], ['gold', 'การ์ดสมาชิก / ท็อปปิ้ง', '#f6c453'], ['member_text', 'ตัวอักษรบนการ์ดสมาชิก', '#3b2304'], ['qr_head', 'หัวการ์ด QR', '#0f2a5f']];
+  const colorRow = ([k, label, fallback]) => {
+    const custom = !!(d.style && /^#[0-9a-f]{6}$/i.test(d.style[k] || ''));
+    const inp = h('input', { type: 'color', value: /^#[0-9a-f]{6}$/i.test(style[k] || '') ? style[k] : fallback });
+    const def = h('input', { type: 'checkbox', checked: !custom });
+    const sync = () => { style[k] = def.checked ? DISPLAY_STYLE_DEFAULTS[k] : inp.value; preview(); };
+    inp.addEventListener('input', () => { def.checked = false; sync(); }); def.addEventListener('change', sync);
+    return h('div', { class: 'dstyle-row' }, h('span', {}, label), inp, h('label', { class: 'switch small' }, def, 'ค่าเริ่มต้น'));
+  };
+  const numRow = (k, label, min, max, step = 5, unit = '%') => {
+    const out = h('b', {}, style[k] + unit);
+    const inp = h('input', { type: 'range', min, max, step, value: style[k] });
+    inp.addEventListener('input', () => { style[k] = Number(inp.value); out.textContent = inp.value + unit; preview(); });
+    return h('div', { class: 'dstyle-row' }, h('span', {}, label), inp, out);
+  };
+  const selRow = (k, label, opts) => {
+    const sel = h('select', { class: 'input' }, opts.map(([v, t]) => h('option', { value: v, selected: style[k] === v }, t)));
+    sel.addEventListener('change', () => { style[k] = sel.value; preview(); });
+    return h('div', { class: 'dstyle-row' }, h('span', {}, label), sel);
+  };
+  const boolRow = (k, label) => { const cb = h('input', { type: 'checkbox', checked: style[k] !== false }); cb.addEventListener('change', () => { style[k] = cb.checked; preview(); }); return h('label', { class: 'switch' }, cb, label); };
+  const styleCard = card(h('h3', {}, '🎨 สีและสไตล์'), h('p', { class: 'small muted' }, 'สีหลัก (สีเน้น/พื้นหลัง/ตัวอักษร) ตั้งในหัวข้อ "รูปแบบ" · ติ๊ก "ค่าเริ่มต้น" เพื่อใช้สีที่ระบบคำนวณจากสีเน้นให้เอง'),
+    h('div', { class: 'dstyle' }, COLORS.map(colorRow)),
+    h('h4', {}, 'ขนาดและรูปทรง'), numRow('card_opacity', 'ความทึบการ์ดกระจก', 0, 40, 1), numRow('items_scale', 'ขนาดตัวอักษรรายการ', 70, 150), numRow('total_scale', 'ขนาดตัวเลขยอดรวม', 60, 150), numRow('queue_scale', 'ขนาดเลขคิวหน้าขอบคุณ', 50, 130),
+    selRow('corners', 'มุมการ์ด', [['round', 'โค้งมน'], ['soft', 'โค้งเล็กน้อย'], ['square', 'เหลี่ยม']]));
+  const fxCard = card(h('h3', {}, '✨ ลูกเล่นและเอฟเฟกต์'),
+    selRow('motion', 'ระดับการเคลื่อนไหว', [['extra', '🔥 จัดเต็ม — เคลื่อนไหวมากที่สุด'], ['normal', 'ปกติ'], ['soft', 'เบาๆ — เฉพาะที่จำเป็น'], ['off', 'ปิด — ภาพนิ่ง (เครื่องแรงน้อย)']]),
+    selRow('bg_effect', 'พื้นหลัง', [['blobs', 'วงแสงลอย'], ['aurora', 'แสงออโรร่าหมุน'], ['particles', 'ประกายลอยขึ้น'], ['gradient', 'ไล่สีเรียบๆ'], ['none', 'สีพื้นล้วน']]),
+    h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '.4em 1.2em' } }, boolRow('latest_fx', 'ไฮไลต์รายการล่าสุด'), boolRow('shine', 'แสงวาบวิ่งผ่าน'), boolRow('ring', 'ขอบแสงหมุน (QR/เงินสด)'),
+      boolRow('sparks', 'ประกายหน้าชำระเงิน'), boolRow('money_fx', 'เหรียญ/ธนบัตรตอนทอนเงิน'), boolRow('confetti', 'พลุกระดาษหน้าขอบคุณ'), boolRow('fireworks', 'พลุไฟหน้าขอบคุณ'), boolRow('floaters', 'อีโมจิลอย + แสงหมุน')));
+  // ---- every text on the screen ----
+  const textCard = card(h('h3', {}, '✏️ ข้อความทุกจุดบนจอลูกค้า'), h('p', { class: 'small muted' }, 'เว้นว่าง = ใช้ข้อความเดิม (แสดงเป็นตัวจางในช่อง) · {n} {amount} {points} {lines} {pcs} จะถูกแทนด้วยตัวเลขจริง'),
+    ...DISPLAY_TEXTS.map(([sec, rows], i) => h('details', { class: 'dtexts', open: i === 0 }, h('summary', {}, sec, h('span', { class: 'muted small' }, ` (${rows.length})`)),
+      h('div', { class: 'grid2' }, rows.map(([k, label, def]) => { const inp = h('input', { class: 'input', value: texts[k] || '', placeholder: def }); inp.addEventListener('input', () => { texts[k] = inp.value; preview(); });
+        return h('label', { class: 'field' }, label, inp); })))));
+  const PHASES = [['cart', '🛒 ขณะขาย', 'phase=cart'], ['cash', '💵 รับเงินสด', 'phase=pay&demo=1'], ['qr', '📱 QR', 'phase=pay&qr=1'], ['done', '🎉 ขอบคุณ', 'phase=done'], ['bye', '👋 กดเสร็จ', 'phase=done&demo=1'], ['idle', '🏠 ต้อนรับ', 'phase=idle']];
+  // previews render at a real 1280×720 screen and are scaled down, so they look exactly like the customer display
+  const scaled = (src) => { const fr = h('iframe', { src, style: 'position:absolute;left:0;top:0;width:1280px;height:720px;border:0;transform-origin:0 0' });
+    const box = h('div', { style: 'position:relative;width:100%;aspect-ratio:16/9;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:#000' }, fr);
+    new ResizeObserver(() => { fr.style.transform = `scale(${box.clientWidth / 1280})`; }).observe(box); return [fr, box]; };
+  const [iframe, iframeBox] = scaled('/display/?preview=1&phase=cart');
+  const [iframeIdle, iframeIdleBox] = scaled('/display/?preview=1&phase=idle');
+  const tabs = h('div', { class: 'seg', style: { flexWrap: 'wrap', marginBottom: '.5em' } });
+  const drawTabs = (on) => tabs.replaceChildren(...PHASES.map(([k, t, q]) => h('button', { class: on === k ? 'on' : '', onclick: () => { iframe.src = '/display/?preview=1&' + q + '&r=' + Date.now(); drawTabs(k); } }, t)));
+  drawTabs('cart');
+  const value = () => ({ ...d, ...f.value(), media: d.media, style: Object.fromEntries(Object.entries(style).filter(([k, v]) => v !== DISPLAY_STYLE_DEFAULTS[k])), texts: Object.fromEntries(Object.entries(texts).filter(([, v]) => String(v || '').trim())) });
+  const preview = () => { const v = value(); for (const fr of [iframe, iframeIdle]) fr.contentWindow && fr.contentWindow.postMessage({ display: v }, location.origin); };
+  iframe.addEventListener('load', () => setTimeout(preview, 300)); iframeIdle.addEventListener('load', () => setTimeout(preview, 300));
   const drawList = () => list.replaceChildren(...d.media.map((m, i) => h('div', { class: 'el-row' }, m.type === 'video' ? h('video', { src: m.url, muted: true, style: { width: '90px' } }) : h('img', { src: m.url, style: { width: '90px', borderRadius: '6px' } }),
     h('div', { class: 'row' }, h('span', {}, m.type === 'video' ? 'วิดีโอ' : 'รูปภาพ'), m.type !== 'video' ? h('label', { class: 'small' }, 'วินาที ', (() => { const x = h('input', { class: 'input', type: 'number', value: m.seconds || '', style: { width: '80px' } }); x.oninput = () => { m.seconds = Number(x.value) || null; }; return x; })()) : null),
     h('div', { class: 'row' }, h('button', { class: 'btn sm', disabled: i === 0, onclick: () => { d.media.splice(i - 1, 0, d.media.splice(i, 1)[0]); drawList(); preview(); } }, '↑'), h('button', { class: 'btn sm', disabled: i === d.media.length - 1, onclick: () => { d.media.splice(i + 1, 0, d.media.splice(i, 1)[0]); drawList(); preview(); } }, '↓'),
@@ -144,8 +195,9 @@ export async function displayPage() {
   file.onchange = async () => { for (const fl of file.files) { try { const r = await upload(fl, 'video'); d.media.push({ url: r.url, type: r.mime.startsWith('video') ? 'video' : 'image' }); } catch (e) { errToast(e); } } drawList(); preview(); };
   f.addEventListener('input', preview); f.addEventListener('change', preview);
   return page('จอลูกค้า', h('div', { class: 'designer' }, h('div', {}, card(h('h3', {}, 'สื่อประชาสัมพันธ์ขณะไม่มีการขาย'), h('label', { class: 'field' }, 'อัปโหลดรูป/วิดีโอจากเครื่อง', file), list),
-    card(h('h3', {}, 'รูปแบบ'), f), h('div', { class: 'row' }, h('button', { class: 'btn', onclick: preview }, 'ดูตัวอย่าง'), saveBtn('บันทึก (จอลูกค้าอัปเดตทันที)', () => saveKey('display', { ...f.value(), media: d.media })))),
-  h('div', {}, h('h4', {}, 'ตัวอย่างขณะขาย'), iframe, h('h4', {}, 'ตัวอย่างขณะไม่มีการขาย'), iframeIdle)));
+    card(h('h3', {}, 'รูปแบบ'), f), styleCard, fxCard, textCard,
+    h('div', { class: 'row' }, h('button', { class: 'btn', onclick: preview }, 'ดูตัวอย่าง'), saveBtn('บันทึก (จอลูกค้าอัปเดตทันที)', () => { const v = value(); return saveKey('display', { ...f.value(), media: d.media, style: v.style, texts: v.texts }); }))),
+  h('div', { class: 'dprev' }, h('h4', {}, 'ตัวอย่าง (เปลี่ยนแล้วเห็นทันที)'), tabs, iframeBox, h('h4', {}, 'ตัวอย่างขณะไม่มีการขาย'), iframeIdleBox)));
 }
 
 export async function fontsPage() {

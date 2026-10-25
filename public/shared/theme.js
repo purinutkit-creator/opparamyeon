@@ -10,7 +10,7 @@ export const THEME_PRESETS = {
   sakura: { name: 'ซากุระ (ชมพู)', brand: '#e64980', accent: '#ffa8c5', deep: '#2e1220' },
   classic: { name: 'คลาสสิก (ดำ-เทา)', brand: '#343a40', accent: '#adb5bd', deep: '#111315' },
 };
-export const THEME_DEFAULT = { preset: 'gochujang', brand: '', accent: '', mode: 'auto', radius: 'round', text: 'normal', pos_layout: 'grid', shapes: true };
+export const THEME_DEFAULT = { preset: 'gochujang', brand: '', accent: '', mode: 'auto', radius: 'round', text: 'normal', pos_layout: 'grid', shapes: true, pos_fx: 'normal' };
 
 const hex = (c) => { const m = /^#?([0-9a-f]{6})$/i.exec(String(c || '').trim()); return m ? m[1].toLowerCase() : null; };
 const toRgb = (c) => { const h = hex(c) || 'e8321f'; return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };

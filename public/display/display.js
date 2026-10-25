@@ -2,6 +2,7 @@ import { makeApi, store, socket } from '/shared/api.js';
 import { h, $, toast, errToast, keypad } from '/shared/ui.js';
 import { baht, dineLabel, VERSION } from '/shared/core.js';
 import { applyFonts } from '/shared/fonts.js';
+import { TEXT_DEFAULTS, DISPLAY_STYLE_DEFAULTS } from '/shared/displaytexts.js';
 
 const qs = new URLSearchParams(location.search);
 const preview = qs.get('preview') === '1';
@@ -12,7 +13,7 @@ let settings, state = { phase: 'idle' }, prompt = null, sock = null, slideTimer 
 async function boot() {
   settings = await fetch('/api/settings/public').then((r) => r.json());
   if (preview) {
-    window.addEventListener('message', (e) => { if (e.origin === location.origin && e.data && e.data.display) { settings.display = { ...settings.display, ...e.data.display }; applyTheme(); renderAll(); } });
+    window.addEventListener('message', (e) => { if (e.origin === location.origin && e.data && e.data.display) { settings.display = { ...settings.display, ...e.data.display }; applyTheme(); rerender(); } });
     state = qs.get('phase') === 'idle' ? { phase: 'idle' } : sampleState();
     applyTheme(); renderAll();
     // ?demo=1 plays the cash flow: nothing received → partly received → paid with change
@@ -48,7 +49,7 @@ async function boot() {
   sock.on('disconnect', () => net(false));
   sock.on('display:state', onState);
   sock.on('display:revoked', () => { store.del('display_token'); location.reload(); });
-  sock.on('settings:changed', async () => { settings = await fetch('/api/settings/public').then((r) => r.json()); applyTheme(); renderAll(); });
+  sock.on('settings:changed', async () => { settings = await fetch('/api/settings/public').then((r) => r.json()); applyTheme(); rerender(); });
   sock.on('member:prompt', (p) => { prompt = { ...p, value: '', results: null }; renderPrompt(); });
   sock.on('member:prompt_closed', () => { prompt = null; renderPrompt(); });
   // Dual Screen on the same device: also listen locally (keeps working for a moment if the network blips)
@@ -69,10 +70,35 @@ function pairing() {
     inp, h('div', { style: { marginTop: '.8em' } }, keypad(inp, { onEnter: go })), h('p', { class: 'version' }, 'v' + VERSION))));
 }
 
+// shop-editable text: T('key', { n: 3 }) → string; with a Node as a value → array of parts (for bold amounts)
+function T(key, vars = {}) {
+  const custom = (settings.display.texts || {})[key];
+  const raw = custom !== undefined && custom !== null && String(custom).trim() !== '' ? String(custom) : TEXT_DEFAULTS[key] ?? key;
+  const parts = raw.split(/(\{\w+\})/).filter((x) => x !== '').map((x) => { const m = /^\{(\w+)\}$/.exec(x); return m && m[1] in vars ? vars[m[1]] : x; });
+  return parts.some((x) => x instanceof Node) ? parts : parts.join('');
+}
+const dineText = (d) => (d === 'takeaway' ? T('takeaway') : d === 'mixed' ? T('mixed') : T('dine_in'));
 function applyTheme() {
   const d = settings.display;
   const r = document.documentElement.style;
   r.setProperty('--d-bg', d.bg || '#111827'); r.setProperty('--d-fg', d.color || '#fff'); r.setProperty('--d-accent', d.accent || '#ef4444'); r.setProperty('--fit', d.fit || 'cover');
+  // colours / sizes / effects the shop picked (empty = built-in look)
+  const st = { ...DISPLAY_STYLE_DEFAULTS, ...(d.style || {}) };
+  const hex = (v) => (/^#[0-9a-f]{6}$/i.test(v || '') ? v : '');
+  const setC = (name, v) => (hex(v) ? r.setProperty(name, v) : r.removeProperty(name));
+  setC('--d-bg2', st.bg2); setC('--d-card', st.card); setC('--d-ok', st.ok); setC('--d-warn', st.warn); setC('--d-gold', st.gold); setC('--d-hl', st.highlight);
+  setC('--d-qty', st.qty); setC('--d-tot1', st.total_from); setC('--d-tot2', st.total_to); setC('--d-qrh', st.qr_head); setC('--d-payhead', st.pay_head); setC('--d-memtxt', st.member_text);
+  const num = (v, lo, hi, def) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def; };
+  r.setProperty('--d-card-op', num(st.card_opacity, 0, 40, 8) + '%');
+  r.setProperty('--d-isc', num(st.items_scale, 70, 150, 100) / 100); r.setProperty('--d-tsc', num(st.total_scale, 60, 150, 100) / 100); r.setProperty('--d-qsc', num(st.queue_scale, 50, 130, 100) / 100);
+  const ds = document.documentElement.dataset;
+  ds.motion = ['off', 'soft', 'normal', 'extra'].includes(st.motion) ? st.motion : 'normal';
+  ds.bg = ['blobs', 'aurora', 'particles', 'gradient', 'none'].includes(st.bg_effect) ? st.bg_effect : 'blobs';
+  ds.corners = ['round', 'soft', 'square'].includes(st.corners) ? st.corners : 'round';
+  for (const [k, attr] of [['confetti', 'fxConfetti'], ['fireworks', 'fxFireworks'], ['floaters', 'fxFloaters'], ['money_fx', 'fxMoney'], ['shine', 'fxShine'], ['ring', 'fxRing'], ['latest_fx', 'fxLatest'], ['sparks', 'fxSparks']]) ds[attr] = st[k] === false ? '0' : '1';
+  const fx = $('.bgfx');
+  if (fx && !fx.querySelector('.aur')) fx.append(h('span', { class: 'aur' }), h('span', { class: 'aur a2' }),
+    ...Array.from({ length: 26 }, (_, i) => h('span', { class: 'pt', style: `left:${(i * 41) % 100}%;animation-duration:${9 + (i % 7) * 2}s;animation-delay:${-(i * 1.3) % 14}s;transform:scale(${0.6 + (i % 4) * 0.25})` })));
   applyFonts(settings.fonts, 'display');
 }
 function onState(s) {
@@ -82,6 +108,8 @@ function onState(s) {
   renderAll();
 }
 
+// settings changed: rebuild everything (the payment and thank-you screens normally keep their DOM)
+function rerender() { root.replaceChildren(); document.querySelectorAll('.done').forEach((x) => x.remove()); renderAll(); }
 function renderAll() {
   const d = settings.display;
   const active = state.phase && state.phase !== 'idle';
@@ -124,40 +152,40 @@ function renderPay() {
   if (el.dataset.mode !== mode) {
     el.dataset.mode = mode;
     const top = h('div', { class: 'paytop' }, h('div', { class: 'pclock' }, h('b', { id: 'payTime' }, timeText()), h('span', { id: 'payDate' }, dateText())), h('div', { id: 'payQueue' }));
-    const head = h('div', { class: 'payhead' }, h('i', { class: 'shine' }), h('div', { class: 'lbl' }, 'ยอดที่ต้องชำระ', h('span', { id: 'payUnit' })), h('div', { class: 'amt' }, h('span', { id: 'payAmt' }), h('small', {}, '฿')),
+    const head = h('div', { class: 'payhead' }, h('i', { class: 'shine' }), h('div', { class: 'lbl' }, T('pay_due'), h('span', { id: 'payUnit' })), h('div', { class: 'amt' }, h('span', { id: 'payAmt' }), h('small', {}, '฿')),
       h('div', { class: 'paybreak', id: 'payBreak' }));
     let body;
     if (showQr) {
       const img = h('img', { class: 'qrimg', alt: 'QR พร้อมเพย์', src: '/api/qr.svg?d=' + encodeURIComponent(s.qr) });
-      const frame = h('div', { class: 'qrframe' }, h('div', { class: 'qrskel' }, h('div', { class: 'orb' }, h('i'), h('i'), h('i'), h('b', { html: QR_ICON })), h('strong', {}, 'กำลังสร้าง QR', h('em', {}, h('i', {}, '.'), h('i', {}, '.'), h('i', {}, '.'))), h('div', { class: 'qbar' }, h('i'))), img, h('b', { class: 'cn tl' }), h('b', { class: 'cn tr' }), h('b', { class: 'cn bl' }), h('b', { class: 'cn br' }), h('i', { class: 'scan' }));
+      const frame = h('div', { class: 'qrframe' }, h('div', { class: 'qrskel' }, h('div', { class: 'orb' }, h('i'), h('i'), h('i'), h('b', { html: QR_ICON })), h('strong', {}, T('qr_loading'), h('em', {}, h('i', {}, '.'), h('i', {}, '.'), h('i', {}, '.'))), h('div', { class: 'qbar' }, h('i'))), img, h('b', { class: 'cn tl' }), h('b', { class: 'cn tr' }), h('b', { class: 'cn bl' }), h('b', { class: 'cn br' }), h('i', { class: 'scan' }));
       // reveal once the code has really loaded (never show a half-drawn QR)
       const t0 = performance.now();
       const ready = () => setTimeout(() => frame.classList.add('ready'), Math.max(0, 700 - (performance.now() - t0)));
-      img.onerror = () => { frame.querySelector('.qrskel strong').textContent = 'โหลด QR ไม่สำเร็จ · แจ้งพนักงาน'; };
+      img.onerror = () => { frame.querySelector('.qrskel strong').textContent = T('qr_error'); };
       if (img.complete && img.naturalWidth) ready(); else img.onload = ready;
       const acc = settings.payment.promptpay_name || settings.store.name || '';
       body = h('div', { class: 'payarea' }, h('div', { class: 'qrcard' },
-        h('div', { class: 'qrtitle' }, h('span', { class: 'qi', html: QR_ICON }), h('div', {}, h('b', {}, 'THAI QR PAYMENT'), h('small', {}, 'พร้อมเพย์ · PromptPay'))),
+        h('div', { class: 'qrtitle' }, h('span', { class: 'qi', html: QR_ICON }), h('div', {}, h('b', {}, T('qr_title')), h('small', {}, T('qr_sub')))),
         h('div', { class: 'qrwell' }, frame),
         h('div', { class: 'qrfoot' },
-          h('div', { class: 'qacc' }, h('span', { class: 'av' }, (acc.trim()[0] || '฿').toUpperCase()), h('div', {}, h('small', {}, 'ชื่อบัญชี'), h('b', {}, acc || '-'))),
-          h('div', { class: 'qamt' }, h('small', {}, 'สแกนจ่าย'), h('b', {}, h('span', { id: 'qrAmt' }), ' ฿'))),
-        h('div', { class: 'qbanks' }, h('span', { class: 'dots' }, ['#138f2d', '#4e2e7f', '#1e4598', '#00a6e6', '#fec43b', '#ec1c24'].map((c, i) => h('i', { style: `background:${c};animation-delay:${i * 0.15}s` }))), 'สแกนได้ทุกแอปธนาคาร')));
+          h('div', { class: 'qacc' }, h('span', { class: 'av' }, (acc.trim()[0] || '฿').toUpperCase()), h('div', {}, h('small', {}, T('qr_account')), h('b', {}, acc || '-'))),
+          h('div', { class: 'qamt' }, h('small', {}, T('qr_scan')), h('b', {}, h('span', { id: 'qrAmt' }), ' ฿'))),
+        h('div', { class: 'qbanks' }, h('span', { class: 'dots' }, ['#138f2d', '#4e2e7f', '#1e4598', '#00a6e6', '#fec43b', '#ec1c24'].map((c, i) => h('i', { style: `background:${c};animation-delay:${i * 0.15}s` }))), T('qr_banks'))));
     } else {
       body = h('div', { class: 'cashcard' },
-        h('div', { class: 'cc-head' }, h('span', { class: 'bill', html: BILL_SVG + BILL_SVG }), h('div', {}, h('b', {}, 'ชำระด้วยเงินสด'), h('small', {}, 'Cash payment'))),
-        h('div', { class: 'cc-row recv' }, h('span', {}, '💵 รับเงิน'), h('b', { id: 'ccRecv' }, baht(0))),
+        h('div', { class: 'cc-head' }, h('span', { class: 'bill', html: BILL_SVG + BILL_SVG }), h('div', {}, h('b', {}, T('cash_title')), h('small', {}, T('cash_sub')))),
+        h('div', { class: 'cc-row recv' }, h('span', {}, T('received')), h('b', { id: 'ccRecv' }, baht(0))),
         h('div', { class: 'cc-bar' }, h('i', { id: 'ccBar' })),
         h('div', { class: 'cc-state', id: 'ccState' }),
-        h('div', { class: 'cc-change', id: 'ccChange' }, h('span', {}, '💰 เงินทอน'), h('b', { id: 'ccChangeAmt' })));
+        h('div', { class: 'cc-change', id: 'ccChange' }, h('span', {}, T('change')), h('b', { id: 'ccChangeAmt' })));
     }
     el.replaceChildren(h('div', { class: 'paybox' + (showQr ? ' isqr' : ' iscash') }, h('div', { class: 'sparks' }, Array.from({ length: 14 }, (_, i) => h('i', { style: `left:${(i * 37) % 100}%;animation-delay:${(i * 0.53) % 6}s;animation-duration:${5 + (i % 5)}s` }))), top, head, body,
-      h('div', { class: 'paystatus', id: 'payStatus' }, h('i'), showQr ? 'รอชำระเงิน · สแกนด้วยแอปธนาคารใดก็ได้' : 'รอชำระเงิน')));
+      h('div', { class: 'paystatus', id: 'payStatus' }, h('i'), showQr ? T('status_wait_qr') : T('status_wait'))));
     el._prev = {};
   }
   const prev = el._prev || {};
   $('#payUnit').textContent = s.bowls ? ` · ${s.bowls} ${unit}` : '';
-  $('#payQueue').replaceChildren(s.queue_no ? h('span', { class: 'qchip' }, h('small', {}, 'คิว'), s.queue_no) : h('span', { class: 'qchip soft' }, '🍜 ', settings.store.name || 'ขอบคุณที่มาอุดหนุน'));
+  $('#payQueue').replaceChildren(s.queue_no ? h('span', { class: 'qchip' }, h('small', {}, T('queue')), s.queue_no) : h('span', { class: 'qchip soft' }, '🍜 ', settings.store.name || 'ขอบคุณที่มาอุดหนุน'));
   renderBreak(s);
   tween($('#payAmt'), s.total);
   if (showQr) { tween($('#qrAmt'), s.total); return; }
@@ -168,12 +196,12 @@ function renderPay() {
   const bar = $('#ccBar'); bar.style.width = pct + '%'; bar.classList.toggle('full', recv > 0 && short === 0);
   const st = $('#ccState'), card = st.closest('.cashcard');
   card.classList.toggle('ok', recv > 0 && short === 0);
-  $('#payStatus').replaceChildren(h('i'), recv > 0 && short === 0 ? (change ? 'รับเงินครบ · รอรับเงินทอน' : 'รับเงินครบ') : 'รอชำระเงิน');
+  $('#payStatus').replaceChildren(h('i'), recv > 0 && short === 0 ? (change ? T('status_paid_change') : T('status_paid')) : T('status_wait'));
   $('#payStatus').classList.toggle('ok', recv > 0 && short === 0);
   if (!recv) { st.className = 'cc-state none'; st.replaceChildren(); }
-  else if (short) { st.className = 'cc-state short'; st.replaceChildren('ยังขาดอีก ', h('b', {}, baht(short)), ' บาท'); }
+  else if (short) { st.className = 'cc-state short'; st.replaceChildren(...[T('short', { amount: h('b', {}, baht(short)) })].flat()); }
   else if (change) { st.className = 'cc-state none'; st.replaceChildren(); }
-  else { st.className = 'cc-state paid'; st.replaceChildren('✓ รับเงินครบแล้ว · พอดี ไม่มีเงินทอน'); }
+  else { st.className = 'cc-state paid'; st.replaceChildren(T('paid_exact')); }
   const ch = $('#ccChange');
   const show = recv > 0 && short === 0 && change > 0;
   ch.classList.toggle('show', show);
@@ -192,14 +220,14 @@ function renderBreak(s) {
   box.dataset.k = key;
   const saved = disc.reduce((a, d) => a + d.amount, 0) || s.discount || 0;
   const rows = [];
-  if (saved || s.packaging || s.tax) rows.push(['รวมค่าอาหาร', baht(s.items_total), '']);
+  if (saved || s.packaging || s.tax) rows.push([T('subtotal'), baht(s.items_total), '']);
   if (disc.length) for (const d of disc) rows.push(['🏷️ ' + d.label, '−' + baht(d.amount), 'disc']);
-  else if (s.discount) rows.push(['🏷️ ส่วนลด', '−' + baht(s.discount), 'disc']);
-  if (s.packaging) rows.push(['ค่าบรรจุภัณฑ์', baht(s.packaging), '']);
-  if (s.tax) rows.push(['VAT', baht(s.tax), '']);
+  else if (s.discount) rows.push(['🏷️ ' + T('discount'), '−' + baht(s.discount), 'disc']);
+  if (s.packaging) rows.push([T('packaging'), baht(s.packaging), '']);
+  if (s.tax) rows.push([T('vat'), baht(s.tax), '']);
   const earn = s.member && s.member.earn;
   box.replaceChildren(...rows.map(([a, b, c], i) => h('div', { class: 'br ' + c, style: `animation-delay:${0.15 + i * 0.12}s` }, h('span', {}, a), h('b', {}, b))),
-    saved || earn ? h('div', { class: 'perks' }, saved ? h('span', { class: 'save' }, '🎉 ประหยัดไป ', baht(saved), ' บาท') : null, earn ? h('span', { class: 'earn' }, '⭐ บิลนี้ได้ +', earn.toLocaleString(), ' แต้ม') : null) : null);
+    saved || earn ? h('div', { class: 'perks' }, saved ? h('span', { class: 'save' }, T('saved', { amount: baht(saved) })) : null, earn ? h('span', { class: 'earn' }, T('earn', { points: earn.toLocaleString() })) : null) : null);
 }
 function cashRain(host) {
   const box = h('div', { class: 'rain' }, Array.from({ length: 16 }, (_, i) => h('i', { style: `left:${Math.random() * 96}%;animation-delay:${i * 60}ms;--r:${Math.round(Math.random() * 60 - 30)}deg` }, i % 2 ? '💸' : '💵')));
@@ -219,7 +247,7 @@ function renderPromo() {
       // no promotion media: an animated welcome scene in the shop colour
       el.replaceChildren(h('div', { class: 'hero' }, h('span', { class: 'ring' }), h('span', { class: 'ring' }), h('span', { class: 'ring' }),
         h('div', { class: 'inner' }, h('div', { style: { position: 'relative' } }, h('div', { class: 'steam' }, h('i'), h('i'), h('i')), h('img', { class: 'bowl', src: logo || '/assets/bowl.svg', alt: '' })),
-          h('h1', {}, settings.store.name || 'Welcome'), d.welcome ? h('p', {}, d.welcome) : null, h('span', { class: 'pill' }, '🍜 สั่งได้เลยที่เคาน์เตอร์ · 감사합니다'))),
+          h('h1', {}, settings.store.name || 'Welcome'), d.welcome ? h('p', {}, d.welcome) : null, T('idle_pill') ? h('span', { class: 'pill' }, T('idle_pill')) : null)),
         h('div', { class: 'glassbar', style: { left: 'auto', width: 'auto' } }, h('div', { class: 'clock', id: 'clock' }, clockText())));
       return;
     }
@@ -262,26 +290,26 @@ function renderPanel() {
   const oldItems = p.querySelector('.items'), oldTop = oldItems ? oldItems.scrollTop : 0;
   const pcs = lines.reduce((a, l) => a + l.qty, 0);
   p.replaceChildren(
-    h('div', { class: 'ph' }, h('h2', {}, h('small', {}, 'Your order'), 'รายการของคุณ'),
-      h('div', { class: 'chips' }, h('span', { class: 'chip-d ' + (s.dine_type === 'takeaway' ? 'takeaway' : 'dinein') }, s.dine_type === 'takeaway' ? '🥡 กลับบ้าน' : s.dine_type === 'mixed' ? '🍽️ ทานที่ร้าน + 🥡' : '🍽️ ทานที่ร้าน'),
-        s.table ? h('span', { class: 'chip-d' }, '🪑 โต๊ะ ' + s.table) : null)),
-    m ? h('div', { class: 'mem' }, h('div', { class: 'av' }, '⭐'), h('div', {}, h('b', {}, `สวัสดีคุณ ${m.name}`), h('span', {}, m.tier ? `สมาชิก ${m.tier}` : 'สมาชิก')),
-      h('div', { class: 'pts' }, Number(m.points || 0).toLocaleString(), h('small', {}, 'แต้มสะสม'))) : null,
+    h('div', { class: 'ph' }, h('h2', {}, h('small', {}, T('order_kicker')), T('order_title')),
+      h('div', { class: 'chips' }, h('span', { class: 'chip-d ' + (s.dine_type === 'takeaway' ? 'takeaway' : 'dinein') }, dineText(s.dine_type)),
+        s.table ? h('span', { class: 'chip-d' }, T('table') + ' ' + s.table) : null)),
+    m ? h('div', { class: 'mem' }, h('div', { class: 'av' }, '⭐'), h('div', {}, h('b', {}, `${T('member_hello')} ${m.name}`), h('span', {}, m.tier ? `${T('member_tier')} ${m.tier}` : T('member_tier'))),
+      h('div', { class: 'pts' }, Number(m.points || 0).toLocaleString(), h('small', {}, T('member_points')))) : null,
     h('div', { class: 'itemswrap' }, h('div', { class: 'more up' }), h('div', { class: 'items' }, lines.map((l) => {
       const k = l.name + '|' + (l.options || []).join(',');
       const opts = (l.options || []).map((o) => { const t = String(o);
         if (t.startsWith('✓ ')) return h('span', { class: 'yes' }, h('i', {}, '✓'), t.slice(2));
         if (t.startsWith('✗ ')) return h('span', { class: 'no' }, h('i', {}, '✕'), t.slice(2));
         return t.startsWith('+ ') ? h('span', { class: 'add' }, t) : h('span', {}, t); });
-      if (l.dine_type === 'takeaway' && s.dine_type === 'mixed') opts.push(h('span', { class: 'tw' }, 'กลับบ้าน'));
+      if (l.dine_type === 'takeaway' && s.dine_type === 'mixed') opts.push(h('span', { class: 'tw' }, T('takeaway_tag')));
       const isLatest = k === latestKey;
       return h('div', { class: 'it' + (fresh.has(k) ? ' new' : more.has(k) ? ' more-q' : '') + (isLatest ? ' latest' : ''), 'data-k': k },
-        h('span', { class: 'q' }, l.qty), h('div', { class: 'n' }, h('b', {}, l.name, isLatest ? h('em', { class: 'ltag' }, 'ล่าสุด') : null), opts.length ? h('small', {}, opts) : null), h('span', { class: 'p' }, baht(l.price)));
+        h('span', { class: 'q' }, l.qty), h('div', { class: 'n' }, h('b', {}, l.name, isLatest ? h('em', { class: 'ltag' }, T('latest')) : null), opts.length ? h('small', {}, opts) : null), h('span', { class: 'p' }, baht(l.price)));
     })), h('div', { class: 'more down' })),
     h('div', { class: 'sum' },
-      s.discount || s.packaging || s.tax ? r('รวมค่าอาหาร', baht(s.items_total)) : null, s.discount ? r('ส่วนลด', '−' + baht(s.discount)) : null,
-      s.packaging ? r('ค่าบรรจุภัณฑ์', baht(s.packaging)) : null, s.tax ? r('VAT', baht(s.tax)) : null,
-      h('div', { class: 'grand' }, h('span', {}, 'ยอดรวม', h('small', {}, `${lines.length} รายการ · ${pcs} ชิ้น`, s.bowls && unit !== 'ชิ้น' ? ` · ${s.bowls} ${unit}` : '')), h('span', { class: 'total' + (bump ? ' bump' : '') }, baht(s.total)))),
+      s.discount || s.packaging || s.tax ? r(T('subtotal'), baht(s.items_total)) : null, s.discount ? r(T('discount'), '−' + baht(s.discount)) : null,
+      s.packaging ? r(T('packaging'), baht(s.packaging)) : null, s.tax ? r(T('vat'), baht(s.tax)) : null,
+      h('div', { class: 'grand' }, h('span', {}, T('total'), h('small', {}, T('count', { lines: lines.length, pcs }), s.bowls && unit !== 'ชิ้น' ? ` · ${s.bowls} ${unit}` : '')), h('span', { class: 'total' + (bump ? ' bump' : '') }, baht(s.total)))),
   );
   followItems(oldTop);
 }
@@ -308,8 +336,8 @@ function countHidden(box, top) {
   const below = its.filter((x) => x.offsetTop + x.offsetHeight / 2 > top + box.clientHeight).length;
   const wrap = box.parentElement;
   const set = (el, n, txt) => { el.classList.toggle('show', n > 0); if (n > 0) el.textContent = txt(n); };
-  set(wrap.querySelector('.more.up'), above, (n) => `▲ อีก ${n} รายการด้านบน`);
-  set(wrap.querySelector('.more.down'), below, (n) => `▼ อีก ${n} รายการด้านล่าง`);
+  set(wrap.querySelector('.more.up'), above, (n) => T('more_up', { n }));
+  set(wrap.querySelector('.more.down'), below, (n) => T('more_down', { n }));
   box.classList.toggle('fade-up', above > 0); box.classList.toggle('fade-down', below > 0);
 }
 const r = (a, b) => h('div', { class: 'r' }, h('span', {}, a), h('span', {}, b));
@@ -329,25 +357,25 @@ function renderDone() {
   const fireworks = h('div', { class: 'fireworks' });
   const check = h('div', { class: 'check', html: '<span class="ripple"></span><span class="ripple r2"></span><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' });
   const thanks = settings.display.thanks || 'ขอบคุณค่ะ';
-  const words = [thanks, ...['감사합니다', 'Thank you!'].filter((w) => !thanks.includes(w))];
+  const words = [thanks, ...T('thanks_more').split('|').map((w) => w.trim()).filter((w) => w && !thanks.includes(w))];
   const word = h('div', { class: 'word' }, wave(words[0]));
   const saved = (s.discounts || []).reduce((a, d) => a + d.amount, 0) || s.discount || 0;
   const earn = s.member && s.member.earn;
   const stat = (icon, lbl, val, cls = '', i = 0) => h('div', { class: 'stat ' + cls, style: `animation-delay:${0.9 + i * 0.12}s` }, h('span', { class: 'ic' }, icon), h('small', {}, lbl), h('b', {}, val));
-  const stats = [stat('🧾', 'ยอดชำระ', baht(s.total) + ' ฿', '', 0)];
-  if ((s.methods || []).length) stats.push(stat('💳', 'ชำระด้วย', s.methods.join(' + '), '', stats.length));
-  if (s.change) stats.push(stat('💰', 'เงินทอน', baht(s.change) + ' ฿', 'green', stats.length));
-  if (saved) stats.push(stat('🏷️', 'ประหยัดไป', baht(saved) + ' ฿', 'gold', stats.length));
-  if (earn) stats.push(stat('⭐', 'แต้มที่ได้รับ', '+' + earn.toLocaleString(), 'gold', stats.length));
+  const stats = [stat('🧾', T('done_total'), baht(s.total) + ' ฿', '', 0)];
+  if ((s.methods || []).length) stats.push(stat('💳', T('done_method'), s.methods.join(' + '), '', stats.length));
+  if (s.change) stats.push(stat('💰', T('done_change'), baht(s.change) + ' ฿', 'green', stats.length));
+  if (saved) stats.push(stat('🏷️', T('done_saved'), baht(saved) + ' ฿', 'gold', stats.length));
+  if (earn) stats.push(stat('⭐', T('done_points'), '+' + earn.toLocaleString(), 'gold', stats.length));
   const dineCls = s.dine_type === 'takeaway' ? 'takeaway' : 'dinein';
   const box = h('div', { class: 'done' }, h('div', { class: 'rays' }), confetti, floaters, fireworks,
     h('div', { class: 'card2' },
-      h('div', { class: 'toprow' }, check, h('div', { class: 'lead' }, 'ชำระเงินเรียบร้อย', h('small', {}, 'Payment complete'))),
-      s.queue_no ? h('div', { class: 'qwrap' }, h('div', { class: 'qlabel' }, 'เลขคิวของคุณ · Your queue'), h('div', { class: 'q' }, h('span', {}, s.queue_no))) : null,
-      h('span', { class: 'chip-d ' + dineCls }, s.dine_type === 'takeaway' ? '🥡 กลับบ้าน' : dineLabel(s.dine_type)),
+      h('div', { class: 'toprow' }, check, h('div', { class: 'lead' }, T('done_title'), h('small', {}, T('done_sub')))),
+      s.queue_no ? h('div', { class: 'qwrap' }, h('div', { class: 'qlabel' }, T('done_queue')), h('div', { class: 'q' }, h('span', {}, s.queue_no))) : null,
+      h('span', { class: 'chip-d ' + dineCls }, dineText(s.dine_type)),
       h('div', { class: 'stats' }, stats),
       word,
-      h('div', { class: 'hint' }, s.queue_no ? 'กรุณารอเรียกคิวสักครู่นะคะ 🙏' : 'ขอให้อร่อยนะคะ 🍜')));
+      h('div', { class: 'hint' }, s.queue_no ? T('hint_queue') : T('hint_noqueue'))));
   box._at = s.at;
   document.body.append(box);
   const burst = () => {
@@ -362,7 +390,7 @@ function renderDone() {
 // cashier pressed "เสร็จ": say goodbye, fly the content away and close like an iris onto the normal screen
 function leaveDone(el) {
   el.classList.add('leaving');
-  el.append(h('div', { class: 'bye' }, h('span', { class: 'hand' }, '👋'), h('b', {}, wave('แล้วพบกันใหม่นะคะ')), h('small', {}, 'See you again · 또 만나요')));
+  el.append(h('div', { class: 'bye' }, h('span', { class: 'hand' }, '👋'), h('b', {}, wave(T('bye'))), h('small', {}, T('bye_sub'))));
   setTimeout(() => el.remove(), 2200);
 }
 // each character bounces in turn (grapheme-aware so Thai vowels and tone marks stay on their letter)

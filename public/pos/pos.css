@@ -278,3 +278,77 @@ body { background: var(--bg); }
 .opt-group.missing .pickhint { background: #ef4444; box-shadow: 0 2px 8px rgb(239 68 68 / .4); }
 @keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
 @media (prefers-reduced-motion: reduce) { .opt-group h4 .pickhint, .opt-group.missing.shake { animation: none; } }
+
+/* ===== v1.16 effects (ธีมและรูปแบบ → ลูกเล่นหน้าขาย: จัดเต็ม / ปกติ / ปิด) ===== */
+.fx-ripw { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; pointer-events: none; z-index: 5; }
+.fx-rip { position: absolute; border-radius: 50%; pointer-events: none; z-index: 5; background: radial-gradient(circle, rgb(255 255 255 / .55), rgb(255 255 255 / .18) 45%, transparent 70%);
+  transform: scale(0); animation: fxrip .6s ease-out forwards; mix-blend-mode: soft-light; }
+.prod .fx-rip, .opt .fx-rip, .qp-tile .fx-rip { background: radial-gradient(circle, color-mix(in srgb, var(--brand) 35%, transparent), transparent 65%); mix-blend-mode: normal; }
+@keyframes fxrip { to { transform: scale(1); opacity: 0; } }
+.fx-fly { position: fixed !important; z-index: 3000; pointer-events: none; border-radius: 16px; box-shadow: 0 12px 30px rgb(0 0 0 / .3); background-size: cover; background-position: center; display: grid; place-items: center; overflow: hidden; }
+.fx-fly img { width: 58%; }
+.fx-catch { animation: fxcatch .45s cubic-bezier(.2,1.6,.4,1); }
+@keyframes fxcatch { 35% { transform: scale(1.06); filter: brightness(1.15); } }
+.fx-burst { position: fixed; z-index: 3001; pointer-events: none; }
+.fx-burst i { position: absolute; width: 7px; height: 7px; margin: -3.5px; border-radius: 50%; background: var(--accent, #fbbf24); box-shadow: 0 0 8px var(--accent, #fbbf24); animation: fxspark .6s ease-out forwards; }
+@keyframes fxspark { from { transform: rotate(var(--a)) translateX(0); opacity: 1; } to { transform: rotate(var(--a)) translateX(46px) scale(.3); opacity: 0; } }
+.fx-bump { animation: fxbump .45s cubic-bezier(.2,1.5,.4,1); display: inline-block; }
+@keyframes fxbump { 40% { transform: scale(1.12); } }
+
+/* products cascade in when the category or search changes; lift + image zoom on hover */
+.prod.fx-in { animation: fxcard .42s cubic-bezier(.2,.9,.3,1.2) both; animation-delay: calc(var(--i, 0) * 22ms); }
+@keyframes fxcard { from { opacity: 0; transform: translateY(14px) scale(.96); } }
+.prod .img { transition: transform .35s ease, filter .35s ease; }
+.prod:hover .img { transform: scale(1.04); }
+.prod .pr .plus { transition: transform .25s cubic-bezier(.2,1.6,.4,1), background .2s, color .2s; }
+.prod:hover .pr .plus { transform: rotate(90deg) scale(1.12); background: var(--brand); color: #fff; }
+.prod.picked .incart { animation: fxbump .45s cubic-bezier(.2,1.5,.4,1); }
+
+/* category pills: the chosen one pops */
+.tabs.cats .tab { transition: transform .2s, box-shadow .25s, background .25s; }
+.tabs.cats .tab.active { animation: fxpill .4s cubic-bezier(.2,1.5,.4,1); }
+@keyframes fxpill { 40% { transform: scale(1.08); } }
+
+/* bill lines: new ones slide in, more of the same bumps, the newest keeps a soft glow */
+.line { transition: box-shadow .3s, background .3s; }
+.line.fx-new { animation: fxline .45s cubic-bezier(.2,.9,.3,1.2); }
+@keyframes fxline { from { opacity: 0; transform: translateX(24px); } }
+.line.fx-more .qty span { animation: fxbump .5s cubic-bezier(.2,1.6,.4,1); display: inline-block; }
+.line.fx-latest { position: relative; overflow: hidden; box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 55%, transparent), 0 8px 20px rgb(var(--brand-rgb) / .14);
+  background: linear-gradient(100deg, color-mix(in srgb, var(--brand) 9%, var(--surface)), var(--surface) 70%); }
+.line.fx-latest::before { content: ''; position: absolute; left: 0; top: 14%; bottom: 14%; width: 4px; border-radius: 0 4px 4px 0; background: var(--grad, var(--brand)); }
+.line.fx-latest::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(100deg, transparent 35%, rgb(255 255 255 / .35) 50%, transparent 65%); background-size: 250% 100%; animation: fxsheen 3.4s ease-in-out infinite; }
+@keyframes fxsheen { from { background-position: 150% 0; } to { background-position: -100% 0; } }
+
+/* pay button: soft breathing glow + a light sweep while there is something to pay */
+.actions .pay:not(:disabled) { position: relative; overflow: hidden; animation: fxbreathe 2.8s ease-in-out infinite; }
+.actions .pay:not(:disabled)::after { content: ''; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / .3) 50%, transparent 65%); background-size: 250% 100%; animation: fxsheen 3s ease-in-out infinite; pointer-events: none; }
+@keyframes fxbreathe { 50% { box-shadow: 0 14px 34px rgb(var(--brand-rgb) / .5); } }
+.actions .pay:not(:disabled):active { transform: scale(.98); }
+
+/* top bar: a slow light line along the bottom edge */
+.topbar::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--accent, #fbbf24), transparent); background-size: 40% 100%; background-repeat: no-repeat; animation: fxline2 6s linear infinite; opacity: .8; }
+@keyframes fxline2 { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+
+/* dialogs and toasts with a little spring */
+.modal { animation: fxmodal .32s cubic-bezier(.2,.9,.3,1.25); }
+@keyframes fxmodal { from { opacity: 0; transform: translateY(18px) scale(.94); } }
+.modal-back { animation: fxfade .2s ease-out; backdrop-filter: blur(6px) saturate(1.2); }
+@keyframes fxfade { from { opacity: 0; } }
+.opt, .qp-tile { transition: transform .15s, box-shadow .2s, background .2s; }
+.opt:active, .qp-tile:active { transform: scale(.96); }
+.opt.on { animation: fxbump .35s cubic-bezier(.2,1.5,.4,1); }
+
+/* extra: a bit more life */
+[data-pos-fx="extra"] .prod:hover { transform: translateY(-4px) rotate(-.6deg); box-shadow: 0 18px 36px rgb(var(--shadow-rgb) / .2); }
+[data-pos-fx="extra"] .cart-head { background-size: 200% 200%; animation: fxhead 10s ease-in-out infinite; }
+@keyframes fxhead { 50% { background-position: 100% 100%; } }
+[data-pos-fx="extra"] .totals .grand { text-shadow: 0 0 18px color-mix(in srgb, var(--brand) 35%, transparent); }
+[data-pos-fx="extra"] .line.fx-new { animation: fxflip .55s cubic-bezier(.2,.9,.3,1.3); }
+@keyframes fxflip { from { opacity: 0; transform: perspective(500px) rotateX(-60deg) translateY(-10px); } }
+
+/* off: a still screen */
+[data-pos-fx="off"] *, [data-pos-fx="off"] *::before, [data-pos-fx="off"] *::after { animation: none !important; transition: none !important; }
+[data-pos-fx="off"] .topbar::after, [data-pos-fx="off"] .line.fx-latest::after, [data-pos-fx="off"] .actions .pay::after { display: none; }
+@media (prefers-reduced-motion: reduce) { .prod.fx-in, .line.fx-new, .actions .pay, .topbar::after, .line.fx-latest::after, .actions .pay::after, .modal { animation: none !important; } }

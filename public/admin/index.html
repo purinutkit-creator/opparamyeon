@@ -35,6 +35,13 @@
   .stale { background: var(--warn-soft); color: var(--warn); padding: .5em .8em; border-radius: 10px; font-weight: 700; }
   .el-row { display: grid; grid-template-columns: auto 1fr auto; gap: .5em; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: .4em .6em; margin-bottom: .4em; background: var(--surface); }
   .el-row.sel { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-soft); }
+  .dstyle { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .3em 1.2em; }
+  .dstyle-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: .6em; padding: .35em 0; border-bottom: 1px dashed var(--line); }
+  .dstyle-row input[type=color] { width: 44px; height: 32px; border: 1px solid var(--line); border-radius: 8px; padding: 2px; background: none; }
+  .dstyle-row input[type=range] { width: 140px; } .dstyle-row select { min-width: 180px; }
+  .dtexts { border: 1px solid var(--line); border-radius: 12px; padding: .5em .8em; margin: .5em 0; }
+  .dtexts summary { cursor: pointer; font-weight: 700; }
+  .dprev { position: sticky; top: 1em; }
   .designer { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(280px, 420px); gap: 1em; align-items: start; }
   .paper { background: #fff; box-shadow: var(--shadow); border-radius: 6px; padding: 8px; overflow: auto; max-height: 80vh; }
   .paper canvas { display: block; margin: 0 auto; width: 100%; max-width: 420px; image-rendering: pixelated; }

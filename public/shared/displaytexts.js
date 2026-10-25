@@ -1,0 +1,76 @@
+// Every piece of text on the customer display, grouped for the admin editor.
+// The shop can override any of them (settings.display.texts); empty = the default shown here.
+// {n}, {amount}, {points}, {lines}, {pcs} are filled in by the display.
+export const DISPLAY_TEXTS = [
+  ['หน้าต้อนรับ (ไม่มีการขาย)', [
+    ['idle_pill', 'ป้ายใต้ชื่อร้าน', '🍜 สั่งได้เลยที่เคาน์เตอร์ · 감사합니다'],
+  ]],
+  ['รายการสินค้า', [
+    ['order_kicker', 'หัวข้อเล็ก', 'Your order'],
+    ['order_title', 'หัวข้อ', 'รายการของคุณ'],
+    ['dine_in', 'ทานที่ร้าน', '🍽️ ทานที่ร้าน'],
+    ['takeaway', 'กลับบ้าน', '🥡 กลับบ้าน'],
+    ['mixed', 'ทานที่ร้าน + กลับบ้าน', '🍽️ ทานที่ร้าน + 🥡'],
+    ['takeaway_tag', 'ป้ายรายการกลับบ้าน (บิลผสม)', 'กลับบ้าน'],
+    ['table', 'โต๊ะ', '🪑 โต๊ะ'],
+    ['member_hello', 'ทักทายสมาชิก', 'สวัสดีคุณ'],
+    ['member_tier', 'ระดับสมาชิก', 'สมาชิก'],
+    ['member_points', 'แต้มสะสม', 'แต้มสะสม'],
+    ['latest', 'ป้ายรายการล่าสุด', 'ล่าสุด'],
+    ['more_up', 'มีรายการด้านบน', '▲ อีก {n} รายการด้านบน'],
+    ['more_down', 'มีรายการด้านล่าง', '▼ อีก {n} รายการด้านล่าง'],
+    ['subtotal', 'รวมค่าอาหาร', 'รวมค่าอาหาร'],
+    ['discount', 'ส่วนลด', 'ส่วนลด'],
+    ['packaging', 'ค่าบรรจุภัณฑ์', 'ค่าบรรจุภัณฑ์'],
+    ['vat', 'ภาษี', 'VAT'],
+    ['total', 'ยอดรวม', 'ยอดรวม'],
+    ['count', 'จำนวนรายการ/ชิ้น', '{lines} รายการ · {pcs} ชิ้น'],
+  ]],
+  ['ชำระเงิน', [
+    ['pay_due', 'ยอดที่ต้องชำระ', 'ยอดที่ต้องชำระ'],
+    ['queue', 'ป้ายเลขคิว', 'คิว'],
+    ['saved', 'ป้ายประหยัด', '🎉 ประหยัดไป {amount} บาท'],
+    ['earn', 'ป้ายแต้มที่จะได้', '⭐ บิลนี้ได้ +{points} แต้ม'],
+    ['cash_title', 'เงินสด: หัวข้อ', 'ชำระด้วยเงินสด'],
+    ['cash_sub', 'เงินสด: หัวข้อเล็ก', 'Cash payment'],
+    ['received', 'เงินสด: รับเงิน', '💵 รับเงิน'],
+    ['short', 'เงินสด: ยังขาด', 'ยังขาดอีก {amount} บาท'],
+    ['paid_exact', 'เงินสด: รับพอดี', '✓ รับเงินครบแล้ว · พอดี ไม่มีเงินทอน'],
+    ['change', 'เงินสด: เงินทอน', '💰 เงินทอน'],
+    ['status_wait', 'สถานะ: รอชำระ', 'รอชำระเงิน'],
+    ['status_wait_qr', 'สถานะ: รอสแกน QR', 'รอชำระเงิน · สแกนด้วยแอปธนาคารใดก็ได้'],
+    ['status_paid', 'สถานะ: รับครบ', 'รับเงินครบ'],
+    ['status_paid_change', 'สถานะ: รับครบ มีเงินทอน', 'รับเงินครบ · รอรับเงินทอน'],
+    ['qr_title', 'QR: หัวการ์ด', 'THAI QR PAYMENT'],
+    ['qr_sub', 'QR: หัวการ์ดบรรทัดสอง', 'พร้อมเพย์ · PromptPay'],
+    ['qr_loading', 'QR: กำลังโหลด', 'กำลังสร้าง QR'],
+    ['qr_error', 'QR: โหลดไม่สำเร็จ', 'โหลด QR ไม่สำเร็จ · แจ้งพนักงาน'],
+    ['qr_account', 'QR: ชื่อบัญชี', 'ชื่อบัญชี'],
+    ['qr_scan', 'QR: สแกนจ่าย', 'สแกนจ่าย'],
+    ['qr_banks', 'QR: บรรทัดล่าง', 'สแกนได้ทุกแอปธนาคาร'],
+  ]],
+  ['หน้าขอบคุณ (หลังชำระ)', [
+    ['done_title', 'หัวข้อ', 'ชำระเงินเรียบร้อย'],
+    ['done_sub', 'หัวข้อเล็ก', 'Payment complete'],
+    ['done_queue', 'เลขคิว', 'เลขคิวของคุณ · Your queue'],
+    ['done_total', 'การ์ด: ยอดชำระ', 'ยอดชำระ'],
+    ['done_method', 'การ์ด: ชำระด้วย', 'ชำระด้วย'],
+    ['done_change', 'การ์ด: เงินทอน', 'เงินทอน'],
+    ['done_saved', 'การ์ด: ประหยัด', 'ประหยัดไป'],
+    ['done_points', 'การ์ด: แต้ม', 'แต้มที่ได้รับ'],
+    ['thanks_more', 'คำขอบคุณที่สลับแสดง (คั่นด้วย |)', '감사합니다|Thank you!'],
+    ['hint_queue', 'ข้อความล่าง (มีคิว)', 'กรุณารอเรียกคิวสักครู่นะคะ 🙏'],
+    ['hint_noqueue', 'ข้อความล่าง (ไม่มีคิว)', 'ขอให้อร่อยนะคะ 🍜'],
+    ['bye', 'คำลาตอนกดเสร็จ', 'แล้วพบกันใหม่นะคะ'],
+    ['bye_sub', 'คำลาบรรทัดสอง', 'See you again · 또 만나요'],
+  ]],
+];
+export const TEXT_DEFAULTS = Object.fromEntries(DISPLAY_TEXTS.flatMap(([, rows]) => rows.map(([k, , v]) => [k, v])));
+
+// Colours and effects of the customer display (settings.display.style); empty = default.
+export const DISPLAY_STYLE_DEFAULTS = {
+  bg2: '', card: '#ffffff', card_opacity: 8, ok: '#22c55e', warn: '#facc15', gold: '#f6c453', highlight: '', qty: '', total_from: '#ffffff', total_to: '',
+  qr_head: '#0f2a5f', pay_head: '', member_text: '#3b2304',
+  items_scale: 100, total_scale: 100, queue_scale: 100, corners: 'round',
+  motion: 'normal', bg_effect: 'blobs', confetti: true, fireworks: true, floaters: true, money_fx: true, shine: true, ring: true, latest_fx: true, sparks: true,
+};
