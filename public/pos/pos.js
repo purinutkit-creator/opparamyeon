@@ -494,7 +494,7 @@ function payDialog() {
       h('div', { class: 'muted small', style: { textAlign: 'center' } }, `${t.bowls} ${U()} · ${dineLabel(orderDineType(st.cart.lines))}`),
       pays.length ? h('div', { class: 'card', style: { margin: '.6em 0' } }, pays.map((p, i) => row(h('span', {}, methods.find((m) => m.id === p.method).name, ' ', h('button', { class: 'chip', onclick: () => { pays.splice(i, 1); drawLeft(); drawRight(); } }, 'ลบ')),
         baht(p.method === 'cash' ? p.received : p.amount))), row('คงเหลือ', baht(rem))) : null,
-      h('div', { class: 'pay-methods' }, methods.map((m) => h('button', { class: 'btn big' + (method === m.id ? ' on' : ''), onclick: () => { method = m.id; amt.value = (remaining() / 100).toFixed(2); drawLeft(); drawRight(); } }, m.name))),
+      h('div', { class: 'pay-methods' }, methods.map((m) => h('button', { class: 'btn big' + (method === m.id ? ' on' : ''), onclick: () => { method = m.id; amt.value = ''; drawLeft(); drawRight(); } }, m.name))),
       h('div', { style: { marginTop: '1em' } }, h('label', { class: 'switch' }, printReceipt, 'พิมพ์ใบเสร็จ'), ' ', h('label', { class: 'switch' }, printQueue, 'พิมพ์ใบเลขคิว'), ' ',
         h('label', { class: 'switch' }, printMerchant, 'พิมพ์ใบสรุปร้านค้า'), ' ', h('label', { class: 'switch' }, printMobile, 'พิมพ์ใบ Mobile Ordering')));
   };
@@ -502,9 +502,11 @@ function payDialog() {
     const rem = remaining();
     const received = toSatang(amt.value);
     const quick = [rem, ...[2000, 10000, 50000, 100000].filter((x) => x > rem)].slice(0, 5);
+    // nothing is filled in for the cashier: they type (or tap) what they actually received
+    amt.placeholder = method === 'cash' ? 'ใส่จำนวนเงินที่รับมา' : `ใส่จำนวนเงิน (คงเหลือ ${baht(rem)})`;
     right.replaceChildren(
       h('label', { class: 'field' }, method === 'cash' ? 'รับเงินสด (บาท)' : 'จำนวนเงิน (บาท)', amt),
-      method === 'cash' ? h('div', { class: 'row' }, [...new Set(quick)].map((q) => h('button', { class: 'btn', onclick: () => { amt.value = (q / 100).toFixed(2); drawRight(); } }, baht(q)))) : null,
+      method === 'cash' ? h('div', { class: 'row' }, [...new Set(quick)].map((q) => h('button', { class: 'btn', onclick: () => { amt.value = (q / 100).toFixed(2); drawRight(); } }, q === rem ? 'พอดี ' + baht(q) : baht(q)))) : null,
       method === 'cash' && received > rem ? h('div', { class: 'bigsum', style: { color: 'var(--ok)' } }, 'ทอน ', baht(received - rem)) : null,
       method === 'promptpay' && st.settings.payment.promptpay_enabled ? h('div', { style: { textAlign: 'center' } }, h('img', { src: '/api/qr.svg?d=' + encodeURIComponent(qrPayload(Math.min(rem, toSatang(amt.value) || rem))), style: { width: '200px' }, alt: 'PromptPay QR' }),
         h('div', { class: 'small muted' }, 'แสดงบนจอลูกค้าด้วย · ตรวจสอบยอดเงินเข้าก่อนกดยืนยัน'),
@@ -522,9 +524,9 @@ function payDialog() {
     if (!(v > 0)) return toast('กรุณาใส่จำนวนเงิน', 'warn');
     if (method !== 'cash' && v > rem) return toast('ช่องทางนี้รับได้ไม่เกินยอดคงเหลือ', 'warn');
     pays.push(method === 'cash' ? { method, amount: Math.min(v, rem), received: v } : { method, amount: v });
-    amt.value = (remaining() / 100).toFixed(2); method = remaining() ? method : method; drawLeft(); drawRight();
+    amt.value = ''; drawLeft(); drawRight();
   };
-  amt.value = (t.total / 100).toFixed(2);
+  amt.value = '';
   drawLeft(); drawRight();
   const idem = st.cart.idem; // same key on retry → never double charged
   modal('ชำระเงิน', h('div', { class: 'pay-grid' }, left, right), { wide: true, onClose: () => pushDisplay(), actions: [
@@ -533,6 +535,7 @@ function payDialog() {
       const list = pays.slice();
       if (paid() < t.total) {
         const v = toSatang(amt.value); const rem = remaining();
+        if (!(v > 0)) { toast(method === 'cash' ? 'กรุณาใส่จำนวนเงินที่รับมา' : 'กรุณาใส่จำนวนเงิน', 'warn'); return false; }
         if (method === 'cash') { if (v < rem) { toast('รับเงินไม่พอ', 'warn'); return false; } list.push({ method, amount: rem, received: v }); }
         else { if (v < rem) { toast('ยอดไม่ครบ กรุณาเพิ่มช่องทางชำระ', 'warn'); return false; } list.push({ method, amount: rem }); }
       }
