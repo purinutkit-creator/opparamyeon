@@ -20,7 +20,10 @@ async function boot() {
     if (qs.get('demo') && state.phase === 'cart') {
       const menu = [['ต็อกบกกีชีส', 8900], ['ไส้กรอกทอด', 2500], ['โคล่า', 2000], ['คิมบับ', 6900], ['ไก่ทอดเกาหลี', 12900], ['น้ำแร่', 1500], ['ราเมงต้มยำ', 9900]];
       let i = 0;
-      const add = () => { const [name, price] = menu[i % menu.length]; i++; const lines = [...state.lines, { name, qty: 1 + (i % 2), options: i % 3 ? [] : ['เผ็ดน้อย'], price: price * (1 + (i % 2)) }];
+      const add = () => { i++;
+        let lines;
+        if (i % 3 === 0) { lines = state.lines.map((l, j) => (j === 1 ? { ...l, qty: l.qty + 1, price: Math.round(l.price / l.qty * (l.qty + 1)) } : l)); } // same item again: stays in place
+        else { const [name, price] = menu[i % menu.length]; lines = [...state.lines, { name, qty: 1 + (i % 2), options: i % 4 ? [] : ['เผ็ดน้อย'], price: price * (1 + (i % 2)) }]; }
         const total = lines.reduce((a, l) => a + l.price, 0); state = { ...state, lines, items_total: total, total, discount: 0, discounts: [], at: Date.now() }; renderAll(); };
       setInterval(add, 1200);
     }
@@ -238,17 +241,22 @@ const timeText = () => new Date().toLocaleTimeString('th-TH', { hour: '2-digit',
 const dateText = () => new Date().toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 setInterval(() => { const c = $('#clock'); if (c) c.textContent = clockText(); }, 15000);
 setInterval(() => { const t = $('#payTime'); if (t) { t.textContent = timeText(); $('#payDate').textContent = dateText(); } }, 1000);
-let prevQty = new Map(), prevTotal = null;
+let prevQty = new Map(), prevTotal = null, latestKey = null;
 function renderPanel() {
   const p = $('#panel'); if (!p) return;
   const s = state;
-  if (!s.phase || s.phase === 'idle') { p.replaceChildren(); prevQty = new Map(); prevTotal = null; return; }
+  if (!s.phase || s.phase === 'idle') { p.replaceChildren(); prevQty = new Map(); prevTotal = null; latestKey = null; return; }
   const unit = settings.sale.count_unit || 'ชาม';
   const lines = s.lines || [];
   // lines that were just added (or got more) slide in and glow
-  const now = new Map(), hot = new Set();
-  for (const l of lines) { const k = l.name + '|' + (l.options || []).join(','); now.set(k, (now.get(k) || 0) + l.qty); if ((prevQty.get(k) || 0) < now.get(k)) hot.add(k); }
+  // brand-new lines slide in; a line that only got more stays where it is and bumps.
+  // The most recent one keeps a soft highlight ("ล่าสุด") until something else is added.
+  const now = new Map(), fresh = new Set(), more = new Set();
+  let last = null;
+  for (const l of lines) { const k = l.name + '|' + (l.options || []).join(','); now.set(k, (now.get(k) || 0) + l.qty); }
+  for (const [k, q] of now) { const was = prevQty.get(k) || 0; if (q > was) { (was ? more : fresh).add(k); last = k; } }
   prevQty = now;
+  if (last) latestKey = last; else if (latestKey && !now.has(latestKey)) latestKey = null;
   const bump = prevTotal !== null && prevTotal !== s.total; prevTotal = s.total;
   const m = s.member;
   const oldItems = p.querySelector('.items'), oldTop = oldItems ? oldItems.scrollTop : 0;
@@ -266,7 +274,9 @@ function renderPanel() {
         if (t.startsWith('✗ ')) return h('span', { class: 'no' }, h('i', {}, '✕'), t.slice(2));
         return t.startsWith('+ ') ? h('span', { class: 'add' }, t) : h('span', {}, t); });
       if (l.dine_type === 'takeaway' && s.dine_type === 'mixed') opts.push(h('span', { class: 'tw' }, 'กลับบ้าน'));
-      return h('div', { class: 'it' + (hot.has(k) ? ' new' : '') }, h('span', { class: 'q' }, l.qty), h('div', { class: 'n' }, h('b', {}, l.name), opts.length ? h('small', {}, opts) : null), h('span', { class: 'p' }, baht(l.price)));
+      const isLatest = k === latestKey;
+      return h('div', { class: 'it' + (fresh.has(k) ? ' new' : more.has(k) ? ' more-q' : '') + (isLatest ? ' latest' : ''), 'data-k': k },
+        h('span', { class: 'q' }, l.qty), h('div', { class: 'n' }, h('b', {}, l.name, isLatest ? h('em', { class: 'ltag' }, 'ล่าสุด') : null), opts.length ? h('small', {}, opts) : null), h('span', { class: 'p' }, baht(l.price)));
     })), h('div', { class: 'more down' })),
     h('div', { class: 'sum' },
       s.discount || s.packaging || s.tax ? r('รวมค่าอาหาร', baht(s.items_total)) : null, s.discount ? r('ส่วนลด', '−' + baht(s.discount)) : null,
@@ -280,10 +290,14 @@ function renderPanel() {
 function followItems(oldTop) {
   const box = $('#panel .items'); if (!box) return;
   box.scrollTop = oldTop;
-  const hot = [...box.querySelectorAll('.it.new')].pop();
+  const changed = box.querySelector('.it.latest.new, .it.latest.more-q');
   const max = box.scrollHeight - box.clientHeight;
   let to = Math.min(oldTop, max);
-  if (hot) { const t = hot.offsetTop, b = t + hot.offsetHeight; if (b > to + box.clientHeight) to = b - box.clientHeight; else if (t < to) to = t; }
+  if (changed) {
+    // added at the end → go all the way down; an existing line → just bring it into view where it is
+    if (changed === box.lastElementChild) to = max;
+    else { const t = changed.offsetTop, b = t + changed.offsetHeight; if (b > to + box.clientHeight) to = b - box.clientHeight; else if (t < to) to = t; }
+  }
   to = Math.max(0, Math.min(max, to));
   box.scrollTo({ top: to, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   countHidden(box, to);

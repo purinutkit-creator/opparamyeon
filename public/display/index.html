@@ -94,6 +94,17 @@
   .items.fade-up.fade-down { -webkit-mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent); }
   .it { display: grid; grid-template-columns: auto 1fr auto; gap: 1.6vh; align-items: center; padding: 1.2vh 1.6vh; border-radius: 2vh; background: var(--glass); border: 1px solid transparent; }
   .it.new { animation: slidein .55s cubic-bezier(.2, .9, .3, 1.3), glow 2.2s ease-out; }
+  .it.more-q { animation: glow 2.2s ease-out; } .it.more-q .q { animation: qbump .6s cubic-bezier(.2,1.6,.4,1); }
+  @keyframes qbump { 40% { transform: scale(1.35); } }
+  /* the most recently added line keeps a soft colour wash until the next one */
+  .it.latest { position: relative; overflow: hidden; border-color: color-mix(in srgb, var(--a) 45%, transparent);
+    background: linear-gradient(100deg, color-mix(in srgb, var(--a) 22%, var(--glass)), var(--glass) 70%); box-shadow: 0 0 2.4vh color-mix(in srgb, var(--a) 22%, transparent); }
+  .it.latest.new, .it.latest.more-q { animation-fill-mode: none; }
+  .it.latest::after { content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+    background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--a) 18%, transparent) 50%, transparent 70%); background-size: 250% 100%; animation: shimmer 3.2s ease-in-out infinite; }
+  .it.latest::before { content: ''; position: absolute; left: 0; top: 18%; bottom: 18%; width: .5vh; border-radius: 0 9px 9px 0; background: var(--a); box-shadow: 0 0 1.4vh var(--a); }
+  .it .ltag { display: inline-block; vertical-align: middle; margin-left: .5em; font-style: normal; font-size: .55em; font-weight: 800; padding: .15em .6em; border-radius: 99px; color: #fff;
+    background: color-mix(in srgb, var(--a) 85%, #000); animation: pop .4s cubic-bezier(.2,.9,.3,1.5); }
   @keyframes slidein { from { transform: translateX(6vw); opacity: 0; } to { transform: none; opacity: 1; } }
   @keyframes glow { 0% { border-color: var(--a); background: var(--a-soft); } 100% { border-color: transparent; background: var(--glass); } }
   .it .q { min-width: 5.4vh; height: 5.4vh; padding: 0 1vh; border-radius: 1.8vh; display: grid; place-items: center; font-family: var(--hf); font-size: 1.15em; color: #fff;
