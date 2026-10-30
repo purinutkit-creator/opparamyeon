@@ -272,25 +272,11 @@ test('รูปเข้างาน: ต้องถ่ายรูปก่อ
   const row = await db.get("SELECT photo, face_ok, live FROM attendance WHERE name = 'นารา'");
   assert.equal(row.photo, up.body.url); assert.equal(Number(row.face_ok), 1); assert.equal(Number(row.live), 1);
   assert.equal(Number((await db.get("SELECT COUNT(*) AS n FROM print_jobs WHERE doc_type = 'attendance'")).n), n0 + 1, 'คนแรกคนเดียวก็พิมพ์ใบลงเวลา');
-  // already clocked in today: signing in again needs no new photo
+  // every sign-in needs a photo (default); the shop can ask only for the first of the day
   assert.equal((await S.call('POST', '/api/auth/verify', { code: '7911', pin: '1357' })).body.clocked_today, true);
-  assert.equal((await S.call('POST', '/api/auth/login', { code: '7911', pin: '1357', terminal_id: 'pos1' })).status, 200);
+  assert.equal((await S.call('POST', '/api/auth/login', { code: '7911', pin: '1357', terminal_id: 'pos1' })).status, 400, 'เข้าใหม่ก็ต้องถ่ายรูป');
+  await S.call('PUT', '/api/settings/crew', { value: { ...cur, selfie: 'required', selfie_when: 'first' } }, { token: owner });
+  assert.equal((await S.call('POST', '/api/auth/login', { code: '7911', pin: '1357', terminal_id: 'pos1' })).status, 200, 'ตั้งเป็นครั้งแรกของวัน: เข้าซ้ำไม่ต้องถ่าย');
   assert.ok(w.ticket);
-  await S.call('PUT', '/api/settings/crew', { value: { ...cur, selfie: 'off' } }, { token: owner });
-});
-
-test('รูปเข้างานหลังสแกนบัตร (ก่อนใส่ PIN): ตั๋วจากบัตร ใช้ได้กับคนนั้นเท่านั้น', async () => {
-  const cur = (await S.call('GET', '/api/settings', undefined, { token: owner })).body.crew;
-  await S.call('PUT', '/api/settings/crew', { value: { ...cur, selfie: 'required' } }, { token: owner });
-  const id = (await S.call('POST', '/api/staff', { code: '7921', name: 'ยูจิน', pin: '8642', role_id: 'cashier' }, { token: owner })).body.id;
-  const card = decodeURIComponent((await S.call('GET', `/api/staff/${id}/card`, undefined, { token: owner })).body.url.split('/st/#')[1]);
-  assert.equal((await S.call('POST', '/api/clockin/start', { token: card.replace(/.$/, (c) => (c === '0' ? '1' : '0')) })).status, 404, 'บัตรปลอม');
-  const t = (await S.call('POST', '/api/clockin/start', { token: card })).body;
-  assert.ok(t.ticket); assert.equal(t.clocked_today, false);
-  const jpg = 'data:image/jpeg;base64,' + Buffer.from([0xff, 0xd8, 0xff, 0xd9]).toString('base64');
-  assert.equal((await S.call('POST', '/api/clockin/photo', { ticket: t.ticket, image: jpg, live: true })).status, 200);
-  assert.equal((await S.call('POST', '/api/auth/login', { code: '0001', pin: '1234', terminal_id: 'pos1', ticket: t.ticket })).status, 200, 'เจ้าของเข้าแล้ววันนี้ ไม่ต้องใช้รูป');
-  assert.equal((await S.call('POST', '/api/auth/login', { code: '7921', pin: '8642', terminal_id: 'pos1', ticket: t.ticket, face: { ok: true } })).status, 200);
-  assert.ok((await db.get("SELECT photo FROM attendance WHERE name = 'ยูจิน'")).photo);
-  await S.call('PUT', '/api/settings/crew', { value: { ...cur, selfie: 'off' } }, { token: owner });
+  await S.call('PUT', '/api/settings/crew', { value: { ...cur, selfie: 'off', selfie_when: 'every' } }, { token: owner });
 });

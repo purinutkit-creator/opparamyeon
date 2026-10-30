@@ -259,6 +259,7 @@ r.put('/settings/:key', staffAuth('settings'), ah(async (req, res) => {
     v.max = Math.max(2, Math.min(12, Math.round(Number(v.max) || 8)));
     v.print = v.print === 'off' ? 'off' : 'always'; v.printer_id = String(v.printer_id || '');
     v.selfie = ['required', 'optional', 'off'].includes(v.selfie) ? v.selfie : (before && before.selfie) || 'required'; // not sent = keep
+    v.selfie_when = ['every', 'first'].includes(v.selfie_when) ? v.selfie_when : (before && before.selfie_when) || 'every';
   }
   const after = await setSetting(key, v);
   await audit(req.staff.id, 'settings', 'settings', key, before, after, req.body.reason);

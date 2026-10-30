@@ -114,11 +114,10 @@ async function loginScreen() {
       const at = new Date().toISOString(); // clock-in time = when this person's PIN was accepted
       if (!crewMode && !selfieOn) { face.set('main', who); await signIn({ code: who.code, pin, at }, []); return; }
       const s = await api.post('/auth/verify', { code: who.code, pin }, { token: null });
-      const entry = { s: { ...who, ...s, typed: false }, pin, at, ticket: who.shot ? who.ticket : s.ticket, face: who.face };
-      const shot = who.shot;
+      const entry = { s: { ...who, ...s, typed: false }, pin, at, ticket: s.ticket };
       who = null; pin = '';
-      // code typed by hand (no card scan): the selfie comes after the PIN
-      if (selfieOn && !s.clocked_today && !shot) return morph(() => selfieStep(entry), 'in');
+      // PIN accepted → the selfie (every sign-in, or the first of the day if the shop set it so)
+      if (selfieOn && (plan.selfie_when !== 'first' || !s.clocked_today)) return morph(() => selfieStep(entry), 'in');
       await proceed(entry);
     } catch (e) { errToast(e); shake(); } finally { busy = false; }
   };
@@ -214,14 +213,13 @@ async function loginScreen() {
     selfieBoxEl = selfieBox({ ticket: entry.ticket, phoneUrl: location.origin + '/selfie/#' + encodeURIComponent(entry.ticket), allowSkip: plan.selfie === 'optional',
       onUse: (res) => { leaveSelfie(); entry.face = { ok: res.face_ok, score: res.score }; entry.s.selfie = res.url; next(); },
       onSkip: () => { leaveSelfie(); next(); } });
-    // card scanned first: photo done → PIN; typed code: PIN was already checked → go on
-    const next = () => (entry.pre ? morph(() => pinStep({ ...entry.s, ticket: entry.ticket, face: entry.face, shot: true }), 'in') : proceed(entry));
+    const next = () => proceed(entry);
     root.replaceChildren(
       h('div', { class: 'ls-art' }, h('div', { class: 'ls-staff' },
         h('div', { class: 'ph', style: named(s) }, s.photo ? h('img', { src: s.photo, alt: '' }) : initial(s.name)),
         h('div', { class: 'hello' }, '📸 ถ่ายรูปเข้างาน'),
         h('h1', {}, s.name, s.last_name ? h('span', {}, ' ' + s.last_name) : null),
-        h('div', { class: 'code' }, entry.pre ? 'ถ่ายรูปแล้วใส่ PIN ต่อ · ระบบตรวจว่าเป็นคนจริง' : 'ยืนยันตัวตนด้วยใบหน้า · ระบบตรวจว่าเป็นคนจริง'))),
+        h('div', { class: 'code' }, 'ยืนยันตัวตนด้วยใบหน้า · ระบบตรวจว่าเป็นคนจริง'))),
       h('div', { class: 'ls-form' }, h('div', { class: 'card' },
         h('h2', {}, '📸 ถ่ายรูปเข้างาน'), selfieBoxEl,
         h('button', { class: 'btn ghost block ls-back', onclick: () => { leaveSelfie(); back(); } }, '← ยกเลิก / สแกนบัตรใหม่'))));
@@ -322,12 +320,6 @@ async function loginScreen() {
         pop.querySelector('p').textContent = 'กำลังไปหน้าใส่ PIN…';
         pop.classList.add('found');
         await new Promise((res) => setTimeout(res, 700));
-      }
-      // first clock-in of the day: the selfie right after the card scan, then the PIN
-      if (selfieOn) {
-        const r2 = await fetch('/api/clockin/start', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: tok }) });
-        const t = await r2.json(); if (!r2.ok) throw new Error(t.error);
-        if (!t.clocked_today) return morph(() => selfieStep({ s, ticket: t.ticket, pre: true }), 'in');
       }
       toPin(s);
     } catch (e) { errToast(e); }
@@ -584,7 +576,7 @@ function joinDialog() {
       const mode = (st.crewPlan && st.crewPlan.selfie) || 'off';
       if (mode === 'off') { await join(); return false; }
       const v = await api.post('/auth/verify', { code: code.value.trim(), pin: pin.value }, { token: null });
-      if (v.clocked_today) { await join(); return false; }
+      if (st.crewPlan.selfie_when === 'first' && v.clocked_today) { await join(); return false; }
       // first clock-in today: the selfie, in this dialog (camera here, or the phone through the QR)
       const box = selfieBox({ ticket: v.ticket, phoneUrl: location.origin + '/selfie/#' + encodeURIComponent(v.ticket), allowSkip: mode === 'optional',
         onUse: (res) => join({ ticket: v.ticket, face: { ok: res.face_ok, score: res.score } }).catch(errToast), onSkip: () => join().catch(errToast) });

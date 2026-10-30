@@ -90,8 +90,9 @@ export async function selfieOf(staffId, ticket, face) {
   const p = await db.get('SELECT url, live FROM clockin_photos WHERE ticket = ? AND staff_id = ?', [ticket, staffId]);
   return p && p.url ? { url: p.url, live: !!p.live, face_ok: face && face.ok !== undefined ? face.ok : null } : null;
 }
-// required by the shop: someone clocking in for the first time today must bring a selfie
+// required by the shop: a selfie at every POS sign-in (or only the first of the day, if the shop set it so)
 export async function needSelfie(staffId) {
   const cfg = (await getSettings()).crew || {};
-  return (cfg.selfie || 'required') === 'required' && !(await clockedToday(staffId));
+  if ((cfg.selfie || 'required') !== 'required') return false;
+  return (cfg.selfie_when || 'every') === 'every' || !(await clockedToday(staffId));
 }
