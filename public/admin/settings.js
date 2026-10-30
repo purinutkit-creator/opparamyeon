@@ -1,6 +1,6 @@
 import { h, toast, errToast, modal, fmtTime, JOB_TH } from '/shared/ui.js';
 import { baht } from '/shared/core.js';
-import { GOOGLE_FONTS, SAMPLE, AREAS, loadFont, hasThai, fontCatalog, familyCss } from '/shared/fonts.js';
+import { GOOGLE_FONTS, SAMPLE, AREAS, loadFont, hasThai, fontCatalog, familyCss, fontStack } from '/shared/fonts.js';
 import { api, ctx, can, page, card, form, table, saveBtn, upload } from './common.js';
 import { DISPLAY_TEXTS, DISPLAY_STYLE_DEFAULTS } from '/shared/displaytexts.js';
 
@@ -226,12 +226,43 @@ export async function fontsPage() {
   const file = h('input', { type: 'file', accept: '.ttf,.otf,.woff,.woff2' });
   const fam = h('input', { class: 'input', placeholder: 'ชื่อฟอนต์ (family)' });
   const families = ['Sarabun', ...new Set(list.map((x) => x.family))];
-  const assign = form([...Object.entries(AREAS).map(([k, t]) => ({ k, label: t, type: 'select', options: [['', k === 'global' ? 'Sarabun' : '(ใช้ฟอนต์หลักทั้งระบบ)'], ...families.map((x) => [x, x])] })),
-    { k: 'fallback', label: 'ฟอนต์สำรอง (CSS)', wide: true }, { k: 'size', label: 'ขนาดตัวอักษรหน้าจอ (px)', type: 'number' }, { k: 'weight', label: 'น้ำหนัก', type: 'number' },
+  // per area: body font + heading/big-number font; optional separate English font for each (Thai/English split)
+  const fv = { ...fonts };
+  const split = h('input', { type: 'checkbox', checked: !!fv.split_lang });
+  const grid = h('div', { class: 'fontgrid' });
+  const pick = (key, placeholder) => {
+    const sel = h('select', { class: 'input' }, h('option', { value: '' }, placeholder), families.map((x) => h('option', { value: x, selected: fv[key] === x }, x)));
+    sel.addEventListener('change', () => { fv[key] = sel.value; drawSamples(); });
+    return sel;
+  };
+  const samples = [];
+  const drawSamples = async () => {
+    for (const [el, area] of samples) {
+      const [b, hd] = await Promise.all([fontStack({ ...fv, split_lang: split.checked }, area), fontStack({ ...fv, split_lang: split.checked }, area, '_head')]);
+      el.replaceChildren(h('b', { style: { fontFamily: familyCss(hd || b || 'Prompt') } }, 'คิว A12 · 1,234 ฿'), h('span', { style: { fontFamily: familyCss(b || 'Sarabun') } }, ' มาม่าเกาหลี Ramyeon 라면'));
+    }
+  };
+  const drawGrid = () => {
+    samples.length = 0;
+    const sp = split.checked;
+    const inherit = (k) => (k === 'global' ? 'ค่าเริ่มต้น' : ['receipt', 'kitchen'].includes(k) ? '(ตามแม่แบบเอกสาร)' : '(ตามทั้งระบบ)');
+    grid.replaceChildren(h('div', { class: 'fg-row fg-head' + (sp ? ' sp' : '') }, h('span', {}, 'ส่วน'), h('span', {}, sp ? 'ทั่วไป · ไทย' : 'ตัวอักษรทั่วไป'), sp ? h('span', {}, 'ทั่วไป · อังกฤษ') : null,
+      h('span', {}, sp ? 'หัวข้อ/ตัวเลข · ไทย' : 'หัวข้อ / ตัวเลขใหญ่'), sp ? h('span', {}, 'หัวข้อ/ตัวเลข · อังกฤษ') : null, h('span', {}, 'ตัวอย่าง')),
+      ...Object.entries(AREAS).map(([k, t]) => {
+        const sm = h('div', { class: 'fg-sample' }); samples.push([sm, k]);
+        return h('div', { class: 'fg-row' + (sp ? ' sp' : '') }, h('b', {}, t), pick(k, inherit(k)), sp ? pick(k + '_en', 'ใช้ฟอนต์เดียวกับไทย') : null,
+          pick(k + '_head', k === 'global' ? 'Prompt' : inherit(k)), sp ? pick(k + '_head_en', 'ใช้ฟอนต์เดียวกับไทย') : null, sm);
+      }));
+    drawSamples();
+  };
+  split.addEventListener('change', drawGrid); drawGrid();
+  const assign = form([{ k: 'fallback', label: 'ฟอนต์สำรอง (CSS)', wide: true }, { k: 'size', label: 'ขนาดตัวอักษรหน้าจอ (px)', type: 'number' }, { k: 'weight', label: 'น้ำหนัก', type: 'number' },
     { k: 'line_height', label: 'ระยะบรรทัด', type: 'number', step: '0.05' }, { k: 'letter_spacing', label: 'ระยะตัวอักษร (px)', type: 'number', step: '0.1' }], fonts);
   return page('ศูนย์จัดการฟอนต์',
-    card(h('h3', {}, 'ฟอนต์ที่ใช้ในแต่ละส่วน'), h('p', { class: 'small muted' }, 'ฟอนต์ในใบเสร็จ/ใบครัวพิมพ์แบบเรนเดอร์ภาพ (raster) จึงได้รูปแบบตรงกับตัวอย่าง แม้เครื่องพิมพ์ไม่รองรับฟอนต์นั้นโดยตรง — ข้อจำกัด: พิมพ์ช้ากว่าโหมดข้อความเล็กน้อย และความคมชัดขึ้นกับความละเอียด 203 dpi'),
-      assign, saveBtn('บันทึกการใช้ฟอนต์', () => saveKey('fonts', assign.value()))),
+    card(h('h3', {}, 'ฟอนต์ที่ใช้ในแต่ละส่วน'), h('p', { class: 'small muted' }, 'แต่ละส่วนตั้งฟอนต์ตัวอักษรทั่วไป และฟอนต์หัวข้อ/ตัวเลขใหญ่ (เช่น เลขคิว ยอดเงิน) แยกกันได้ · ไม่เลือก = ใช้ตามทั้งระบบ · ฟอนต์ใบเสร็จ/ใบครัวที่ตั้งตรงนี้ใช้แทนฟอนต์หลักของแม่แบบ (องค์ประกอบที่ตั้งฟอนต์ไว้เองในตัวออกแบบยังใช้ฟอนต์นั้น)'),
+      h('label', { class: 'switch', style: { margin: '.4em 0 .8em' } }, split, h('span', {}, h('b', {}, 'แยกฟอนต์ภาษาไทย / ภาษาอังกฤษ'), h('small', { class: 'muted' }, ' — ตัวอักษรไทยใช้ฟอนต์หนึ่ง ตัวอังกฤษ ตัวเลข และสัญลักษณ์ใช้อีกฟอนต์'))),
+      grid, h('h4', {}, 'ค่าอื่นๆ'), assign,
+      saveBtn('บันทึกการใช้ฟอนต์', () => { const v = { ...fv, ...assign.value(), split_lang: split.checked }; for (const k of Object.keys(v)) if (v[k] === '') delete v[k]; return saveKey('fonts', v); })),
     card(h('h3', {}, 'ฟอนต์ในระบบ'), table([{ t: 'ชื่อ', k: 'family' }, { t: 'แหล่ง', f: (x) => (x.source === 'google' ? 'Google Fonts' : 'อัปโหลด ' + x.format) }, { t: 'อักษรไทย', f: (x) => (x.has_thai === null ? '?' : x.has_thai ? 'มี' : 'ไม่มี') },
       { t: 'ตัวอย่าง', f: (x) => { const e = h('span', { style: { fontFamily: familyCss(x.family) } }, 'มาม่าเกาหลี 123'); loadFont(x.family); return e; } },
       { t: '', f: (x) => h('button', { class: 'btn sm danger', onclick: async (e) => { e.stopPropagation(); await api.del('/fonts/' + x.id); reload(); } }, 'ลบ') }], list)),
@@ -322,14 +353,91 @@ export async function printersPage() {
   const mTpl = h('select', { class: 'input' }, h('option', { value: '' }, 'ใบสรุปย่อ 58 มม. (ค่าเริ่มต้น)'), mTpls.map((x) => h('option', { value: x.id, selected: P0.merchant_template_id === x.id }, x.name)));
   const mAuto = h('input', { type: 'checkbox', checked: !!P0.auto_merchant });
   const tplRow = h('label', { class: 'field' }, 'แม่แบบแบบย่อ (แก้หน้าตาได้ที่ ออกแบบเอกสาร → ใบสรุปร้านค้า)', mTpl);
-  const syncM = () => { tplRow.hidden = mStyle.value !== 'compact'; };
+  // ---- what the compact slip shows: switches over the chosen template's elements ----
+  const C = tpl.compact_merchant;
+  const isEl = (pred) => (e) => { try { return pred(e); } catch { return false; } };
+  const PARTS = [
+    ['store', 'ชื่อร้าน', isEl((e) => e.type === 'field' && e.field === 'store_name')],
+    ['queue', 'เลขคิว', isEl((e) => e.type === 'field' && e.field === 'queue_no')],
+    ['bill', 'เลขบิล', isEl((e) => e.type === 'text' && e.text === '{bill_no}')],
+    ['time', 'วันเวลา', isEl((e) => e.type === 'field' && e.field === 'datetime')],
+    ['dine', 'ทานที่ร้าน / กลับบ้าน', isEl((e) => e.type === 'field' && e.field === 'dine_type')],
+    ['table', 'โต๊ะ', isEl((e) => e.type === 'field' && e.field === 'table')],
+    ['staff', 'พนักงาน', isEl((e) => e.type === 'field' && e.field === 'staff')],
+    ['items', 'รายการสินค้า', isEl((e) => e.type === 'items')],
+    ['options', '↳ ตัวเลือกของสินค้า (เส้น/เผ็ด/ท็อปปิ้ง)', isEl((e) => e.type === 'items'), 'show_options'],
+    ['prices', '↳ ราคาแต่ละรายการ', isEl((e) => e.type === 'items'), 'show_price'],
+    ['discount', 'ส่วนลด', isEl((e) => e.type === 'totals'), 'discount'],
+    ['vat', 'VAT / ค่าบรรจุภัณฑ์', isEl((e) => e.type === 'totals'), 'vat'],
+    ['total', 'ยอดสุทธิ', isEl((e) => e.type === 'totals')],
+    ['pay', 'วิธีชำระ / เงินทอน', isEl((e) => e.type === 'payments')],
+    ['qr', 'QR เปิดดูบิล (ไม่ต้องเข้าสู่ระบบ)', isEl((e) => e.type === 'qr')],
+    ['barcode', 'บาร์โค้ดเลขบิล', isEl((e) => e.type === 'barcode')],
+    ['sep', 'เส้นคั่นระหว่างบิล', null],
+  ];
+  const partsBox = h('div', { class: 'mparts' });
+  let tdata = null;
+  const compactTpl = () => tpl.templates.find((x) => x.id === mTpl.value) || tpl.templates.find((x) => x.doc_type === 'merchant' && x.name === tpl.compact_merchant_name);
+  const drawParts = () => {
+    const t = compactTpl();
+    if (!t) return partsBox.replaceChildren(h('p', { class: 'small muted' }, 'ไม่พบแม่แบบแบบย่อ'));
+    tdata = structuredClone(t.data);
+    const els = tdata.elements;
+    const lastDiv = () => [...els].reverse().find((e) => e.type === 'divider');
+    // an element the template does not have yet comes from the built-in compact layout, placed before the next known one
+    const ensure = (pred) => {
+      let e = els.find(pred); if (e) return e;
+      const ci = C.elements.findIndex(pred); if (ci < 0) return null;
+      e = structuredClone(C.elements[ci]);
+      const after = C.elements.slice(ci + 1).map((x) => els.findIndex((y) => JSON.stringify(y.type + (y.field || y.text || '')) === JSON.stringify(x.type + (x.field || x.text || '')))).find((i) => i >= 0);
+      els.splice(after ?? els.length, 0, e); return e;
+    };
+    const on = ([k, , pred, flag]) => {
+      if (k === 'sep') { const d = lastDiv(); return !!d && !d.hidden; }
+      const e = els.find(pred); if (!e || e.hidden) return false;
+      if (flag === 'discount') return (e.show || []).includes('discount');
+      if (flag === 'vat') return (e.show || []).includes('tax');
+      if (flag) return e[flag] !== false;
+      return true;
+    };
+    const set = ([k, , pred, flag], v) => {
+      if (k === 'sep') { const d = lastDiv() || (els.push({ type: 'divider', style: 'dash' }), els[els.length - 1]); d.hidden = !v; return; }
+      const e = v ? ensure(pred) : els.find(pred); if (!e) return;
+      if (flag === 'discount' || flag === 'vat') {
+        const keys = flag === 'vat' ? ['packaging', 'tax'] : ['discount'];
+        e.show = (e.show || ['total']).filter((x) => !keys.includes(x)); if (v) e.show = [...keys, ...e.show];
+        e.show.sort((a, b) => ['items_total', 'discount', 'packaging', 'tax', 'total'].indexOf(a) - ['items_total', 'discount', 'packaging', 'tax', 'total'].indexOf(b));
+        if (v) e.hidden = false;
+      } else if (flag) { e[flag] = v; if (v) e.hidden = false; }
+      else e.hidden = !v;
+    };
+    const feed = h('input', { class: 'input', type: 'number', min: 0, max: 8, value: tdata.feed_after ?? 1, style: { width: '80px' } });
+    const fs = h('input', { type: 'range', min: 80, max: 130, step: 5, value: 100 });
+    const fsOut = h('b', {}, '100%');
+    fs.addEventListener('input', () => { fsOut.textContent = fs.value + '%'; });
+    partsBox.replaceChildren(h('div', { class: 'mparts-grid' }, PARTS.map((p) => { const cb = h('input', { type: 'checkbox', checked: on(p) }); cb.addEventListener('change', () => set(p, cb.checked)); return h('label', { class: 'switch' }, cb, p[1]); })),
+      h('div', { class: 'row', style: { marginTop: '.6em', flexWrap: 'wrap', gap: '1em' } }, h('label', { class: 'small' }, 'เว้นกระดาษระหว่างบิล (บรรทัด) ', feed), h('label', { class: 'small' }, 'ขนาดตัวอักษร ', fs, ' ', fsOut),
+        h('a', { href: '#/designer', class: 'small' }, 'ปรับละเอียด (ขนาด ตำแหน่ง ฟอนต์) ในหน้าออกแบบเอกสาร →')));
+    partsBox._save = async () => {
+      tdata.feed_after = Math.max(0, Math.min(8, Number(feed.value) || 0));
+      const k = Number(fs.value) / 100;
+      if (k !== 1) for (const e of tdata.elements) { for (const f of ['size', 'total_size']) if (e[f]) e[f] = Math.max(12, Math.round(e[f] * k)); if (e.size_mm) e.size_mm = Math.max(12, Math.round(e.size_mm * k)); }
+      await api.put('/templates/' + t.id, { data: tdata });
+      t.data = structuredClone(tdata);
+    };
+  };
+  const partsRow = h('div', {}, h('h4', {}, 'แสดงอะไรบ้างในใบสรุปแบบย่อ'), partsBox);
+  mTpl.addEventListener('change', drawParts);
+  const syncM = () => { tplRow.hidden = partsRow.hidden = mStyle.value !== 'compact'; if (mStyle.value === 'compact') drawParts(); };
   mStyle.addEventListener('change', syncM); syncM();
   const merchantCard = card(h('h3', {}, '🧾 ใบสรุปร้านค้า (ทุกบิล)'),
     h('p', { class: 'small muted' }, 'แบบย่อพิมพ์บิลละไม่กี่บรรทัด: เลขคิว เลขบิล เวลา ยอดเงิน วิธีชำระ และ QR ดูรายละเอียดบิล ต่อกันเป็นม้วนโดยไม่ตัดกระดาษ — ฉีกออกตอนปิดรอบได้เลย'),
     h('label', { class: 'switch' }, mAuto, 'พิมพ์ใบสรุปร้านค้าอัตโนมัติทุกครั้งที่ชำระเงิน'),
     h('div', { class: 'form-grid', style: { marginTop: '.6em' } }, h('label', { class: 'field' }, 'รูปแบบ', mStyle), h('label', { class: 'field' }, 'พิมพ์ที่เครื่อง', mPrinter), tplRow),
+    partsRow,
     h('div', { style: { marginTop: '.6em' } }, saveBtn('บันทึกใบสรุปร้านค้า', async () => {
       const cur = (await api.get('/settings')).print || {};
+      if (mStyle.value === 'compact' && partsBox._save) await partsBox._save();
       await saveKey('print', { ...cur, auto_merchant: mAuto.checked, merchant_style: mStyle.value, merchant_printer_id: mPrinter.value, merchant_template_id: mTpl.value });
     })));
   return page('เครื่องพิมพ์', cookerCard, merchantCard, h('button', { class: 'btn primary', onclick: () => open(null) }, '+ เพิ่มเครื่องพิมพ์'),

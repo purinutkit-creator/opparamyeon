@@ -8,6 +8,7 @@
 import { store } from './api.js';
 import { buildJob, statusQuery, parseStatus, concat, init, feed, cut as cutCmd, beep as beepCmd, drawer as drawerCmd } from './escpos.js';
 import { renderDoc, testTemplate } from './render.js';
+import { docFontStack } from './fonts.js';
 import { playSound } from './sound.js';
 
 const BLE_SERVICES = ['000018f0-0000-1000-8000-00805f9b34fb', 'e7810a71-73ae-499d-8c15-faa9aef0c3f2', '49535343-fe7d-4ae5-8fa9-9fafd205e455', '0000ff00-0000-1000-8000-00805f9b34fb', '0000ffe0-0000-1000-8000-00805f9b34fb'];
@@ -186,7 +187,7 @@ export async function printDocument(printer, template, data, docType) {
     const tpl = docType === 'test' ? testTemplate(printer.paper, template && template.font) : { ...template, paper: printer.paper || template.paper };
     if (printer.margin) tpl.margin = printer.margin;
     if (o.width_dots) tpl.width_dots = o.width_dots;
-    const r = await renderDoc(tpl, data, { scale: o.scale, noLogo: o.print_logo === false, reprintMark: o.reprint_mark });
+    const r = await renderDoc(tpl, data, { scale: o.scale, noLogo: o.print_logo === false, reprintMark: o.reprint_mark, font: docType === 'test' ? null : await docFontStack(docType) });
     if (t.kind === 'browser') { await browserPrint(r.canvas); return { status: 'sent', note: 'ส่งไปยังหน้าต่างพิมพ์ของเบราว์เซอร์' }; }
     // a template set to "ไม่ตัด" prints as a continuous roll (e.g. short merchant slips): no cut, just a little space between slips
     const noCut = tpl.cut === 'none';

@@ -66,9 +66,9 @@ export async function renderDoc(tpl, data, opts = {}) {
   const width = opts.width || tpl.width_dots || paperDots(tpl.paper);
   let margin = Number(tpl.margin ?? 8);
   let inner = width - margin * 2; // narrowed while drawing inside a framed element (e.box)
-  const baseFamily = tpl.font || 'Sarabun';
+  const baseFamily = opts.font || tpl.font || 'Sarabun'; // opts.font: the shop's font for printed documents (may be a TH/EN stack)
   const families = new Set([baseFamily, ...tpl.elements.map((e) => e.font).filter(Boolean)]);
-  await Promise.all([...families].map((f) => loadFont(f)));
+  await Promise.all([...families].filter((f) => !/^["']/.test(f)).map((f) => loadFont(f)));
   const vars = { ...data, queue_number: data.queue_no, table_name: data.table_name ?? data.table, customer_name: data.customer_name ?? data.customer, member_name: data.member_name ?? data.member,
     total: data.total ?? (data.totals ? baht(data.totals.total) : '') };
   data = { ...data, print_time_now: data.print_time_now || new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', year: '2-digit', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) };

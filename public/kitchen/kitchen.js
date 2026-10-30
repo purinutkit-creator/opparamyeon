@@ -14,7 +14,7 @@ const deviceId = store.get('kitchen_device') || (store.set('kitchen_device', 'ki
 
 async function boot() {
   settings = await fetch('/api/settings/public').then((r) => r.json());
-  applyFonts(settings.fonts, 'pos'); applyTheme(settings.theme);
+  applyFonts(settings.fonts, 'kitchen_screen'); applyTheme(settings.theme);
   document.addEventListener('pointerdown', unlock);
   if (!store.get('kitchen_token')) return login();
   try { staff = (await api.get('/auth/me')).staff; } catch { return login(); }

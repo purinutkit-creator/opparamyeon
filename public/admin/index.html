@@ -35,6 +35,12 @@
   .stale { background: var(--warn-soft); color: var(--warn); padding: .5em .8em; border-radius: 10px; font-weight: 700; }
   .el-row { display: grid; grid-template-columns: auto 1fr auto; gap: .5em; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: .4em .6em; margin-bottom: .4em; background: var(--surface); }
   .el-row.sel { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-soft); }
+  .mparts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: .25em 1em; }
+  .fontgrid { display: grid; gap: .35em; overflow-x: auto; }
+  .fg-row { display: grid; grid-template-columns: 150px repeat(2, minmax(150px, 1fr)) minmax(220px, 1.4fr); gap: .5em; align-items: center; padding: .3em 0; border-bottom: 1px dashed var(--line); }
+  .fg-row.sp { grid-template-columns: 150px repeat(4, minmax(140px, 1fr)) minmax(220px, 1.4fr); }
+  .fg-head { font-weight: 800; font-size: .85em; color: var(--muted); border-bottom: 2px solid var(--line); }
+  .fg-sample { font-size: 1.05em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dstyle { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .3em 1.2em; }
   .dstyle-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: .6em; padding: .35em 0; border-bottom: 1px dashed var(--line); }
   .dstyle-row input[type=color] { width: 44px; height: 32px; border: 1px solid var(--line); border-radius: 8px; padding: 2px; background: none; }

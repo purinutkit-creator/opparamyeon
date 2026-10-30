@@ -8,7 +8,7 @@ import { db, J, S } from '../db.js';
 import { ah, id, now, bad, notFound, conflict, audit, emit, getSettings, setSetting, clearRulesCache, dayRules, businessDateOf, DEFAULT_SETTINGS } from '../lib/util.js';
 import { staffAuth, can, requirePerm } from '../lib/auth.js';
 import { claimNext, report, retry, reprint, publicPrinter, enqueue, storeData, normalizePrinterOptions } from '../lib/print.js';
-import { DEFAULT_TEMPLATES, DOC_TYPES } from '../lib/templates.js';
+import { DEFAULT_TEMPLATES, DOC_TYPES, COMPACT_MERCHANT, COMPACT_MERCHANT_NAME } from '../lib/templates.js';
 import { VERSION, businessRange } from '../../public/shared/core.js';
 
 const r = Router();
@@ -159,7 +159,7 @@ r.post('/print/cut', staffAuth('cut_paper'), ah(async (req, res) => {
 // ---------- templates ----------
 r.get('/templates', staffAuth(), ah(async (req, res) => {
   const rows = await db.all('SELECT * FROM templates ORDER BY doc_type, name');
-  res.json({ templates: rows.map((t) => ({ ...t, data: J(t.data) })), defaults: DEFAULT_TEMPLATES, doc_types: DOC_TYPES });
+  res.json({ templates: rows.map((t) => ({ ...t, data: J(t.data) })), defaults: DEFAULT_TEMPLATES, doc_types: DOC_TYPES, compact_merchant: COMPACT_MERCHANT, compact_merchant_name: COMPACT_MERCHANT_NAME });
 }));
 function validateTemplate(d) {
   if (!d || !Array.isArray(d.elements)) throw bad('แม่แบบไม่ถูกต้อง');

@@ -140,16 +140,22 @@ export const DEFAULT_TEMPLATES = {
 
 // Compact merchant slip for a second 58 mm printer: one short block per bill on a continuous roll (no cut)
 export const COMPACT_MERCHANT_NAME = 'ใบสรุปย่อ 58 มม. (ต่อเนื่อง ไม่ตัด)';
+// (hidden elements are switched on/off from เครื่องพิมพ์ → ใบสรุปร้านค้า)
 export const COMPACT_MERCHANT = base([
+  { type: 'field', field: 'store_name', align: 'center', size: 20, weight: 700, hidden: true },
   { type: 'field', field: 'queue_no', label: 'คิว ', align: 'center', size: 30, weight: 800, gap: 0 },
   { type: 'text', text: '{bill_no}', align: 'center', size: 18, gap: 0 },
   { type: 'field', field: 'datetime', align: 'center', size: 18, gap: 2 },
+  { type: 'field', field: 'dine_type', align: 'center', size: 18, weight: 700, hidden: true },
+  { type: 'field', field: 'table', label: 'โต๊ะ ', align: 'center', size: 18, hidden: true },
+  { type: 'field', field: 'staff', label: 'พนักงาน ', align: 'center', size: 18, hidden: true },
   { type: 'divider', style: 'dots' },
   { type: 'items', show_options: false, show_note: false, show_price: true, show_dine: false, size: 19 },
   { type: 'divider', style: 'dots' },
   { type: 'totals', show: ['discount', 'total'], size: 18, total_size: 28 },
   { type: 'payments', size: 18 },
   { type: 'qr', value: '{detail_url}', size_mm: 16, align: 'center' },
+  { type: 'barcode', value: '{bill_no}', height: 50, module: 2, hidden: true },
   { type: 'divider', style: 'dash' },
 ], { paper: 58, margin: 4, section_gap: 2, size: 18, feed_after: 1, cut: 'none' });
 // Ready-made receipt looks (added next to the shop's current receipt; everything stays editable in the designer)

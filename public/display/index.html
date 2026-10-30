@@ -20,7 +20,7 @@
     --qrh: var(--d-qrh, #0f2a5f); --qrh-l: color-mix(in srgb, var(--qrh) 75%, #fff); --qrh-d: color-mix(in srgb, var(--qrh) 70%, #000);
     --isc: var(--d-isc, 1); --tsc: var(--d-tsc, 1); --qsc: var(--d-qsc, 1);
     --glass: color-mix(in srgb, var(--card) var(--cop), transparent); --glass-2: color-mix(in srgb, var(--card) calc(var(--cop) + 6%), transparent); --stroke: color-mix(in srgb, var(--fg) 16%, transparent);
-    --hf: 'Prompt', var(--app-font, 'Sarabun'), sans-serif; }
+    --hf: var(--app-head, 'Prompt'), var(--app-font, 'Sarabun'), sans-serif; }
   html, body { height: 100%; }
   body { overflow: hidden; color: var(--fg); font-family: var(--font);
     background: radial-gradient(90vw 90vh at 110% -10%, color-mix(in srgb, var(--a) 45%, transparent), transparent 60%),
