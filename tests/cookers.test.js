@@ -62,3 +62,28 @@ test('ส่งครัวบิลเดิมซ้ำ ไม่พิมพ�
   const t3 = r3.body.tickets.filter((t) => t.kind === 'add').pop();
   assert.equal((await contentOf(t3.id)).kind_label, '+++ สั่งเพิ่ม +++');
 });
+
+test('ใบสรุปร้านค้า: เลือกแบบย่อ (ไม่ตัด) และเลือกเครื่องพิมพ์ได้', async () => {
+  const mk = async (name, paper, roles) => (await S.call('POST', '/api/printers', { name, conn: 'lan', address: '10.0.0.' + paper, port: 9100, paper, roles }, { token: owner })).body.id;
+  const big = await mk('Receipt 80', 80, ['receipt', 'merchant']);
+  const small = await mk('Roll 58', 58, ['receipt']);
+  const P = (await S.call('GET', '/api/settings', undefined, { token: owner })).body.print;
+  const pay = () => S.call('POST', '/api/orders/checkout', { idempotency_key: key(), cart: { lines: [line('p_d001', 1)] }, payments: [{ method: 'cash', amount: 1e6, received: 1e6 }], print: { merchant: true } }, { token: owner, terminal: 'pos1' });
+  // usual slip → printers with the merchant role, their own template
+  const o1 = (await pay()).body;
+  const j1 = await db.all("SELECT printer_id, payload FROM print_jobs WHERE ref_id = ? AND doc_type = 'merchant'", [o1.id]);
+  assert.deepEqual(j1.map((j) => j.printer_id), [big]);
+  assert.equal(JSON.parse(j1[0].payload).template, undefined);
+  // compact on the 58 mm roll printer → only that printer, compact layout without cutting
+  await S.call('PUT', '/api/settings/print', { value: { ...P, merchant_style: 'compact', merchant_printer_id: small } }, { token: owner });
+  const o2 = (await pay()).body;
+  const j2 = await db.all("SELECT printer_id, payload FROM print_jobs WHERE ref_id = ? AND doc_type = 'merchant'", [o2.id]);
+  assert.deepEqual(j2.map((j) => j.printer_id), [small]);
+  const t = JSON.parse(j2[0].payload).template;
+  assert.equal(t.cut, 'none');
+  assert.equal(t.paper, 58);
+  assert.ok(t.elements.some((e) => e.type === 'qr') && t.elements.some((e) => e.type === 'totals'));
+  const tpls = (await S.call('GET', '/api/templates', undefined, { token: owner })).body.templates;
+  assert.ok(tpls.some((x) => x.doc_type === 'merchant' && x.name.startsWith('ใบสรุปย่อ')), 'แก้หน้าตาได้ในตัวออกแบบ');
+  await S.call('PUT', '/api/settings/print', { value: P }, { token: owner });
+});

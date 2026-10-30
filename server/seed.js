@@ -1,7 +1,7 @@
 import { db, J, S } from './db.js';
 import { id, now } from './lib/util.js';
 import { seedStaff } from './lib/auth.js';
-import { DEFAULT_TEMPLATES, DOC_TYPES, COOKER_BLOCK, RECEIPT_STYLES } from './lib/templates.js';
+import { DEFAULT_TEMPLATES, DOC_TYPES, COOKER_BLOCK, RECEIPT_STYLES, COMPACT_MERCHANT, COMPACT_MERCHANT_NAME } from './lib/templates.js';
 
 export async function seed({ demo = process.env.SEED_DEMO !== 'false' } = {}) {
   await seedStaff();
@@ -45,6 +45,12 @@ export async function seed({ demo = process.env.SEED_DEMO !== 'false' } = {}) {
     for (const [name, data] of RECEIPT_STYLES) if (!(await db.get('SELECT id FROM templates WHERE doc_type = ? AND name = ?', ['receipt', name])))
       await db.run('INSERT INTO templates(id, doc_type, name, data, is_default, updated_at) VALUES(?,?,?,?,0,?)', [id(), 'receipt', name, S(data), now()]);
     await db.run("INSERT INTO settings(key, value) VALUES('seed_v118', 'true') ON CONFLICT(key) DO NOTHING");
+  }
+  // v1.19: compact merchant slip for a 58 mm roll printer (continuous, no cut)
+  if (!(await db.get("SELECT key FROM settings WHERE key = 'seed_v119'"))) {
+    if (!(await db.get('SELECT id FROM templates WHERE doc_type = ? AND name = ?', ['merchant', COMPACT_MERCHANT_NAME])))
+      await db.run('INSERT INTO templates(id, doc_type, name, data, is_default, updated_at) VALUES(?,?,?,?,0,?)', [id(), 'merchant', COMPACT_MERCHANT_NAME, S(COMPACT_MERCHANT), now()]);
+    await db.run("INSERT INTO settings(key, value) VALUES('seed_v119', 'true') ON CONFLICT(key) DO NOTHING");
   }
   // v1.3: the receipt's plain claim QR becomes the framed points box (custom elements are kept as they are)
   if (!(await db.get("SELECT key FROM settings WHERE key = 'seed_v13'"))) {

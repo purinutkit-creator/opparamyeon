@@ -1,7 +1,7 @@
 // Pure logic shared by the server (Node) and the browser.
 // Money is always an integer number of satang (1 บาท = 100 satang).
 
-export const VERSION = '1.18.0';
+export const VERSION = '1.19.0';
 
 export const baht = (satang) => {
   const v = (Number(satang) || 0) / 100;

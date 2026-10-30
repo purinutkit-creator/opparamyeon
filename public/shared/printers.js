@@ -188,7 +188,9 @@ export async function printDocument(printer, template, data, docType) {
     if (o.width_dots) tpl.width_dots = o.width_dots;
     const r = await renderDoc(tpl, data, { scale: o.scale, noLogo: o.print_logo === false, reprintMark: o.reprint_mark });
     if (t.kind === 'browser') { await browserPrint(r.canvas); return { status: 'sent', note: 'ส่งไปยังหน้าต่างพิมพ์ของเบราว์เซอร์' }; }
-    bytes = buildJob(r.canvas, { cuts: r.cuts, feedBefore: printer.feed_before ?? 3, feedAfter: printer.feed_after ?? 1, cutMode: printer.cut_mode || 'full',
+    // a template set to "ไม่ตัด" prints as a continuous roll (e.g. short merchant slips): no cut, just a little space between slips
+    const noCut = tpl.cut === 'none';
+    bytes = buildJob(r.canvas, { cuts: noCut ? [] : r.cuts, feedBefore: noCut ? 0 : printer.feed_before ?? 3, feedAfter: noCut ? Number(tpl.feed_after ?? 1) : printer.feed_after ?? 1, cutMode: noCut ? 'none' : printer.cut_mode || 'full',
       buzzer: buzz, beepCount: printer.beep_count || 4, beepDuration: o.beep_duration || 2, threshold: o.density || 160, topFeed: o.top_feed || 0 });
   }
   if (t.kind === 'browser') return { status: 'sent' };

@@ -312,9 +312,27 @@ export async function printersPage() {
       const v = cf.value(); const n = Math.max(1, Math.min(8, Number(v.count) || 2));
       await saveKey('cookers', { enabled: !!v.enabled, count: n, minutes_per_bowl: Math.max(0.5, Number(v.minutes_per_bowl) || 4), split_by_bowl: !!v.split_by_bowl,
         machines: Array.from({ length: n }, (_, i) => ({ name: (names[i] && names[i].value.trim()) || `เครื่องต้ม ${i + 1}`, printer_id: (prs[i] && prs[i].value) || '' })) });
-      await saveKey('print', { ...(all.print || {}), mark_additions: markAdd.checked });
+      await saveKey('print', { ...((await api.get('/settings')).print || {}), mark_additions: markAdd.checked });
     })));
-  return page('เครื่องพิมพ์', cookerCard, h('button', { class: 'btn primary', onclick: () => open(null) }, '+ เพิ่มเครื่องพิมพ์'),
+  // ---- merchant summary: usual slip, or a compact continuous roll on another (58 mm) printer ----
+  const P0 = all.print || {};
+  const mTpls = tpl.templates.filter((x) => x.doc_type === 'merchant');
+  const mStyle = h('select', { class: 'input' }, [['normal', 'แบบเดิม — ใบสรุปเต็ม ตัดกระดาษทุกใบ'], ['compact', 'แบบย่อ — ต่อเนื่อง ไม่ตัดกระดาษ (เหมาะกับเครื่อง 58 มม.)']].map(([v, t]) => h('option', { value: v, selected: (P0.merchant_style || 'normal') === v }, t)));
+  const mPrinter = h('select', { class: 'input' }, h('option', { value: '' }, '— เครื่องที่ตั้งงาน "ใบสรุปร้านค้า" ไว้ —'), printers.filter((x) => x.active).map((x) => h('option', { value: x.id, selected: P0.merchant_printer_id === x.id }, `${x.name} (${x.paper} มม.)`)));
+  const mTpl = h('select', { class: 'input' }, h('option', { value: '' }, 'ใบสรุปย่อ 58 มม. (ค่าเริ่มต้น)'), mTpls.map((x) => h('option', { value: x.id, selected: P0.merchant_template_id === x.id }, x.name)));
+  const mAuto = h('input', { type: 'checkbox', checked: !!P0.auto_merchant });
+  const tplRow = h('label', { class: 'field' }, 'แม่แบบแบบย่อ (แก้หน้าตาได้ที่ ออกแบบเอกสาร → ใบสรุปร้านค้า)', mTpl);
+  const syncM = () => { tplRow.hidden = mStyle.value !== 'compact'; };
+  mStyle.addEventListener('change', syncM); syncM();
+  const merchantCard = card(h('h3', {}, '🧾 ใบสรุปร้านค้า (ทุกบิล)'),
+    h('p', { class: 'small muted' }, 'แบบย่อพิมพ์บิลละไม่กี่บรรทัด: เลขคิว เลขบิล เวลา ยอดเงิน วิธีชำระ และ QR ดูรายละเอียดบิล ต่อกันเป็นม้วนโดยไม่ตัดกระดาษ — ฉีกออกตอนปิดรอบได้เลย'),
+    h('label', { class: 'switch' }, mAuto, 'พิมพ์ใบสรุปร้านค้าอัตโนมัติทุกครั้งที่ชำระเงิน'),
+    h('div', { class: 'form-grid', style: { marginTop: '.6em' } }, h('label', { class: 'field' }, 'รูปแบบ', mStyle), h('label', { class: 'field' }, 'พิมพ์ที่เครื่อง', mPrinter), tplRow),
+    h('div', { style: { marginTop: '.6em' } }, saveBtn('บันทึกใบสรุปร้านค้า', async () => {
+      const cur = (await api.get('/settings')).print || {};
+      await saveKey('print', { ...cur, auto_merchant: mAuto.checked, merchant_style: mStyle.value, merchant_printer_id: mPrinter.value, merchant_template_id: mTpl.value });
+    })));
+  return page('เครื่องพิมพ์', cookerCard, merchantCard, h('button', { class: 'btn primary', onclick: () => open(null) }, '+ เพิ่มเครื่องพิมพ์'),
     h('p', { class: 'small muted' }, 'หลายงานที่ใช้เครื่องเดียวกันจะเข้าคิวพิมพ์ทีละงานตามลำดับ ไม่ปะปน · สถานะ "เครื่องรับงานแล้ว" หมายถึงส่งข้อมูลถึงเครื่องแต่เครื่องไม่รายงานผลพิมพ์ · "พิมพ์สำเร็จ" เฉพาะเมื่อเครื่องตอบสถานะปกติ'),
     card(table([{ t: 'ชื่อ', k: 'name' }, { t: 'ช่องทาง', f: (p) => `${p.conn} ${p.address || ''}${p.port ? ':' + p.port : ''}` }, { t: 'กระดาษ', f: (p) => p.paper + ' มม.' }, { t: 'งาน', f: (p) => p.roles.join(', ') },
       { t: 'อุปกรณ์', f: (p) => (terms.find((t) => t.id === p.host_terminal_id) || {}).name || p.host_terminal_id || '-' }, { t: 'สถานะล่าสุด', f: (p) => (p.status ? `${p.status} (${fmtTime(p.status_at)})` : '-') }, { t: '', f: (p) => (p.active ? '' : 'ปิด') }], printers, { onRow: open })),

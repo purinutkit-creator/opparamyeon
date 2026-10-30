@@ -138,6 +138,17 @@ export const DEFAULT_TEMPLATES = {
   ]),
 };
 
+// Compact merchant slip for a second 58 mm printer: one short block per bill on a continuous roll (no cut)
+export const COMPACT_MERCHANT_NAME = 'ใบสรุปย่อ 58 มม. (ต่อเนื่อง ไม่ตัด)';
+export const COMPACT_MERCHANT = base([
+  { type: 'field', field: 'queue_no', label: 'คิว ', align: 'center', size: 30, weight: 800, gap: 0 },
+  { type: 'text', text: '{bill_no}', align: 'center', size: 18, gap: 0 },
+  { type: 'field', field: 'datetime', align: 'center', size: 18, gap: 2 },
+  { type: 'totals', show: ['total'], size: 20, total_size: 30 },
+  { type: 'field', field: 'pay_methods', label: 'ชำระ ', align: 'center', size: 18, gap: 2 },
+  { type: 'qr', value: '{detail_url}', size_mm: 16, align: 'center' },
+  { type: 'divider', style: 'dash' },
+], { paper: 58, margin: 4, section_gap: 2, size: 18, feed_after: 1, cut: 'none' });
 // Ready-made receipt looks (added next to the shop's current receipt; everything stays editable in the designer)
 const INFO = (size = 20) => [
   { type: 'field', field: 'bill_no', label: 'เลขบิล ', size }, { type: 'field', field: 'datetime', label: 'วันที่ ', size },

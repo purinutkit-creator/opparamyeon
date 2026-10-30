@@ -5,6 +5,7 @@ import { computeTotals, orderDineType, splitTickets, countBowls, dineLabel, isAd
 import { enqueue, orderDocData, fmtDate } from './print.js';
 import { awardOrder, reverseForRefund } from './members.js';
 import { assignCooker, cookerCfg, changed as cookersChanged, jobsOf } from './cookers.js';
+import { COMPACT_MERCHANT, COMPACT_MERCHANT_NAME } from './templates.js';
 
 const EDITABLE = ['held', 'open', 'pending_payment'];
 
@@ -253,6 +254,17 @@ export async function sendKitchen(order, staff, terminalId, shiftId) {
   return out;
 }
 
+// merchant summary: the shop picks the style (usual slip / compact roll) and which printer prints it
+async function enqueueMerchant(orderId, P) {
+  const printer = P.merchant_printer_id ? await db.get('SELECT id FROM printers WHERE id = ? AND active = 1', [P.merchant_printer_id]) : null;
+  let template = null;
+  if (P.merchant_style === 'compact') {
+    const t = (P.merchant_template_id && await db.get('SELECT data FROM templates WHERE id = ? AND doc_type = ?', [P.merchant_template_id, 'merchant']))
+      || await db.get('SELECT data FROM templates WHERE doc_type = ? AND name = ?', ['merchant', COMPACT_MERCHANT_NAME]);
+    template = t ? J(t.data) : COMPACT_MERCHANT;
+  }
+  await enqueue('merchant', orderId, await orderDocData(await getOrder(orderId)), { dedupe: `merchant:${orderId}`, printerId: printer ? printer.id : null, template });
+}
 export async function kitchenTickets(order, lines, kind, staff) {
   // toppings in a bowl group follow the station of that bowl so they are never separated
   const groupStation = new Map();
@@ -409,7 +421,9 @@ export async function payOrder({ orderId, payments, staff, terminalId, shiftId, 
     for (const doc of sequence) {
       // kitchen: everything not sent yet goes now (also covers "send after payment" mode)
       if (doc === 'kitchen') { await sendKitchen(await getOrder(orderId), staff, terminalId, shiftId); continue; }
-      if (want[doc]) await enqueue(doc, orderId, await orderDocData(await getOrder(orderId)), { dedupe: `${doc}:${orderId}` });
+      if (!want[doc]) continue;
+      if (doc === 'merchant') { await enqueueMerchant(orderId, P); continue; }
+      await enqueue(doc, orderId, await orderDocData(await getOrder(orderId)), { dedupe: `${doc}:${orderId}` });
     }
     order = await getOrder(orderId);
     return { order };
