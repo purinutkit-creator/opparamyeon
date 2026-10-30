@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db, J, S } from '../db.js';
-import { ah, id, now, bad, notFound, hashSecret, audit, conflict } from '../lib/util.js';
+import { ah, id, now, bad, notFound, hashSecret, audit, conflict, HttpError } from '../lib/util.js';
 import { staffAuth, verifyStaffPin, createSession, PERMS } from '../lib/auth.js';
 import { getSettings } from '../lib/util.js';
 import { staffToken, staffFromToken } from '../lib/billlink.js';
@@ -47,6 +47,15 @@ r.post('/auth/verify', ah(async (req, res) => {
     ticket: await clockinTicket(s.id), clocked_today: await clockedToday(s.id) });
 }));
 // ---- clock-in selfie: the POS camera, or the person's phone through the QR (ticket from the PIN check, 15 minutes) ----
+// right after the card scan (before the PIN): a ticket for the selfie, so the photo comes first; the PIN still decides the sign-in
+r.post('/clockin/start', ah(async (req, res) => {
+  const code = await staffFromToken((req.body || {}).token);
+  const st = code && await db.get('SELECT id, name, active FROM staff WHERE code = ?', [code]);
+  if (!st || !st.active) throw notFound('ไม่พบบัตรพนักงานนี้');
+  const plan = await crewPlan();
+  if (plan.leave.includes(st.id)) throw new HttpError(403, `${st.name} ลาหยุดวันนี้ (ตั้งไว้โดยร้าน) — เข้างานไม่ได้`, 'on_leave');
+  res.json({ ticket: await clockinTicket(st.id), clocked_today: await clockedToday(st.id) });
+}));
 r.get('/clockin/ticket/:ticket', ah(async (req, res) => {
   const sid = await staffFromTicket(req.params.ticket);
   const s = sid && await db.get('SELECT name, nickname, photo FROM staff WHERE id = ?', [sid]);
