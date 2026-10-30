@@ -52,6 +52,15 @@ export async function seed({ demo = process.env.SEED_DEMO !== 'false' } = {}) {
       await db.run('INSERT INTO templates(id, doc_type, name, data, is_default, updated_at) VALUES(?,?,?,?,0,?)', [id(), 'merchant', COMPACT_MERCHANT_NAME, S(COMPACT_MERCHANT), now()]);
     await db.run("INSERT INTO settings(key, value) VALUES('seed_v119', 'true') ON CONFLICT(key) DO NOTHING");
   }
+  // v1.19.1: the compact merchant slip lists the items and payments (only if still the untouched v1.19.0 version)
+  if (!(await db.get("SELECT key FROM settings WHERE key = 'seed_v1191'"))) {
+    for (const t of await db.all('SELECT id, data FROM templates WHERE doc_type = ? AND name = ?', ['merchant', COMPACT_MERCHANT_NAME])) {
+      const d = J(t.data, null);
+      if (d && Array.isArray(d.elements) && d.elements.length === 7 && !d.elements.some((e) => e.type === 'items'))
+        await db.run('UPDATE templates SET data = ?, updated_at = ? WHERE id = ?', [S(COMPACT_MERCHANT), now(), t.id]);
+    }
+    await db.run("INSERT INTO settings(key, value) VALUES('seed_v1191', 'true') ON CONFLICT(key) DO NOTHING");
+  }
   // v1.3: the receipt's plain claim QR becomes the framed points box (custom elements are kept as they are)
   if (!(await db.get("SELECT key FROM settings WHERE key = 'seed_v13'"))) {
     for (const t of await db.all('SELECT id, data FROM templates WHERE doc_type = ?', ['receipt'])) {

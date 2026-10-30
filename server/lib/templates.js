@@ -144,8 +144,11 @@ export const COMPACT_MERCHANT = base([
   { type: 'field', field: 'queue_no', label: 'คิว ', align: 'center', size: 30, weight: 800, gap: 0 },
   { type: 'text', text: '{bill_no}', align: 'center', size: 18, gap: 0 },
   { type: 'field', field: 'datetime', align: 'center', size: 18, gap: 2 },
-  { type: 'totals', show: ['total'], size: 20, total_size: 30 },
-  { type: 'field', field: 'pay_methods', label: 'ชำระ ', align: 'center', size: 18, gap: 2 },
+  { type: 'divider', style: 'dots' },
+  { type: 'items', show_options: false, show_note: false, show_price: true, show_dine: false, size: 19 },
+  { type: 'divider', style: 'dots' },
+  { type: 'totals', show: ['discount', 'total'], size: 18, total_size: 28 },
+  { type: 'payments', size: 18 },
   { type: 'qr', value: '{detail_url}', size_mm: 16, align: 'center' },
   { type: 'divider', style: 'dash' },
 ], { paper: 58, margin: 4, section_gap: 2, size: 18, feed_after: 1, cut: 'none' });
