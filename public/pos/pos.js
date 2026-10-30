@@ -40,23 +40,80 @@ async function boot() {
   reportDevice();
 }
 
+// Login: scan the QR on the staff card (fills the staff and shows who it is on the left), then the PIN on a big keypad
+const staffTokenOf = (text) => { const m = /(?:\/st\/#|^)([A-Za-z0-9_-]{1,20}\.[0-9a-f]{12})\s*$/i.exec(String(text || '').trim()); return m ? m[1] : null; };
 function loginScreen() {
   const code = h('input', { class: 'input', placeholder: 'รหัสพนักงาน', inputmode: 'numeric', autocomplete: 'username', value: store.get('last_code', '') });
-  const pin = h('input', { class: 'input pin', type: 'password', placeholder: 'PIN', inputmode: 'numeric', autocomplete: 'current-password' });
-  const go = async () => {
-    try {
-      const r = await api.post('/auth/login', { code: code.value, pin: pin.value, terminal_id: store.get('terminal_id') }, { token: null });
-      store.set('staff_token', r.token); store.set('last_code', code.value);
-      location.reload();
-    } catch (e) { errToast(e); pin.value = ''; }
+  let pin = '';
+  const dots = h('div', { class: 'pin-dots' });
+  const drawDots = () => dots.replaceChildren(...Array.from({ length: Math.max(4, Math.min(6, pin.length + (pin.length < 6 ? 1 : 0))) }, (_, i) => h('i', { class: i < pin.length ? 'on' : '' })));
+  drawDots();
+  const art = h('div', { class: 'ls-art' });
+  const idle = () => art.replaceChildren(h('img', { class: 'bowl', src: '/assets/bowl.svg', alt: '' }),
+    h('div', { class: 'ls-scan' }, h('span', { class: 'ico' }, '🪪'), h('b', {}, 'สแกนบัตรพนักงาน'), h('small', {}, 'ยิง QR บนบัตรด้วยเครื่องยิง แล้วใส่ PIN')),
+    h('h1', {}, '🍜 ', st.settings ? st.settings.store.name || 'Oppa Ramyeon' : 'Oppa Ramyeon', h('br'), 'หน้าขาย POS'), h('p', {}, 'ขายเร็ว ปุ่มใหญ่ สแกนบาร์โค้ด ส่งครัว และรับชำระได้ในที่เดียว'));
+  const showStaff = (s) => {
+    art.replaceChildren(h('div', { class: 'ls-staff' },
+      h('div', { class: 'ph' }, s.photo ? h('img', { src: s.photo, alt: '' }) : (s.name || '?')[0]),
+      h('div', { class: 'hello' }, 'สวัสดี 👋'), h('h1', {}, s.name, s.last_name ? h('span', {}, ' ' + s.last_name) : null),
+      s.nickname ? h('div', { class: 'nick' }, `(${s.nickname})`) : null, h('span', { class: 'role' }, s.title || s.role_name),
+      h('div', { class: 'code' }, 'รหัสพนักงาน ', h('b', {}, s.code)), s.active ? null : h('div', { class: 'off' }, 'บัตรนี้ถูกปิดใช้งาน')));
+    code.value = s.code; pin = ''; drawDots();
   };
-  pin.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
-  app.replaceChildren(loginHero('หน้าขาย POS', 'ขายเร็ว ปุ่มใหญ่ สแกนบาร์โค้ด ส่งครัว และรับชำระได้ในที่เดียว', h('div', { class: 'card' },
-    h('h2', {}, 'เข้าสู่ระบบ'), h('p', { class: 'muted' }, 'ใช้รหัสพนักงานและ PIN'),
-    h('label', { class: 'field' }, 'รหัสพนักงาน', code), h('label', { class: 'field' }, 'PIN', pin),
-    keypad(pin, { onEnter: go }),
-    h('p', { class: 'version' }, `เวอร์ชัน ${VERSION} · `, h('a', { href: '/guide/' }, 'คู่มือการใช้งาน')))));
-  (code.value ? pin : code).focus();
+  idle();
+  const go = async () => {
+    if (!code.value.trim()) return toast('สแกนบัตรพนักงาน หรือกรอกรหัสพนักงาน', 'warn');
+    if (!pin) return toast('กรุณาใส่ PIN', 'warn');
+    try {
+      const r = await api.post('/auth/login', { code: code.value.trim(), pin, terminal_id: store.get('terminal_id') }, { token: null });
+      store.set('staff_token', r.token); store.set('last_code', code.value.trim());
+      document.removeEventListener('keydown', onKey, true);
+      location.reload();
+    } catch (e) { errToast(e); pin = ''; drawDots(); dots.classList.remove('shake'); void dots.offsetWidth; dots.classList.add('shake'); }
+  };
+  const press = (k) => { if (k === '⌫') pin = pin.slice(0, -1); else if (k === 'C') pin = ''; else if (pin.length < 6) pin += k; drawDots(); if (pin.length === 6) go(); };
+  const pad = h('div', { class: 'bigpad' }, ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'].map((k) => h('button', { type: 'button', class: 'key' + (k === 'C' || k === '⌫' ? ' fn' : ''), onclick: () => press(k) }, k)));
+  // keyboard: digits go to the PIN; a fast burst ending like a staff-card QR is a scan (also typed with a Thai keyboard)
+  let burst = '', last = 0, fromBurst = 0, timer = null;
+  const scan = async (raw) => {
+    const tok = staffTokenOf(fromThaiKeys(raw));
+    if (!tok) return false;
+    try { const r = await fetch('/api/public/staff/' + encodeURIComponent(tok)); const s = await r.json(); if (!r.ok) throw new Error(s.error); showStaff(s); if (navigator.vibrate) navigator.vibrate(40); }
+    catch (e) { errToast(e); }
+    return true;
+  };
+  const endBurst = () => {
+    clearTimeout(timer); timer = null;
+    const b = burst; burst = '';
+    if (b.length >= 10) { pin = pin.slice(0, Math.max(0, pin.length - fromBurst)); drawDots(); if (document.activeElement === code) code.value = code.value.slice(0, Math.max(0, code.value.length - b.length)); scan(b); }
+    fromBurst = 0;
+  };
+  const onKey = (e) => {
+    if (!document.body.contains(dots)) return document.removeEventListener('keydown', onKey, true);
+    const now = performance.now();
+    if (now - last > 60) { if (burst) endBurst(); burst = ''; fromBurst = 0; }
+    last = now;
+    if (e.key === 'Enter') { e.preventDefault(); if (burst.length >= 10) endBurst(); else go(); return; }
+    if (e.key === 'Backspace' && e.target !== code) { e.preventDefault(); press('⌫'); return; }
+    if (e.key.length !== 1) return;
+    burst += e.key; clearTimeout(timer); timer = setTimeout(endBurst, 90);
+    if (e.target === code) return; // typing the code by hand
+    e.preventDefault();
+    if (/\d/.test(e.key) && pin.length < 6) { pin += e.key; fromBurst++; drawDots(); }
+  };
+  document.addEventListener('keydown', onKey, true);
+  app.replaceChildren(h('div', { class: 'login-staff' }, art, h('div', { class: 'ls-form' }, h('div', { class: 'card' },
+    h('h2', {}, 'เข้าสู่ระบบ'), h('p', { class: 'muted' }, 'สแกนบัตรพนักงาน หรือกรอกรหัส แล้วใส่ PIN'),
+    h('label', { class: 'field' }, 'รหัสพนักงาน', code), h('div', { class: 'field' }, 'PIN', dots), pad,
+    h('button', { class: 'btn primary big block', onclick: go }, 'เข้าสู่ระบบ'),
+    h('p', { class: 'version' }, `เวอร์ชัน ${VERSION} · `, h('a', { href: '/guide/' }, 'คู่มือการใช้งาน'))))));
+  // the shift was just closed (and this device signed out): show its summary once
+  const closed = store.get('closed_shift');
+  if (closed) {
+    store.del('closed_shift');
+    modal('ปิดรอบแล้ว · ' + (closed.terminal_name || ''), h('div', { class: 'pay-grid shift-grid' }, h('div', { class: 'shift-left' }, shiftStats(closed, U()), shiftDetailsView(closed, closed.names || {}, U())),
+      closed.qr ? h('div', { class: 'shift-qr' }, h('img', { src: '/api/qr.svg?d=' + encodeURIComponent(closed.qr), alt: '' }), h('small', {}, 'สแกนเก็บรายงานรอบนี้ไว้ดูบนมือถือ')) : null), { wide: true });
+  }
 }
 
 async function pickTerminal(terms) {
@@ -922,8 +979,9 @@ async function shiftDialog() {
     const r = await api.post('/shifts/close', { counted_cash: toSatang(counted.value) });
     st.shift = null; renderTop();
     toast(`ปิดรอบแล้ว · ${r.diff === 0 ? 'เงินตรง' : r.diff > 0 ? 'เกิน ' + baht(r.diff) : 'ขาด ' + baht(-r.diff)}`, r.diff === 0 ? 'ok' : 'warn', 8000);
-    setTimeout(() => modal('สรุปปิดรอบการขาย', h('div', { class: 'pay-grid shift-grid' }, h('div', { class: 'shift-left' }, shiftStats(r, U()), shiftDetailsView(r, names, U())),
-      qrUrl ? h('div', { class: 'shift-qr' }, h('img', { src: '/api/qr.svg?d=' + encodeURIComponent(qrUrl), alt: '' }), h('small', {}, 'สแกนเก็บรายงานรอบนี้ไว้ดูบนมือถือ')) : null), { wide: true }), 300);
+    // closing the shift signs this device out; the summary is shown on the login screen
+    store.set('closed_shift', { ...r, names, qr: qrUrl });
+    setTimeout(logout, 600);
   } }] : [] });
 }
 

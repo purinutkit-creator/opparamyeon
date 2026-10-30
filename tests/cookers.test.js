@@ -130,3 +130,21 @@ test('รายงานรอบ: รายละเอียดเพิ่ม
   const job = await db.get("SELECT payload FROM print_jobs WHERE ref_id = ? AND doc_type = 'shift' ORDER BY seq DESC", [cur.id]);
   if (job) assert.match(JSON.parse(job.payload).data.shift_url || '', /\/s\/#/);
 });
+
+test('บัตรพนักงาน: ชื่อ นามสกุล รูป และ QR สแกนดูข้อมูล/เข้าระบบได้ ปลอมไม่ได้', async () => {
+  const id = (await S.call('POST', '/api/staff', { code: '7701', name: 'มินจี', last_name: 'คิม', nickname: 'มิน', title: 'หัวหน้ากะ', pin: '4321', role_id: 'cashier', photo: '/files/abc123' }, { token: owner })).body.id;
+  const list = (await S.call('GET', '/api/staff', undefined, { token: owner })).body;
+  const me = list.find((x) => x.id === id);
+  assert.equal(me.last_name, 'คิม'); assert.equal(me.nickname, 'มิน'); assert.equal(me.photo, '/files/abc123');
+  await S.call('PUT', '/api/staff/' + id, { photo: 'javascript:alert(1)' }, { token: owner });
+  assert.equal((await S.call('GET', '/api/staff', undefined, { token: owner })).body.find((x) => x.id === id).photo, null, 'รูปต้องเป็นไฟล์ในระบบหรือ https');
+  const url = (await S.call('GET', `/api/staff/${id}/card`, undefined, { token: owner })).body.url;
+  const tok = decodeURIComponent(url.split('/st/#')[1]);
+  const pub = await S.call('GET', '/api/public/staff/' + encodeURIComponent(tok));
+  assert.equal(pub.status, 200);
+  assert.equal(pub.body.code, '7701'); assert.equal(pub.body.title, 'หัวหน้ากะ');
+  assert.equal(pub.body.pin_hash, undefined);
+  assert.equal((await S.call('GET', '/api/public/staff/7701.000000000000')).status, 404);
+  assert.equal((await S.call('GET', '/api/public/staff/' + encodeURIComponent(tok.replace('7701', '0001')))).status, 404);
+  assert.equal((await S.call('POST', '/api/auth/login', { code: '7701', pin: '4321' })).status, 200);
+});

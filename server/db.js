@@ -110,6 +110,9 @@ const MIGRATIONS = [
   ['option_groups', 'display', "TEXT DEFAULT 'normal'"],
   ['option_groups', 'rename_all', 'INTEGER DEFAULT 0'],
   ['option_groups', 'topic', "TEXT DEFAULT ''"],
+  ['staff', 'last_name', "TEXT DEFAULT ''"],
+  ['staff', 'nickname', "TEXT DEFAULT ''"],
+  ['staff', 'title', "TEXT DEFAULT ''"],
 ];
 
 class SqliteDB {

@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { db, J, S } from '../db.js';
 import { ah, id, now, bad, notFound, hashSecret, audit, conflict } from '../lib/util.js';
 import { staffAuth, verifyStaffPin, createSession, PERMS } from '../lib/auth.js';
+import { getSettings } from '../lib/util.js';
+import { staffToken, staffFromToken } from '../lib/billlink.js';
 
 const r = Router();
 
@@ -54,7 +56,26 @@ r.post('/terminals/:id/report', staffAuth(), ah(async (req, res) => {
 }));
 
 // ---------- staff ----------
-const pubStaff = (s) => ({ id: s.id, code: s.code, name: s.name, photo: s.photo, role_id: s.role_id, active: !!s.active, created_at: s.created_at, locked_until: s.locked_until });
+const pubStaff = (s) => ({ id: s.id, code: s.code, name: s.name, last_name: s.last_name || '', nickname: s.nickname || '', title: s.title || '', photo: s.photo, role_id: s.role_id, active: !!s.active, created_at: s.created_at, locked_until: s.locked_until });
+const clean = (v, n = 60) => String(v ?? '').trim().slice(0, n);
+const photoRef = (v) => (typeof v === 'string' && /^(\/files\/[\w-]+|https:\/\/[^\s"'<>]{1,480})$/.test(v) ? v : null);
+// staff card: what the QR opens (no PIN, nothing private) and what the POS login shows after a scan
+r.get('/public/staff/:token', ah(async (req, res) => {
+  const code = await staffFromToken(req.params.token);
+  const s = code && await db.get('SELECT * FROM staff WHERE code = ?', [code]);
+  if (!s) throw notFound('บัตรพนักงานไม่ถูกต้อง');
+  const role = await db.get('SELECT name FROM roles WHERE id = ?', [s.role_id]);
+  const st = await getSettings();
+  res.set('Cache-Control', 'no-store');
+  res.json({ code: s.code, name: s.name, last_name: s.last_name || '', nickname: s.nickname || '', title: s.title || '', role_name: role ? role.name : '', photo: s.photo, active: !!s.active,
+    since: s.created_at, store: st.store.name || '', logo: st.store.logo || '' });
+}));
+r.get('/staff/:id/card', staffAuth('manage_staff'), ah(async (req, res) => {
+  const s = await db.get('SELECT * FROM staff WHERE id = ?', [req.params.id]);
+  if (!s) throw notFound();
+  const base = process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '';
+  res.json({ url: `${base}/st/#${await staffToken(s.code)}` });
+}));
 r.get('/staff', staffAuth('manage_staff'), ah(async (req, res) => res.json((await db.all('SELECT * FROM staff ORDER BY code')).map(pubStaff))));
 r.post('/staff', staffAuth('manage_staff'), ah(async (req, res) => {
   const b = req.body || {};
@@ -62,8 +83,8 @@ r.post('/staff', staffAuth('manage_staff'), ah(async (req, res) => {
   if (!b.code || !b.name) throw bad('กรุณากรอกรหัสและชื่อพนักงาน');
   if (await db.get('SELECT id FROM staff WHERE code = ?', [b.code])) throw conflict('รหัสพนักงานซ้ำ');
   const sid = id();
-  await db.run('INSERT INTO staff(id, code, name, photo, role_id, pin_hash, active, created_at) VALUES(?,?,?,?,?,?,?,?)',
-    [sid, String(b.code), b.name, b.photo || null, b.role_id || 'cashier', hashSecret(b.pin), b.active === false ? 0 : 1, now()]);
+  await db.run('INSERT INTO staff(id, code, name, last_name, nickname, title, photo, role_id, pin_hash, active, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+    [sid, String(b.code), clean(b.name), clean(b.last_name), clean(b.nickname, 30), clean(b.title), photoRef(b.photo), b.role_id || 'cashier', hashSecret(b.pin), b.active === false ? 0 : 1, now()]);
   await audit(req.staff.id, 'create', 'staff', sid, null, { code: b.code, name: b.name, role_id: b.role_id });
   res.json({ id: sid });
 }));
@@ -72,8 +93,9 @@ r.put('/staff/:id', staffAuth('manage_staff'), ah(async (req, res) => {
   if (!cur) throw notFound();
   const b = req.body || {};
   if (b.pin && !/^\d{4,6}$/.test(String(b.pin))) throw bad('PIN ต้องเป็นตัวเลข 4-6 หลัก');
-  await db.run('UPDATE staff SET name = ?, photo = ?, role_id = ?, active = ?, pin_hash = ?, failed_attempts = 0, locked_until = NULL WHERE id = ?',
-    [b.name ?? cur.name, b.photo ?? cur.photo, b.role_id ?? cur.role_id, b.active === undefined ? cur.active : b.active ? 1 : 0, b.pin ? hashSecret(b.pin) : cur.pin_hash, cur.id]);
+  await db.run('UPDATE staff SET name = ?, last_name = ?, nickname = ?, title = ?, photo = ?, role_id = ?, active = ?, pin_hash = ?, failed_attempts = 0, locked_until = NULL WHERE id = ?',
+    [b.name !== undefined ? clean(b.name) : cur.name, b.last_name !== undefined ? clean(b.last_name) : cur.last_name, b.nickname !== undefined ? clean(b.nickname, 30) : cur.nickname, b.title !== undefined ? clean(b.title) : cur.title,
+      b.photo !== undefined ? photoRef(b.photo) : cur.photo, b.role_id ?? cur.role_id, b.active === undefined ? cur.active : b.active ? 1 : 0, b.pin ? hashSecret(b.pin) : cur.pin_hash, cur.id]);
   if (b.active === false) await db.run("UPDATE sessions SET revoked = 1 WHERE kind = 'staff' AND subject_id = ?", [cur.id]);
   await audit(req.staff.id, 'update', 'staff', cur.id, pubStaff(cur), { ...pubStaff({ ...cur, ...b }), pin_changed: !!b.pin }, b.reason);
   res.json({ ok: true });

@@ -1,6 +1,41 @@
 import { h, toast, errToast, modal, confirmBox, fmtTime } from '/shared/ui.js';
 import { baht, toSatang } from '/shared/core.js';
 import { api, can, page, card, form, table, saveBtn, upload } from './common.js';
+import { drawStaffCard, printCards } from '/shared/staffcard.js';
+
+// square centre crop (≤ 720 px) so a profile photo looks right inside a circle
+async function squareCrop(fileOrBlob, size = 720) {
+  const url = URL.createObjectURL(fileOrBlob);
+  try {
+    const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    const side = Math.min(im.naturalWidth, im.naturalHeight), out = Math.min(size, side);
+    const c = document.createElement('canvas'); c.width = c.height = out;
+    c.getContext('2d').drawImage(im, (im.naturalWidth - side) / 2, (im.naturalHeight - side) / 2, side, side, 0, 0, out, out);
+    return await new Promise((res) => c.toBlob((b) => res(new File([b], 'staff.jpg', { type: 'image/jpeg' })), 'image/jpeg', 0.9));
+  } finally { URL.revokeObjectURL(url); }
+}
+// take a profile photo with the device camera, framed by a circle
+function cameraDialog(onPhoto) {
+  const video = h('video', { autoplay: true, playsinline: true, muted: true });
+  const status = h('p', { class: 'small muted', style: { textAlign: 'center' } }, 'กำลังเปิดกล้อง…');
+  let stream = null, facing = 'user';
+  const start = async () => {
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1080 }, height: { ideal: 1080 } }, audio: false }); video.srcObject = stream; status.textContent = 'จัดหน้าให้อยู่ในวงกลม แล้วกดถ่าย'; }
+    catch (e) { status.textContent = 'เปิดกล้องไม่ได้ — อนุญาตกล้องในเบราว์เซอร์ หรือใช้ "เลือกรูป" แทน'; }
+  };
+  const stop = () => { if (stream) stream.getTracks().forEach((t) => t.stop()); };
+  modal('ถ่ายรูปพนักงาน', h('div', {}, h('div', { class: 'cam-circle' }, video, h('i')), status), { onClose: stop, actions: [
+    { label: '🔄 สลับกล้อง', close: false, onClick: () => { facing = facing === 'user' ? 'environment' : 'user'; start(); } },
+    { label: '📸 ถ่าย', class: 'primary', onClick: async () => {
+      if (!video.videoWidth) return false;
+      const c = document.createElement('canvas'); c.width = video.videoWidth; c.height = video.videoHeight;
+      const x = c.getContext('2d'); if (facing === 'user') { x.translate(c.width, 0); x.scale(-1, 1); } x.drawImage(video, 0, 0);
+      const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.92));
+      stop(); onPhoto(await squareCrop(blob));
+    } }] });
+  start();
+}
 
 // ---------------- menu ----------------
 export async function menuPage(set) {
@@ -153,10 +188,40 @@ export async function stockPage() {
 // ---------------- staff & roles ----------------
 export async function staffPage() {
   const [staff, rr] = await Promise.all([api.get('/staff'), api.get('/roles')]);
+  const roleName = (s) => (rr.roles.find((r) => r.id === s.role_id) || {}).name || '';
   const open = (s) => {
-    const f = form([{ k: 'code', label: 'รหัสพนักงาน' }, { k: 'name', label: 'ชื่อ' }, { k: 'role_id', label: 'ตำแหน่ง', type: 'select', options: rr.roles.map((r) => [r.id, r.name]) },
-      { k: 'pin', label: s ? 'PIN ใหม่ (เว้นว่างถ้าไม่เปลี่ยน)' : 'PIN 4-6 หลัก', type: 'password' }, { k: 'photo', label: 'รูปพนักงาน', type: 'image' }, { k: 'active', label: 'ใช้งาน', type: 'bool' }, { k: 'reason', label: 'เหตุผลการแก้ไข' }], s || { active: true, role_id: 'cashier' });
-    modal(s ? 'แก้ไขพนักงาน' : 'เพิ่มพนักงาน', f, { actions: [{ label: 'บันทึก', class: 'primary', onClick: async () => { const v = f.value(); if (!v.pin) delete v.pin; if (s) await api.put('/staff/' + s.id, v); else await api.post('/staff', v); toast('บันทึกแล้ว', 'ok'); window.dispatchEvent(new HashChangeEvent('hashchange')); } }] });
+    const f = form([{ k: 'code', label: 'รหัสพนักงาน' }, { k: 'name', label: 'ชื่อ' }, { k: 'last_name', label: 'นามสกุล' }, { k: 'nickname', label: 'ชื่อเล่น' },
+      { k: 'role_id', label: 'ตำแหน่ง (สิทธิ์)', type: 'select', options: rr.roles.map((r) => [r.id, r.name]) }, { k: 'title', label: 'ตำแหน่งบนบัตร (ไม่ใส่ = ใช้ชื่อตำแหน่ง)' },
+      { k: 'pin', label: s ? 'PIN ใหม่ (เว้นว่างถ้าไม่เปลี่ยน)' : 'PIN 4-6 หลัก', type: 'password' }, { k: 'active', label: 'ใช้งาน', type: 'bool' }, { k: 'reason', label: 'เหตุผลการแก้ไข' }], s || { active: true, role_id: 'cashier' });
+    let photo = (s && s.photo) || '';
+    const preview = h('div', { class: 'staff-photo' });
+    const drawPhoto = () => preview.replaceChildren(photo ? h('img', { src: photo, alt: '' }) : h('span', {}, '👤'));
+    drawPhoto();
+    const file = h('input', { type: 'file', accept: 'image/*', style: { display: 'none' } });
+    file.onchange = async () => { if (!file.files[0]) return; try { photo = (await upload(await squareCrop(file.files[0]))).url; drawPhoto(); } catch (e) { errToast(e); } file.value = ''; };
+    const photoBox = h('div', { class: 'staff-photo-box' }, preview, h('div', { class: 'row', style: { flexWrap: 'wrap' } },
+      h('button', { class: 'btn primary', type: 'button', onclick: () => cameraDialog(async (blob) => { try { photo = (await upload(blob)).url; drawPhoto(); } catch (e) { errToast(e); } }) }, '📷 ถ่ายรูป'),
+      h('button', { class: 'btn', type: 'button', onclick: () => file.click() }, '🖼️ เลือกรูป'), photo ? h('button', { class: 'btn ghost', type: 'button', onclick: () => { photo = ''; drawPhoto(); } }, 'ลบรูป') : null, file),
+      h('small', { class: 'muted' }, 'รูปโปรไฟล์จะแสดงเป็นวงกลมบนบัตรพนักงาน และตอนสแกนบัตรเข้าระบบ'));
+    modal(s ? 'แก้ไขพนักงาน' : 'เพิ่มพนักงาน', h('div', {}, photoBox, f), { wide: true, actions: [
+      s ? { label: '🪪 บัตรพนักงาน', close: false, onClick: () => cardDialog([s]) } : null,
+      { label: 'บันทึก', class: 'primary', onClick: async () => { const v = { ...f.value(), photo }; if (!v.pin) delete v.pin; if (s) await api.put('/staff/' + s.id, v); else await api.post('/staff', v); toast('บันทึกแล้ว', 'ok'); window.dispatchEvent(new HashChangeEvent('hashchange')); } }].filter(Boolean) });
+  };
+  // staff ID cards: drawn in the browser, downloaded as PNG or printed on A4
+  const cardDialog = async (list) => {
+    const st = (await api.get('/settings')), shop = { store: st.store.name, logo: st.store.logo };
+    const box = h('div', { class: 'cards-grid' }, h('div', { class: 'muted' }, 'กำลังสร้างบัตร…'));
+    const canvases = [];
+    modal(list.length > 1 ? `บัตรพนักงาน (${list.length} ใบ)` : 'บัตรพนักงาน · ' + list[0].name, box, { wide: true, actions: [
+      { label: '🖨 พิมพ์ (A4 ขนาดบัตรจริง)', close: false, onClick: () => printCards(canvases) },
+      list.length === 1 ? { label: '⬇️ ดาวน์โหลดรูป', class: 'primary', close: false, onClick: () => { const a = document.createElement('a'); a.href = canvases[0].toDataURL('image/png'); a.download = `staff-${list[0].code}.png`; a.click(); } } : null].filter(Boolean) });
+    const out = [];
+    for (const s of list) {
+      const { url } = await api.get(`/staff/${s.id}/card`);
+      const cv = await drawStaffCard({ ...s, role_name: roleName(s) }, shop, /^https?:/.test(url) ? url : location.origin + url, st.fonts);
+      canvases.push(cv); out.push(h('img', { src: cv.toDataURL('image/png'), alt: s.name, class: 'staff-card-img' }));
+    }
+    box.replaceChildren(...out, h('p', { class: 'small muted', style: { gridColumn: '1 / -1' } }, 'QR บนบัตร: ยิงที่หน้าเข้าสู่ระบบ POS เพื่อเลือกพนักงาน แล้วใส่ PIN · สแกนด้วยมือถือเพื่อดูข้อมูลพนักงาน · ตั้งฟอนต์บัตรได้ที่ ฟอนต์ → บัตรพนักงาน'));
   };
   const roleBox = h('div', {}, rr.roles.map((r) => {
     const set = new Set(r.perms);
@@ -164,9 +229,12 @@ export async function staffPage() {
       h('div', { class: 'grid2', style: { marginTop: '.6em' } }, Object.entries(rr.perms).map(([k, t]) => { const cb = h('input', { type: 'checkbox', checked: set.has(k) }); cb.onchange = () => (cb.checked ? set.add(k) : set.delete(k)); return h('label', { class: 'switch' }, cb, t); })),
       saveBtn('บันทึกสิทธิ์ ' + r.name, () => api.put('/roles/' + r.id, { name: r.name, perms: [...set] })));
   }));
-  return page('พนักงานและสิทธิ์', h('button', { class: 'btn primary', onclick: () => open(null) }, '+ เพิ่มพนักงาน'),
-    card(table([{ t: 'รหัส', k: 'code' }, { t: 'ชื่อ', k: 'name' }, { t: 'ตำแหน่ง', f: (s) => (rr.roles.find((r) => r.id === s.role_id) || {}).name }, { t: 'สถานะ', f: (s) => h('span', { class: 'badge ' + (s.active ? 'ok' : 'bad') }, s.active ? 'ใช้งาน' : 'ปิด') },
-      { t: 'ล็อกถึง', f: (s) => (s.locked_until && new Date(s.locked_until) > new Date() ? fmtTime(s.locked_until) : '') }], staff, { onRow: open })),
+  return page('พนักงานและสิทธิ์', h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => open(null) }, '+ เพิ่มพนักงาน'),
+      h('button', { class: 'btn', onclick: () => cardDialog(staff.filter((x) => x.active)) }, '🪪 บัตรพนักงานทั้งหมด')),
+    card(table([{ t: '', f: (s) => h('div', { class: 'staff-photo sm' }, s.photo ? h('img', { src: s.photo, alt: '' }) : h('span', {}, (s.name || '?')[0])) },
+      { t: 'รหัส', k: 'code' }, { t: 'ชื่อ', f: (s) => `${s.name} ${s.last_name || ''}${s.nickname ? ` (${s.nickname})` : ''}` }, { t: 'ตำแหน่ง', f: (s) => s.title || roleName(s) }, { t: 'สถานะ', f: (s) => h('span', { class: 'badge ' + (s.active ? 'ok' : 'bad') }, s.active ? 'ใช้งาน' : 'ปิด') },
+      { t: 'ล็อกถึง', f: (s) => (s.locked_until && new Date(s.locked_until) > new Date() ? fmtTime(s.locked_until) : '') },
+      { t: '', f: (s) => h('button', { class: 'btn sm', onclick: (e) => { e.stopPropagation(); cardDialog([s]); } }, '🪪 บัตร') }], staff, { onRow: open })),
     h('h3', {}, 'สิทธิ์ตามบทบาท'), roleBox);
 }
 

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#d4202f">
+<meta name="robots" content="noindex">
+<title>บัตรพนักงาน · Oppa Ramyeon</title>
+<link rel="icon" type="image/png" href="/assets/icon-192.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@500;600;700&family=Sarabun:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="/shared/style.css">
+<style>
+  body { max-width: 460px; margin: 0 auto; padding: 18px 14px 40px; background: var(--bg); }
+  .idc { background: var(--surface); border-radius: 28px; overflow: hidden; box-shadow: var(--shadow-lg); text-align: center; }
+  .idc .top { background: var(--grad, linear-gradient(135deg, #e8321f, #a3141c)); color: #fff; padding: 18px 18px 80px; }
+  .idc .top b { font-family: var(--head-font); font-size: 1.2em; } .idc .top small { display: block; opacity: .85; font-weight: 700; letter-spacing: .06em; }
+  .idc .ph { width: 150px; height: 150px; margin: -70px auto 10px; border-radius: 50%; overflow: hidden; background: #f3e3dd; box-shadow: 0 0 0 6px #fff, 0 0 0 10px var(--brand, #d4202f); display: grid; place-items: center; font-size: 4em; font-weight: 800; color: var(--brand, #d4202f); }
+  .idc .ph img { width: 100%; height: 100%; object-fit: cover; }
+  .idc h1 { font-family: var(--head-font); margin: .2em 0 0; font-size: 1.7em; } .idc h2 { margin: 0; font-weight: 700; color: var(--muted); font-size: 1.2em; }
+  .idc .nick { color: var(--muted); font-weight: 600; margin-top: .2em; }
+  .idc .role { display: inline-block; margin: .8em 0; padding: .35em 1.1em; border-radius: 99px; background: var(--brand, #d4202f); color: #fff; font-weight: 800; }
+  .idc .code { font-family: var(--head-font); font-size: 1.6em; padding-bottom: 1em; } .idc .code small { display: block; font-family: var(--font); font-size: .5em; color: var(--muted); font-weight: 700; }
+  .idc .st { margin: 0 18px 18px; padding: .6em; border-radius: 14px; font-weight: 800; } .st.ok { background: #e7f8ee; color: #15803d; } .st.off { background: #fde8e8; color: #b91c1c; }
+</style>
+</head>
+<body>
+<div id="app"><div class="empty">กำลังโหลด…</div></div>
+<script type="module">
+import { h, $ } from '/shared/ui.js';
+const app = $('#app');
+try {
+  const r = await fetch('/api/public/staff/' + encodeURIComponent(decodeURIComponent(location.hash.slice(1))));
+  const s = await r.json();
+  if (!r.ok) throw new Error(s.error || 'โหลดข้อมูลไม่สำเร็จ');
+  document.title = `${s.name} · ${s.store}`;
+  app.replaceChildren(h('div', { class: 'idc' }, h('div', { class: 'top' }, h('b', {}, s.store), h('small', {}, 'STAFF ID CARD · บัตรพนักงาน')),
+    h('div', { class: 'ph' }, s.photo ? h('img', { src: s.photo, alt: '' }) : (s.name || '?')[0]),
+    h('h1', {}, s.name), s.last_name ? h('h2', {}, s.last_name) : null, s.nickname ? h('div', { class: 'nick' }, `ชื่อเล่น: ${s.nickname}`) : null,
+    h('span', { class: 'role' }, s.title || s.role_name), h('div', { class: 'code' }, h('small', {}, 'รหัสพนักงาน'), s.code),
+    h('div', { class: 'st ' + (s.active ? 'ok' : 'off') }, s.active ? '✓ พนักงานปัจจุบัน' : '✕ บัตรนี้ถูกปิดใช้งาน')));
+} catch (e) { app.replaceChildren(h('div', { class: 'empty' }, '⚠️ ' + e.message)); }
+</script>
+</body>
+</html>

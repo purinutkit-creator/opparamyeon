@@ -9,7 +9,7 @@ export const GOOGLE_FONTS = [
   ['Noto Sans KR', false], ['Black Han Sans', false], ['Do Hyeon', false], ['Jua', false], ['Gowun Dodum', false], ['Inter', false], ['Roboto', false], ['Poppins', false],
 ];
 export const SAMPLE = 'มาม่าเกาหลี ต๊อกบกกี ชีสยืด ๆ ฿1,234.50 — Ramyeon 라면 0123456789 !@#%&*()';
-export const AREAS = { global: 'ทั้งระบบ', pos: 'หน้าขาย POS', display: 'จอลูกค้า', kitchen_screen: 'จอครัว', member: 'เว็บไซต์สมาชิก', mobile: 'Mobile Ordering', admin: 'เว็บไซต์จัดการร้าน', reports: 'รายงาน', receipt: 'ใบเสร็จ/เอกสารที่พิมพ์', kitchen: 'ใบครัวที่พิมพ์' };
+export const AREAS = { global: 'ทั้งระบบ', pos: 'หน้าขาย POS', display: 'จอลูกค้า', kitchen_screen: 'จอครัว', staff_card: 'บัตรพนักงาน', member: 'เว็บไซต์สมาชิก', mobile: 'Mobile Ordering', admin: 'เว็บไซต์จัดการร้าน', reports: 'รายงาน', receipt: 'ใบเสร็จ/เอกสารที่พิมพ์', kitchen: 'ใบครัวที่พิมพ์' };
 // each area has a body font and a heading/big-number font; with split_lang on, Thai and English letters can use different fonts
 export const FONT_ROLES = { '': 'ตัวอักษรทั่วไป', _head: 'หัวข้อ / ตัวเลขใหญ่' };
 const PRINT_AREAS = ['receipt', 'kitchen'];

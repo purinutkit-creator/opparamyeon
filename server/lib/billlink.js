@@ -31,3 +31,13 @@ export async function shiftFromToken(tok) {
   const want = Buffer.from(await signShift(m[1].toLowerCase())), got = Buffer.from(m[2].toLowerCase());
   return want.length === got.length && crypto.timingSafeEqual(want, got) ? m[1].toLowerCase() : null;
 }
+
+// staff cards: QR = <staff code>.<signature>; scanned at the POS login or opened on a phone
+const signStaff = async (code) => crypto.createHmac('sha256', await secret()).update('staff:' + code).digest('hex').slice(0, 12);
+export async function staffToken(code) { return `${code}.${await signStaff(code)}`; }
+export async function staffFromToken(tok) {
+  const m = /^([A-Za-z0-9_-]{1,20})\.([0-9a-f]{12})$/i.exec(String(tok || '').trim());
+  if (!m) return null;
+  const want = Buffer.from(await signStaff(m[1])), got = Buffer.from(m[2].toLowerCase());
+  return want.length === got.length && crypto.timingSafeEqual(want, got) ? m[1] : null;
+}
