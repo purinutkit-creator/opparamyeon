@@ -87,3 +87,28 @@ test('ใบสรุปร้านค้า: เลือกแบบย่อ
   assert.ok(tpls.some((x) => x.doc_type === 'merchant' && x.name.startsWith('ใบสรุปย่อ')), 'แก้หน้าตาได้ในตัวออกแบบ');
   await S.call('PUT', '/api/settings/print', { value: P }, { token: owner });
 });
+
+test('QR ใบสรุปร้านค้า: เปิดรายละเอียดบิลได้โดยไม่ต้องเข้าสู่ระบบ ปลอมลิงก์ไม่ได้', async () => {
+  const o = (await S.call('POST', '/api/orders/checkout', { idempotency_key: key(), cart: { lines: [line('p_d001', 2)] }, payments: [{ method: 'cash', amount: 1e6, received: 1e6 }], print: { merchant: true } }, { token: owner, terminal: 'pos1' })).body;
+  const job = await db.get("SELECT payload FROM print_jobs WHERE ref_id = ? AND doc_type = 'merchant'", [o.id]);
+  const url = JSON.parse(job.payload).data.detail_url;
+  const { billTokenOf, fromThaiKeys } = await import('../public/shared/core.js');
+  const tok = billTokenOf(url);
+  assert.ok(tok && tok.startsWith(o.bill_no + '.'), url);
+  const r = await S.call('GET', '/api/public/bill/' + encodeURIComponent(tok));
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.bill_no, o.bill_no);
+  assert.equal(r.body.items[0].qty, 2);
+  assert.equal(r.body.member, undefined, 'ไม่ส่งข้อมูลสมาชิก');
+  const bad = tok.slice(0, -1) + (tok.endsWith('0') ? '1' : '0');
+  assert.equal((await S.call('GET', '/api/public/bill/' + encodeURIComponent(bad))).status, 404);
+  assert.equal((await S.call('GET', '/api/public/bill/' + encodeURIComponent(o.bill_no + '.000000000000'))).status, 404);
+  // the same link typed by a scanner while the device keyboard is Thai (Kedmanee)
+  const US = "1234567890-=qwertyuiop[]\\asdfghjkl;'zxcvbnm,./!@#$%^&*()_+QWERTYUIOP{}|ASDFGHJKL:\"ZXCVBNM<>?~";
+  const TH = 'ๅ/-ภถุึคตจขชๆไำพะัีรนยบลฃฟหกดเ้่าสวงผปแอิืทมใฝ+๑๒๓๔ู฿๕๖๗๘๙๐"ฎฑธํ๊ณฯญฐ,ฅฤฆฏโฌ็๋ษศซ.()ฉฮฺ์?ฒฬฦ%';
+  const typed = [...url].map((c) => (US.includes(c) ? [...TH][US.indexOf(c)] : c)).join('');
+  assert.ok(/[฀-๿]/.test(typed));
+  assert.equal(fromThaiKeys(typed), url);
+  assert.equal(billTokenOf(fromThaiKeys(typed)), tok);
+  assert.equal(fromThaiKeys('คคถ-ต/'), '885392');
+});

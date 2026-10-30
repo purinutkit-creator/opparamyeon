@@ -5,6 +5,7 @@ import { staffAuth, staffForAction, can, requirePerm } from '../lib/auth.js';
 import { saveOrder, payOrder, checkout, voidOrder, refundItems, orderFull, getOrder, sendKitchen, freeTableIfIdle, idemRetry } from '../lib/orders.js';
 import { enqueue, orderDocData, reprint, retry } from '../lib/print.js';
 import { cookerStatus, finishTicket, finishOrder, voidOrderJobs } from '../lib/cookers.js';
+import { billFromToken } from '../lib/billlink.js';
 
 const r = Router();
 
@@ -25,6 +26,22 @@ r.get('/orders', staffAuth(), ah(async (req, res) => {
   res.json(rows);
 }));
 // bill barcode on the merchant copy / receipt → look the bill up
+// bill details from the signed QR on the merchant slip: no login, only what is printed on a receipt
+r.get('/public/bill/:token', ah(async (req, res) => {
+  const billNo = await billFromToken(req.params.token);
+  if (!billNo) throw notFound('ลิงก์บิลไม่ถูกต้อง');
+  const row = await db.get('SELECT id FROM orders WHERE bill_no = ?', [billNo]);
+  if (!row) throw notFound('ไม่พบบิล ' + billNo);
+  const o = await orderFull(row.id);
+  const s = await getSettings();
+  const methods = Object.fromEntries((s.sale.payment_methods || []).map((m) => [m.id, m.name]));
+  res.set('Cache-Control', 'no-store');
+  res.json({ store: s.store.name || '', bill_no: o.bill_no, queue_no: o.queue_no || '', status: o.status, dine_type: o.dine_type, table: o.table_name || '',
+    created_at: o.created_at, paid_at: o.paid_at, staff: o.staff_name || '', bowls: o.bowls,
+    items: o.items.filter((i) => i.qty - i.void_qty > 0).map((i) => ({ name: i.name, qty: i.qty - i.void_qty, refunded: i.refunded_qty || 0, options: (i.options || []).map((x) => x.name), note: i.note || '', line_total: i.line_total })),
+    items_total: o.items_total, discount: o.discount, packaging: o.packaging, tax: o.tax, total: o.total, refunded: o.refunded_amount || 0,
+    payments: o.payments.filter((p) => p.status === 'paid').map((p) => ({ method: methods[p.method] || p.method, amount: p.amount, received: p.received, change: p.change_amount })) });
+}));
 r.get('/orders/by-bill/:billNo', staffAuth(), ah(async (req, res) => {
   const o = await db.get('SELECT id FROM orders WHERE bill_no = ?', [String(req.params.billNo).trim().toUpperCase()]);
   if (!o) throw notFound('ไม่พบบิล ' + req.params.billNo);

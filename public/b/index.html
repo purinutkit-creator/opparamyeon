@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#d4202f">
+<meta name="robots" content="noindex">
+<title>รายละเอียดบิล · Oppa Ramyeon</title>
+<link rel="icon" type="image/png" href="/assets/icon-192.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@500;600;700&family=Sarabun:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="/shared/style.css">
+<style>
+  body { max-width: 520px; margin: 0 auto; padding: 16px 14px 40px; background: var(--bg); }
+  .slip { background: var(--surface); border-radius: 24px; box-shadow: var(--shadow-lg); overflow: hidden; }
+  .top { color: #fff; padding: 18px 18px 22px; background: var(--grad, linear-gradient(135deg, #e8321f, #a3141c)); position: relative; }
+  .top .store { font-family: 'Prompt', sans-serif; font-weight: 600; opacity: .9; }
+  .top .q { font-family: 'Prompt', sans-serif; font-size: 2.6em; font-weight: 700; line-height: 1.05; }
+  .top .meta { opacity: .9; font-size: .92em; }
+  .top .st { position: absolute; right: 16px; top: 16px; background: rgb(255 255 255 / .2); border-radius: 99px; padding: .2em .8em; font-weight: 800; font-size: .85em; }
+  .top .st.void { background: #111; }
+  .sec { padding: 14px 18px; border-top: 1px dashed var(--line); }
+  .it { display: grid; grid-template-columns: auto 1fr auto; gap: .6em; padding: .35em 0; }
+  .it .n { font-weight: 700; } .it small { display: block; color: var(--muted); font-weight: 600; }
+  .it .qty { min-width: 2em; height: 2em; border-radius: 10px; display: grid; place-items: center; background: var(--brand-soft, #ffe1d6); color: var(--brand, #d4202f); font-weight: 800; }
+  .r { display: flex; justify-content: space-between; padding: .15em 0; } .r.big { font-family: 'Prompt', sans-serif; font-size: 1.5em; font-weight: 700; color: var(--brand, #d4202f); }
+  .muted { color: var(--muted); } .num { font-variant-numeric: tabular-nums; }
+  .err { text-align: center; padding: 3em 1em; }
+</style>
+</head>
+<body>
+<div id="app"><div class="empty">กำลังโหลด…</div></div>
+<script type="module">
+import { h, $ } from '/shared/ui.js';
+import { baht, dineLabel } from '/shared/core.js';
+const app = $('#app');
+const tok = decodeURIComponent(location.hash.slice(1));
+const t = (iso) => (iso ? new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'medium', timeStyle: 'short' }) : '');
+const ST = { paid: 'ชำระแล้ว', void: 'ยกเลิก', open: 'ยังไม่ชำระ', held: 'พักบิล', pending_payment: 'รอชำระ' };
+try {
+  const r = await fetch('/api/public/bill/' + encodeURIComponent(tok));
+  const b = await r.json();
+  if (!r.ok) throw new Error(b.error || 'โหลดบิลไม่สำเร็จ');
+  document.title = `บิล ${b.bill_no} · ${b.store}`;
+  const row = (a, v, cls = '') => h('div', { class: 'r ' + cls }, h('span', {}, a), h('span', { class: 'num' }, v));
+  app.replaceChildren(h('div', { class: 'slip' },
+    h('div', { class: 'top' }, h('div', { class: 'store' }, b.store), h('div', { class: 'q' }, b.queue_no ? 'คิว ' + b.queue_no : b.bill_no),
+      h('div', { class: 'meta' }, `บิล ${b.bill_no} · ${t(b.paid_at || b.created_at)}`), h('div', { class: 'meta' }, [dineLabel(b.dine_type), b.table && 'โต๊ะ ' + b.table, b.staff && 'พนักงาน ' + b.staff].filter(Boolean).join(' · ')),
+      h('span', { class: 'st ' + (b.status === 'void' ? 'void' : '') }, ST[b.status] || b.status)),
+    h('div', { class: 'sec' }, b.items.map((i) => h('div', { class: 'it' }, h('span', { class: 'qty' }, i.qty), h('div', {}, h('div', { class: 'n' }, i.name),
+      i.options.length ? h('small', {}, i.options.join(' · ')) : null, i.note ? h('small', {}, '📝 ' + i.note) : null, i.refunded ? h('small', {}, `คืนเงิน ${i.refunded}`) : null), h('b', { class: 'num' }, baht(i.line_total))))),
+    h('div', { class: 'sec' }, row('รวมสินค้า', baht(b.items_total)), b.discount ? row('ส่วนลด', '-' + baht(b.discount)) : null, b.packaging ? row('ค่าบรรจุภัณฑ์', baht(b.packaging)) : null,
+      b.tax ? row('VAT', baht(b.tax)) : null, row('ยอดสุทธิ', baht(b.total) + ' ฿', 'big'), b.refunded ? row('คืนเงินแล้ว', '-' + baht(b.refunded)) : null),
+    b.payments.length ? h('div', { class: 'sec' }, b.payments.map((p) => [row(p.method, baht(p.received || p.amount)), p.change ? row('เงินทอน', baht(p.change)) : null])) : null,
+    h('div', { class: 'sec muted', style: { fontSize: '.85em', textAlign: 'center' } }, `${b.bowls || 0} ชาม · ${b.items.reduce((a, i) => a + i.qty, 0)} ชิ้น`)));
+} catch (e) { app.replaceChildren(h('div', { class: 'err' }, h('h2', {}, '⚠️ ' + e.message), h('p', { class: 'muted' }, 'สแกน QR จากใบสรุปร้านค้าอีกครั้ง'))); }
+</script>
+</body>
+</html>

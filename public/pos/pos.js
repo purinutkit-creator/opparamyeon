@@ -1,6 +1,6 @@
 import { makeApi, store, socket, uid, storageWarning } from '/shared/api.js';
 import { loginHero, h, $, toast, errToast, modal, confirmBox, promptBox, keypad, fmtTime, STATUS_TH, PREP_TH, SOURCE_TH, JOB_TH, debounce } from '/shared/ui.js';
-import { baht, toSatang, addToCart, computeTotals, countBowls, dineLabel, lineUnitTotal, lineTotal, orderDineType, promptPayPayload, VERSION, maskPhone, pointsFor, isAddon, renamedLine, markOf, displayOption } from '/shared/core.js';
+import { baht, toSatang, addToCart, computeTotals, countBowls, dineLabel, lineUnitTotal, lineTotal, orderDineType, promptPayPayload, VERSION, maskPhone, pointsFor, isAddon, renamedLine, markOf, displayOption, fromThaiKeys, billTokenOf } from '/shared/core.js';
 import { applyTheme } from '/shared/theme.js';
 import { rememberTap, flyToCart, countTo, lineChanges, setFxLevel } from './fx.js';
 import { applyFonts } from '/shared/fonts.js';
@@ -222,15 +222,18 @@ function renderMenu() {
   const cats = st.catalog.categories;
   const search = h('input', { class: 'input', id: 'search', placeholder: '🔍 ค้นหาชื่อ / รหัสสินค้า / สแกนบาร์โค้ด', value: st.q, autocomplete: 'off' });
   search.addEventListener('input', debounce(() => {
-    const v = search.value.trim();
+    const v = search.value.trim(), k = fromThaiKeys(v);
+    if (openBillLink(k)) { search.value = ''; st.q = ''; renderGrid(); return; }
     if (v.length >= 3 && exactCode(v) && addByCode(v)) { search.value = ''; st.q = ''; renderGrid(); return; }
+    // scanned with the keyboard in Thai: the converted text is an exact product code
+    if (k !== v && k.length >= 3 && exactCode(k) && addByCode(k)) { search.value = ''; st.q = ''; renderGrid(); return; }
     st.q = search.value; renderGrid();
   }, 250));
   search.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    const v = search.value.trim();
-    if (v && addByCode(v)) { search.value = ''; st.q = ''; renderGrid(); }
+    const v = search.value.trim(), k = fromThaiKeys(v);
+    if (v && (openBillLink(k) || addByCode(v) || (k !== v && addByCode(k)))) { search.value = ''; st.q = ''; renderGrid(); }
     else if (v) { const list = filtered(); if (list.length === 1) { pickProduct(list[0]); search.value = ''; st.q = ''; renderGrid(); } }
   });
   m.replaceChildren(cookbar,
@@ -1020,11 +1023,20 @@ function reportDevice() {
 }
 
 // ---------------- scanner (USB/Bluetooth keyboard wedge) ----------------
+// QR from the merchant slip (signed bill link) → open that bill
+function openBillLink(code) {
+  const tok = billTokenOf(code);
+  if (!tok) return false;
+  api.get('/orders/by-bill/' + encodeURIComponent(tok.split('.')[0])).then((r) => openOrder(r.id)).catch(errToast);
+  return true;
+}
 function setupScanner() {
   // A barcode scanner "types" the digits very fast. A burst is handled as soon as it ends,
   // with or without the Enter key that some scanners send.
   let buf = '', last = 0, fast = true, timer = null;
-  const handle = (code, enter) => {
+  const handle = (raw, enter) => {
+    const code = fromThaiKeys(raw); // device keyboard set to Thai: "คคถ-ต/" → "885392"
+    if (openBillLink(code)) return;
     if (addByCode(code)) return;
     // bill barcode from the merchant copy / receipt → open that bill
     if (/^[A-Z]+\d{6}-\d{4}$/i.test(code)) { api.get('/orders/by-bill/' + encodeURIComponent(code)).then((r) => openOrder(r.id)).catch(errToast); return; }

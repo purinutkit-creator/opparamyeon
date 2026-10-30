@@ -1,7 +1,7 @@
 // Pure logic shared by the server (Node) and the browser.
 // Money is always an integer number of satang (1 บาท = 100 satang).
 
-export const VERSION = '1.19.1';
+export const VERSION = '1.20.0';
 
 export const baht = (satang) => {
   const v = (Number(satang) || 0) / 100;
@@ -248,6 +248,28 @@ export const optionTopic = (g) => String((g && (g.topic || g.name)) || '').repla
 export const markOf = (g, o) => (o && (o.mark === 'yes' || o.mark === 'no') ? { mark: o.mark, topic: optionTopic(g) } : {});
 // text for one chosen option on the customer display: "✓ โรยสาหร่าย" / "✗ โรยสาหร่าย" / "+ ชีส" / "เผ็ดกลาง"
 export const displayOption = (o) => (o.mark && o.topic ? (o.mark === 'yes' ? '✓ ' : '✗ ') + o.topic : (isAddon(o) ? '+ ' : '') + o.name);
+
+// Barcode scanners type like a keyboard: with the device set to Thai (Kedmanee) "885392" arrives as "คคถ-ต/".
+// fromThaiKeys turns such text back into what the keys were (only when it actually contains Thai characters).
+const TH_KEYS = { 'ๅ': '1', '/': '2', '-': '3', 'ภ': '4', 'ถ': '5', 'ุ': '6', 'ึ': '7', 'ค': '8', 'ต': '9', 'จ': '0', 'ข': '-', 'ช': '=',
+  'ๆ': 'q', 'ไ': 'w', 'ำ': 'e', 'พ': 'r', 'ะ': 't', 'ั': 'y', 'ี': 'u', 'ร': 'i', 'น': 'o', 'ย': 'p', 'บ': '[', 'ล': ']', 'ฃ': '\\',
+  'ฟ': 'a', 'ห': 's', 'ก': 'd', 'ด': 'f', 'เ': 'g', '้': 'h', '่': 'j', 'า': 'k', 'ส': 'l', 'ว': ';', 'ง': "'",
+  'ผ': 'z', 'ป': 'x', 'แ': 'c', 'อ': 'v', 'ิ': 'b', 'ื': 'n', 'ท': 'm', 'ม': ',', 'ใ': '.', 'ฝ': '/',
+  '%': '~', '+': '!', '๑': '@', '๒': '#', '๓': '$', '๔': '%', 'ู': '^', '฿': '&', '๕': '*', '๖': '(', '๗': ')', '๘': '_', '๙': '+',
+  '๐': 'Q', '"': 'W', 'ฎ': 'E', 'ฑ': 'R', 'ธ': 'T', 'ํ': 'Y', '๊': 'U', 'ณ': 'I', 'ฯ': 'O', 'ญ': 'P', 'ฐ': '{', ',': '}', 'ฅ': '|',
+  'ฤ': 'A', 'ฆ': 'S', 'ฏ': 'D', 'โ': 'F', 'ฌ': 'G', '็': 'H', '๋': 'J', 'ษ': 'K', 'ศ': 'L', 'ซ': ':', '.': '"',
+  '(': 'Z', ')': 'X', 'ฉ': 'C', 'ฮ': 'V', 'ฺ': 'B', '์': 'N', '?': 'M', 'ฒ': '<', 'ฬ': '>', 'ฦ': '?',
+  '_': '3' }; // some Thai keyboards (and people) write the "3" key's dash as "_"
+export function fromThaiKeys(text) {
+  const s = String(text || '');
+  if (!/[฀-๿]/.test(s)) return s;
+  return [...s].map((c) => TH_KEYS[c] ?? c).join('');
+}
+// a scanned signed bill link (QR on the merchant slip) → its token "<bill_no>.<sig>", or null
+export function billTokenOf(text) {
+  const m = /(?:\/b\/#|^)([A-Z]{1,6}\d{6}-\d{3,6}\.[0-9a-f]{12})\s*$/i.exec(String(text || '').trim());
+  return m ? m[1] : null;
+}
 
 // An option can rename the item it is chosen on (e.g. ไข่ไก่ + ออนเซ็น → "ไข่ออนเซ็น").
 // kitchen = kitchen ticket / kitchen screen; everywhere = also POS cart, receipt and customer display when the group says so.
