@@ -19,6 +19,7 @@
   .card { background: var(--surface); border-radius: 22px; padding: 6px 16px; box-shadow: var(--shadow); }
   .at-row { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px dashed var(--line); animation: m-rise .45s var(--ease-out) both; }
   .at-row:last-child { border-bottom: 0; }
+  .at-row .ph img { width: 58px; height: 58px; border-radius: 50%; object-fit: cover; display: block; box-shadow: 0 4px 12px rgb(0 0 0 / .15); }
   .at-row .n { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--brand-soft); color: var(--brand); font-weight: 800; }
   .at-row b { display: block; font-size: 1.05em; } .at-row small { color: var(--muted); }
   .at-row .t { font-family: 'Prompt', sans-serif; font-size: 1.5em; font-weight: 700; color: var(--brand); }
@@ -52,8 +53,9 @@ async function show(day) {
       h('div', { class: 'nav' }, h('button', { class: 'btn', disabled: b.day <= b.from, onclick: () => go(-1) }, '‹ วันก่อน'), pick, h('button', { class: 'btn', disabled: b.day >= b.to, onclick: () => go(1) }, 'วันถัดไป ›')),
       b.days.length ? h('div', { class: 'strip' }, b.days.slice().reverse().map((d) => h('button', { class: d.day === b.day ? 'on' : '', onclick: () => show(d.day) }, thDay(d.day, { day: 'numeric', month: 'short' }), h('small', {}, `${d.n} คน`)))) : null,
       h('div', { class: 'card' }, b.rows.length ? b.rows.map((x, i) => h('div', { class: 'at-row', style: `animation-delay:${i * 40}ms` },
-        h('span', { class: 'n' }, i + 1),
-        h('div', {}, h('b', {}, x.name, x.main ? h('span', { class: 'tag main' }, 'คนหลัก') : null, x.kind === 'late' ? h('span', { class: 'tag' }, 'มาทีหลัง') : null), h('small', {}, x.terminal)),
+        x.photo ? h('a', { href: x.photo, target: '_blank', class: 'ph' }, h('img', { src: x.photo, alt: '' })) : h('span', { class: 'n' }, i + 1),
+        h('div', {}, h('b', {}, x.name, x.main ? h('span', { class: 'tag main' }, 'คนหลัก') : null, x.kind === 'late' ? h('span', { class: 'tag' }, 'มาทีหลัง') : null),
+          h('small', {}, x.terminal, x.photo ? (x.face_ok ? ' · ✓ ตรวจใบหน้าแล้ว' : x.face_ok === false ? ' · ⚠️ ใบหน้าไม่ผ่าน' : ' · รูปไม่ได้ตรวจ') + (x.live ? ' · คนจริง (หันหน้า)' : '') : '')),
         h('span', { class: 't' }, hm(x.at)))) : h('div', { class: 'empty' }, 'ไม่มีการลงเวลาวันนี้')),
       h('p', { class: 'small muted', style: 'text-align:center' }, `ดูย้อนหลัง/ล่วงหน้าได้ ${thDay(b.from, { day: 'numeric', month: 'short' })} – ${thDay(b.to, { day: 'numeric', month: 'short' })} · เวลาคือครั้งแรกที่สแกนบัตรเข้าระบบ POS ของวันนั้น`));
     history.replaceState(null, '', '#' + encodeURIComponent(tok));

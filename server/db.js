@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS shifts (id TEXT PRIMARY KEY, terminal_id TEXT, staff_
 CREATE TABLE IF NOT EXISTS attendance (id TEXT PRIMARY KEY, staff_id TEXT NOT NULL, name TEXT, business_date TEXT NOT NULL, at TEXT NOT NULL, terminal_id TEXT,
   shift_id TEXT, kind TEXT, main INTEGER DEFAULT 0, created_at TEXT);
 CREATE INDEX IF NOT EXISTS idx_att_day ON attendance (business_date);
+CREATE TABLE IF NOT EXISTS clockin_photos (ticket TEXT PRIMARY KEY, staff_id TEXT NOT NULL, url TEXT, live INTEGER, source TEXT, created_at TEXT);
 CREATE TABLE IF NOT EXISTS cash_moves (id TEXT PRIMARY KEY, shift_id TEXT, type TEXT, amount INTEGER, reason TEXT, staff_id TEXT, created_at TEXT);
 CREATE TABLE IF NOT EXISTS counters (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS audit (id TEXT PRIMARY KEY, actor TEXT, action TEXT, entity TEXT, entity_id TEXT, before_val TEXT, after_val TEXT,
@@ -118,6 +119,9 @@ const MIGRATIONS = [
   ['staff', 'title', "TEXT DEFAULT ''"],
   ['sessions', 'crew', "TEXT DEFAULT '[]'"],
   ['shifts', 'crew', "TEXT DEFAULT '[]'"],
+  ['attendance', 'photo', "TEXT DEFAULT ''"],
+  ['attendance', 'face_ok', 'INTEGER'],
+  ['attendance', 'live', 'INTEGER'],
 ];
 
 class SqliteDB {

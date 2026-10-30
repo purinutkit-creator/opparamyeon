@@ -5,7 +5,7 @@ import { id, now, getSettings, businessDateOf, HttpError } from './util.js';
 import { verifyStaffPin } from './auth.js';
 import { enqueue } from './print.js';
 import { ATTENDANCE_SLIP } from './templates.js';
-import { attendanceToken } from './billlink.js';
+import { attendanceToken, staffFromTicket } from './billlink.js';
 
 // everyone who worked a shift is kept on it (joined time; "main" = the one the POS was signed in as)
 export async function joinShiftCrew(shiftId, people) {
@@ -44,14 +44,15 @@ export async function clockIn(people, { terminalId = null, shiftId = null, kind 
   const added = [];
   for (const p of people) {
     if (await db.get('SELECT id FROM attendance WHERE staff_id = ? AND business_date = ?', [p.id, day])) continue;
-    const row = { id: id(), staff_id: p.id, name: p.name, business_date: day, at: sane(p.at), terminal_id: terminalId, shift_id: shiftId, kind, main: p.main ? 1 : 0, created_at: now() };
-    await db.run('INSERT INTO attendance(id, staff_id, name, business_date, at, terminal_id, shift_id, kind, main, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)', Object.values(row));
+    const row = { id: id(), staff_id: p.id, name: p.name, business_date: day, at: sane(p.at), terminal_id: terminalId, shift_id: shiftId, kind, main: p.main ? 1 : 0, created_at: now(),
+      photo: (p.selfie && p.selfie.url) || '', face_ok: p.selfie && p.selfie.face_ok !== undefined && p.selfie.face_ok !== null ? (p.selfie.face_ok ? 1 : 0) : null, live: p.selfie ? (p.selfie.live ? 1 : 0) : null };
+    await db.run('INSERT INTO attendance(id, staff_id, name, business_date, at, terminal_id, shift_id, kind, main, created_at, photo, face_ok, live) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)', Object.values(row));
     added.push(row);
   }
   return { day, added };
 }
 export async function attendanceOf(day) {
-  return db.all(`SELECT a.staff_id, a.name, a.at, a.kind, a.main, t.name AS terminal FROM attendance a LEFT JOIN terminals t ON t.id = a.terminal_id
+  return db.all(`SELECT a.staff_id, a.name, a.at, a.kind, a.main, a.photo, a.face_ok, a.live, t.name AS terminal FROM attendance a LEFT JOIN terminals t ON t.id = a.terminal_id
     WHERE a.business_date = ? ORDER BY a.at`, [day]);
 }
 export async function attendanceUrl(day) {
@@ -60,9 +61,9 @@ export async function attendanceUrl(day) {
 }
 const hm = (iso) => new Date(iso).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' });
 // print the day's clock-in slip (everyone so far) when people were added; the shop picks when and where
-export async function printAttendance(day, terminalId, { crewSize = 1 } = {}) {
+export async function printAttendance(day, terminalId) {
   const s = await getSettings(), cfg = s.crew || {};
-  if (cfg.print === 'off' || (cfg.print !== 'always' && crewSize < 2)) return [];
+  if (cfg.print === 'off') return [];
   const rows = await attendanceOf(day);
   if (!rows.length) return [];
   let printerId = cfg.printer_id || null;
@@ -79,4 +80,18 @@ export async function printAttendance(day, terminalId, { crewSize = 1 } = {}) {
     rows: rows.map((r) => [r.name + (r.main ? ' (หลัก)' : r.kind === 'late' ? ' (มาทีหลัง)' : ''), hm(r.at) + ' น.']),
     summary: `เข้างานแล้ว ${rows.length} คน`, printed_at: new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'medium', timeStyle: 'short' }) };
   return enqueue('attendance', day, data, { printerId, template: ATTENDANCE_SLIP(Number(pr && pr.paper) === 58 ? 58 : 80) });
+}
+
+// ---- clock-in selfie ----
+export async function clockedToday(staffId) { return !!(await db.get('SELECT id FROM attendance WHERE staff_id = ? AND business_date = ?', [staffId, await businessDateOf()])); }
+// the photo taken for this ticket (POS camera or the phone behind the QR); the face check result comes from the device that confirmed it
+export async function selfieOf(staffId, ticket, face) {
+  if (!ticket || (await staffFromTicket(ticket)) !== staffId) return null;
+  const p = await db.get('SELECT url, live FROM clockin_photos WHERE ticket = ? AND staff_id = ?', [ticket, staffId]);
+  return p && p.url ? { url: p.url, live: !!p.live, face_ok: face && face.ok !== undefined ? face.ok : null } : null;
+}
+// required by the shop: someone clocking in for the first time today must bring a selfie
+export async function needSelfie(staffId) {
+  const cfg = (await getSettings()).crew || {};
+  return (cfg.selfie || 'required') === 'required' && !(await clockedToday(staffId));
 }

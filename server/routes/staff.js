@@ -4,8 +4,9 @@ import { ah, id, now, bad, notFound, hashSecret, audit, conflict } from '../lib/
 import { staffAuth, verifyStaffPin, createSession, PERMS } from '../lib/auth.js';
 import { getSettings } from '../lib/util.js';
 import { staffToken, staffFromToken } from '../lib/billlink.js';
-import { joinShiftCrew, crewPlan, verifyOnDuty, clockIn, printAttendance, attendanceOf, attendanceUrl } from '../lib/crew.js';
-import { attendanceFromToken, ATT_WINDOW_DAYS } from '../lib/billlink.js';
+import { joinShiftCrew, crewPlan, verifyOnDuty, clockIn, printAttendance, attendanceOf, attendanceUrl, clockedToday, selfieOf, needSelfie } from '../lib/crew.js';
+import { attendanceFromToken, ATT_WINDOW_DAYS, clockinTicket, staffFromTicket } from '../lib/billlink.js';
+import { saveFile } from './system.js';
 
 const r = Router();
 
@@ -19,8 +20,11 @@ r.post('/auth/login', ah(async (req, res) => {
   const crew = [];
   for (const c of (Array.isArray(req.body.crew) ? req.body.crew : []).slice(0, 12)) {
     const m = await verifyOnDuty(c && c.code, c && c.pin, plan || undefined);
-    if (m.id !== s.id && !crew.some((x) => x.id === m.id)) crew.push({ ...person(m), at: c.at });
+    if (m.id !== s.id && !crew.some((x) => x.id === m.id)) crew.push({ ...person(m), at: c.at, selfie: await selfieOf(m.id, c.ticket, c.face) });
   }
+  // the shop asks for a clock-in selfie: everyone clocking in for the first time today needs one
+  const mainSelfie = plan ? await selfieOf(s.id, req.body.ticket, req.body.face) : null;
+  if (plan) for (const p of [{ ...person(s), selfie: mainSelfie }, ...crew]) if (!p.selfie && await needSelfie(p.id)) throw bad(`${p.name} ยังไม่ได้ถ่ายรูปเข้างาน`, 'selfie_required');
   const term = terminal_id ? await db.get('SELECT id FROM terminals WHERE id = ?', [terminal_id]) : null;
   const tok = await createSession('staff', s.id, term ? term.id : null);
   if (crew.length) await db.run('UPDATE sessions SET crew = ? WHERE token = ?', [S(crew.map(person)), tok]);
@@ -28,8 +32,8 @@ r.post('/auth/login', ah(async (req, res) => {
   if (open) await joinShiftCrew(open.id, [{ ...person(s), main: true }, ...crew.map(person)]);
   // clock-in on the POS: the first sign-in of the day for each person; the slip prints when someone new came in
   if (term) {
-    const ci = await clockIn([{ ...person(s), main: true, at: req.body.at }, ...crew], { terminalId: term.id, shiftId: open && open.id });
-    if (ci.added.length) await printAttendance(ci.day, term.id, { crewSize: 1 + crew.length }).catch(() => {});
+    const ci = await clockIn([{ ...person(s), main: true, at: req.body.at, selfie: mainSelfie }, ...crew], { terminalId: term.id, shiftId: open && open.id });
+    if (ci.added.length) await printAttendance(ci.day, term.id).catch(() => {});
   }
   const role = await db.get('SELECT * FROM roles WHERE id = ?', [s.role_id]);
   await audit(s.id, 'login', 'staff', s.id, null, { terminal_id: term && term.id, crew: crew.map((x) => x.code) });
@@ -39,7 +43,34 @@ r.post('/auth/login', ah(async (req, res) => {
 r.post('/auth/verify', ah(async (req, res) => {
   const s = await verifyOnDuty((req.body || {}).code, (req.body || {}).pin);
   const role = await db.get('SELECT name FROM roles WHERE id = ?', [s.role_id]);
-  res.json({ ...person(s), last_name: s.last_name || '', nickname: s.nickname || '', title: s.title || '', photo: s.photo || '', role_name: role ? role.name : '' });
+  res.json({ ...person(s), last_name: s.last_name || '', nickname: s.nickname || '', title: s.title || '', photo: s.photo || '', role_name: role ? role.name : '',
+    ticket: await clockinTicket(s.id), clocked_today: await clockedToday(s.id) });
+}));
+// ---- clock-in selfie: the POS camera, or the person's phone through the QR (ticket from the PIN check, 15 minutes) ----
+r.get('/clockin/ticket/:ticket', ah(async (req, res) => {
+  const sid = await staffFromTicket(req.params.ticket);
+  const s = sid && await db.get('SELECT name, nickname, photo FROM staff WHERE id = ?', [sid]);
+  if (!s) throw notFound('ลิงก์ถ่ายรูปหมดอายุแล้ว — กลับไปสแกนบัตรที่เครื่อง POS ใหม่');
+  res.json({ name: s.name, nickname: s.nickname || '', store: (await getSettings()).store.name || '' });
+}));
+r.post('/clockin/photo', ah(async (req, res) => {
+  const { ticket, image, live, source } = req.body || {};
+  const sid = await staffFromTicket(ticket);
+  if (!sid) throw bad('ลิงก์ถ่ายรูปหมดอายุแล้ว — สแกนบัตรใหม่', 'ticket_expired');
+  const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(image || ''));
+  if (!m) throw bad('รูปไม่ถูกต้อง');
+  const buf = Buffer.from(m[2], 'base64');
+  if (buf.length > 3 * 1024 * 1024) throw bad('รูปใหญ่เกินไป');
+  const url = '/files/' + await saveFile(buf, 'clockin.jpg', m[1]);
+  await db.run('DELETE FROM clockin_photos WHERE ticket = ?', [ticket]);
+  await db.run('INSERT INTO clockin_photos(ticket, staff_id, url, live, source, created_at) VALUES(?,?,?,?,?,?)', [ticket, sid, url, live ? 1 : 0, source === 'phone' ? 'phone' : 'pos', now()]);
+  res.json({ url, live: !!live });
+}));
+r.get('/clockin/photo/:ticket', ah(async (req, res) => {
+  const sid = await staffFromTicket(req.params.ticket);
+  const p = sid && await db.get('SELECT url, live, created_at FROM clockin_photos WHERE ticket = ? AND staff_id = ?', [req.params.ticket, sid]);
+  res.set('Cache-Control', 'no-store');
+  res.json(p ? { url: p.url, live: !!p.live, at: p.created_at } : { url: null });
 }));
 r.post('/auth/logout', staffAuth(), ah(async (req, res) => {
   await db.run('UPDATE sessions SET revoked = 1 WHERE token = ?', [req.staff.token]);
@@ -72,7 +103,7 @@ r.get('/public/attendance/:token', ah(async (req, res) => {
   const rows = await attendanceOf(a.day);
   res.set('Cache-Control', 'no-store');
   res.json({ store: (await getSettings()).store.name || '', day: a.day, from, to, days: days.map((d) => ({ day: d.day, n: Number(d.n) })),
-    rows: rows.map((r) => ({ name: r.name, at: r.at, kind: r.kind, main: !!r.main, terminal: r.terminal || '' })) });
+    rows: rows.map((r) => ({ name: r.name, at: r.at, kind: r.kind, main: !!r.main, terminal: r.terminal || '', photo: r.photo || '', face_ok: r.face_ok === null || r.face_ok === undefined ? null : !!Number(r.face_ok), live: !!Number(r.live) })) });
 }));
 // link for the shop website / POS (today)
 r.get('/attendance/link', staffAuth(), ah(async (req, res) => res.json({ url: await attendanceUrl(req.query.date || (await crewPlan()).date) })));
@@ -87,7 +118,7 @@ r.get('/crew/today', ah(async (req, res) => {
   const sh = tid ? await db.get("SELECT crew FROM shifts WHERE terminal_id = ? AND status = 'open'", [tid]) : null;
   const inShift = new Set(J(sh && sh.crew, []).map((c) => c.id));
   res.set('Cache-Control', 'no-store');
-  res.json({ date: p.date, weekday: p.weekday, need: p.need, base: p.base, max: p.max, special: p.special, shift_open: !!sh,
+  res.json({ selfie: ((await getSettings()).crew || {}).selfie || 'required', date: p.date, weekday: p.weekday, need: p.need, base: p.base, max: p.max, special: p.special, shift_open: !!sh,
     leave: p.leave.map(nm).filter(Boolean), late: p.late.map((x) => ({ name: nm(x), joined: inShift.has(x) })).filter((x) => x.name) });
 }));
 

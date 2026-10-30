@@ -6,7 +6,7 @@ import { saveOrder, payOrder, checkout, voidOrder, refundItems, orderFull, getOr
 import { enqueue, orderDocData, reprint, retry } from '../lib/print.js';
 import { cookerStatus, finishTicket, finishOrder, voidOrderJobs } from '../lib/cookers.js';
 import { billFromToken, shiftToken, shiftFromToken } from '../lib/billlink.js';
-import { joinShiftCrew, verifyOnDuty, clockIn, printAttendance } from '../lib/crew.js';
+import { joinShiftCrew, verifyOnDuty, clockIn, printAttendance, selfieOf, needSelfie } from '../lib/crew.js';
 
 const r = Router();
 
@@ -215,9 +215,11 @@ r.get('/shifts/last-opening', staffAuth(), ah(async (req, res) => {
 r.post('/shifts/join', staffAuth(), ah(async (req, res) => {
   const sh = await needShift(req);
   const s = await verifyOnDuty((req.body || {}).code, (req.body || {}).pin);
+  const selfie = await selfieOf(s.id, req.body.ticket, req.body.face);
+  if (!selfie && await needSelfie(s.id)) throw bad(`${s.name} ยังไม่ได้ถ่ายรูปเข้างาน`, 'selfie_required');
   const crew = await joinShiftCrew(sh.id, [{ id: s.id, code: s.code, name: s.name, late: true }]);
-  const ci = await clockIn([{ id: s.id, name: s.name, at: req.body.at }], { terminalId: req.terminalId, shiftId: sh.id, kind: 'late' });
-  if (ci.added.length) await printAttendance(ci.day, req.terminalId, { crewSize: 2 }).catch(() => {});
+  const ci = await clockIn([{ id: s.id, name: s.name, at: req.body.at, selfie }], { terminalId: req.terminalId, shiftId: sh.id, kind: 'late' });
+  if (ci.added.length) await printAttendance(ci.day, req.terminalId).catch(() => {});
   await audit(req.staff.id, 'shift_join', 'shift', sh.id, null, { staff: s.code });
   res.json({ name: s.name, crew });
 }));

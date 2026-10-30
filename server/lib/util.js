@@ -71,8 +71,9 @@ export const DEFAULT_SETTINGS = {
   week_start: 1,
   // staff roster set by the owner: how many people scan in at opening per weekday (0=Sun…6=Sat; 2+ = everyone scans, then the main one is picked),
   // and special days: { 'YYYY-MM-DD': { count: null|n, late: [staff ids joining later], leave: [staff ids on leave] } }
-  // clock-in slip: print 'crew' (days with 2+ people) / 'always' / 'off', on printer_id ('' = the receipt printer)
-  crew: { weekly: { 0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1 }, dates: {}, max: 8, print: 'crew', printer_id: '' },
+  // clock-in slip: print 'always' (each time someone clocks in) / 'off', on printer_id ('' = the receipt printer)
+  // selfie at clock-in: 'required' / 'optional' / 'off' (face check + turn-your-head liveness on the device that takes it)
+  crew: { weekly: { 0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1 }, dates: {}, max: 8, print: 'always', printer_id: '', selfie: 'required' },
 };
 
 // ---------- server-side secrets (payment gateway keys). Never returned to any browser. ----------

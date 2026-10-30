@@ -231,9 +231,10 @@ export async function staffPage() {
   }));
   // ---- roster (set by the owner): how many scan in at opening each weekday, special days with people on leave / joining later ----
   const C0 = (await api.get('/settings')).crew || {};
-  const crew = { weekly: { 0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, ...(C0.weekly || {}) }, dates: { ...(C0.dates || {}) }, max: C0.max || 8, print: C0.print || 'crew', printer_id: C0.printer_id || '' };
+  const crew = { weekly: { 0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, ...(C0.weekly || {}) }, dates: { ...(C0.dates || {}) }, max: C0.max || 8, print: C0.print === 'off' ? 'off' : 'always', printer_id: C0.printer_id || '', selfie: C0.selfie || 'required' };
   const printers = await api.get('/printers').catch(() => []);
-  const attPrint = h('select', { class: 'input' }, [['crew', 'วันที่เข้างาน 2 คนขึ้นไป (และตอนมีคนมาทีหลัง)'], ['always', 'ทุกครั้งที่มีคนเข้างานคนแรกของวัน'], ['off', 'ไม่พิมพ์ (บันทึกเวลาอย่างเดียว)']].map(([v, t]) => h('option', { value: v, selected: crew.print === v }, t)));
+  const attPrint = h('select', { class: 'input' }, [['always', 'ทุกครั้งที่มีคนเข้างาน (รวมคนแรกและคนที่มาทีหลัง)'], ['off', 'ไม่พิมพ์ (บันทึกเวลาอย่างเดียว)']].map(([v, t]) => h('option', { value: v, selected: crew.print === v }, t)));
+  const attSelfie = h('select', { class: 'input' }, [['required', 'บังคับ — ต้องถ่ายรูปและผ่านการตรวจใบหน้าก่อนเข้างาน'], ['optional', 'ถ่ายได้ มีปุ่มข้าม'], ['off', 'ไม่ถ่ายรูป']].map(([v, t]) => h('option', { value: v, selected: crew.selfie === v }, t)));
   const attPrinter = h('select', { class: 'input' }, h('option', { value: '' }, '— เครื่องพิมพ์ใบเสร็จของเครื่องขายนั้น —'), (printers || []).filter((x) => x.active).map((x) => h('option', { value: x.id, selected: crew.printer_id === x.id }, `${x.name} (${x.paper} มม.)`)));
   const plan = await api.get('/crew/today').catch(() => null);
   const DAYS = [[1, 'จันทร์'], [2, 'อังคาร'], [3, 'พุธ'], [4, 'พฤหัส'], [5, 'ศุกร์'], [6, 'เสาร์'], [0, 'อาทิตย์']];
@@ -241,7 +242,7 @@ export async function staffPage() {
   const active = staff.filter((x) => x.active);
   const nameOf = (id) => { const x = staff.find((y) => y.id === id); return x ? x.nickname || x.name : '(ลบแล้ว)'; };
   const thDate = (d) => new Date(d + 'T12:00:00Z').toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: '2-digit', timeZone: 'UTC' });
-  const saveCrew = () => api.put('/settings/crew', { value: { weekly: Object.fromEntries(DAYS.map(([d]) => [d, Number(wIn[d].value) || 1])), dates: crew.dates, max: crew.max, print: attPrint.value, printer_id: attPrinter.value } });
+  const saveCrew = () => api.put('/settings/crew', { value: { weekly: Object.fromEntries(DAYS.map(([d]) => [d, Number(wIn[d].value) || 1])), dates: crew.dates, max: crew.max, print: attPrint.value, printer_id: attPrinter.value, selfie: attSelfie.value } });
   const specialBox = h('div');
   const drawSpecial = () => {
     const today = plan ? plan.date : new Date().toISOString().slice(0, 10);
@@ -288,7 +289,8 @@ export async function staffPage() {
     h('h4', {}, 'ตารางประจำสัปดาห์ (จำนวนคนที่สแกนเข้างานตอนเปิดร้าน)'),
     h('div', { class: 'week-grid' }, DAYS.map(([d, t]) => h('label', { class: 'field' }, t, wIn[d]))),
     h('h4', {}, '🕘 ลงเวลาเข้างาน · พิมพ์ใบลงเวลา (ชื่อ + เวลาเข้า + QR ให้เจ้าของร้านสแกนดู)'),
-    h('div', { class: 'form-grid' }, h('label', { class: 'field' }, 'พิมพ์เมื่อ', attPrint), h('label', { class: 'field' }, 'พิมพ์ที่เครื่อง', attPrinter)),
+    h('div', { class: 'form-grid' }, h('label', { class: 'field' }, 'พิมพ์เมื่อ', attPrint), h('label', { class: 'field' }, 'พิมพ์ที่เครื่อง', attPrinter),
+      h('label', { class: 'field' }, '📸 ถ่ายรูปตอนเข้างาน (เครื่องไม่มีกล้อง = สแกน QR ถ่ายด้วยมือถือ)', attSelfie)),
     h('div', { class: 'row', style: { marginTop: '.4em' } }, saveBtn('บันทึกตารางและการลงเวลา', saveCrew),
       h('button', { class: 'btn', onclick: async () => { const { url } = await api.get('/attendance/link'); const u = /^https?:/.test(url) ? url : location.origin + url;
         // inside the POS app stay in the same window (no browser tab), elsewhere a new tab

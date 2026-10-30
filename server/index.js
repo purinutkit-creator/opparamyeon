@@ -53,6 +53,8 @@ export async function createApp(opts = {}) {
   app.get('/api/qr.svg', (req, res, next) => qrSvg(req, res).catch(next));
   for (const r of [staff, catalogR, orders, system, display, mobile, payments, members, customer, reports, importer]) app.use('/api', r);
   app.use('/api', (req, res) => res.status(404).json({ error: 'ไม่พบ API นี้' }));
+  // face check for the clock-in selfie (MediaPipe, served from this app so it needs no outside CDN)
+  app.use('/vendor/mediapipe', express.static(path.join(__dirname, '..', 'node_modules', '@mediapipe', 'tasks-vision'), { maxAge: '30d' }));
   app.use(express.static(PUBLIC, { extensions: ['html'], setHeaders: (res, p) => { if (/\.(html|js|css|webmanifest)$/.test(p)) res.setHeader('Cache-Control', 'no-cache'); } }));
   app.get('/', (req, res) => res.sendFile(path.join(PUBLIC, 'index.html')));
   // errors → JSON with Thai message

@@ -4,8 +4,10 @@ import { baht, toSatang, addToCart, computeTotals, countBowls, dineLabel, lineUn
 import { applyTheme } from '/shared/theme.js';
 import { rememberTap, flyToCart, countTo, lineChanges, setFxLevel } from './fx.js';
 import { flip, leave } from '/shared/motion.js';
+import { selfieBox, SELFIE_CSS } from '/shared/selfie.js';
 import { shiftDetailsView, shiftStats, SHIFT_CSS } from '/shared/shiftview.js';
 document.head.append(Object.assign(document.createElement('style'), { textContent: SHIFT_CSS }));
+document.head.append(Object.assign(document.createElement('style'), { textContent: SELFIE_CSS }));
 import { applyFonts } from '/shared/fonts.js';
 import { PrintHost, pairPrinter, unpairPrinter, isLinkedHere, testPrint, support, agentUrl, linkOf } from '/shared/printers.js';
 import { playSound, unlock, beep } from '/shared/sound.js';
@@ -76,7 +78,7 @@ async function loginScreen() {
   const vtn = (id) => 'cp-' + String(id).replace(/[^A-Za-z0-9_-]/g, '');
   const named = (s) => (s && s.code && !s.typed ? `view-transition-name:${vtn(s.code)}` : ''); // the same person morphs between steps
   const initial = (n) => (String(n || '?').replace(/^[เแโใไ]/, '')[0] || '?'); // "เจ้าของ" → จ, not the leading vowel
-  const avatar = (s, cls = 'av') => h('span', { class: cls, style: named(s) }, s.photo ? h('img', { src: s.photo, alt: '' }) : initial(s.name));
+  const avatar = (s, cls = 'av') => h('span', { class: cls, style: named(s) }, s.selfie || s.photo ? h('img', { src: s.selfie || s.photo, alt: '' }) : initial(s.name));
   const dots = h('div', { class: 'pin-dots' });
   const drawDots = () => dots.replaceChildren(...Array.from({ length: Math.max(4, Math.min(6, pin.length + (pin.length < 6 ? 1 : 0))) }, (_, i) => h('i', { class: i < pin.length ? 'on' : '' })));
   const version = () => h('p', { class: 'version' }, `เวอร์ชัน ${VERSION} · `, h('a', { href: '/guide/' }, 'คู่มือการใช้งาน'));
@@ -94,7 +96,7 @@ async function loginScreen() {
     } else location.reload();
   };
   const signIn = async (main, others) => {
-    const r = await api.post('/auth/login', { code: main.code, pin: main.pin, at: main.at, crew: others, terminal_id: store.get('terminal_id') }, { token: null });
+    const r = await api.post('/auth/login', { code: main.code, pin: main.pin, at: main.at, ticket: main.ticket, face: main.face, crew: others, terminal_id: store.get('terminal_id') }, { token: null });
     store.set('staff_token', r.token); store.set('last_code', main.code);
     crew.length = 0; // forget the PINs
     const tid = store.get('terminal_id');
@@ -110,21 +112,30 @@ async function loginScreen() {
     busy = true;
     try {
       const at = new Date().toISOString(); // clock-in time = when this person's PIN was accepted
-      if (!crewMode) { face.set('main', who); await signIn({ code: who.code, pin, at }, []); return; }
+      if (!crewMode && !selfieOn) { face.set('main', who); await signIn({ code: who.code, pin, at }, []); return; }
       const s = await api.post('/auth/verify', { code: who.code, pin }, { token: null });
-      const det = { ...who, ...s, typed: false };
-      const i = crew.findIndex((c) => c.s.id === s.id);
-      if (i >= 0) crew[i] = { s: det, pin, at: crew[i].at }; else crew.push({ s: det, pin, at });
-      lastAdded = s.id;
-      if (navigator.vibrate) navigator.vibrate(30);
+      const entry = { s: { ...who, ...s, typed: false }, pin, at, ticket: s.ticket };
       who = null; pin = '';
-      await morph(scanStep, 'add'); // the big photo flies down into the crew strip
-      if (crew.length >= need) { toast(`ครบ ${need} คนตามตารางแล้ว · เลือกคนหลัก`, 'ok'); setTimeout(toMain, 500); }
+      // first clock-in of the day: take the selfie before going on
+      if (selfieOn && !s.clocked_today) return morph(() => selfieStep(entry), 'in');
+      await proceed(entry);
     } catch (e) { errToast(e); shake(); } finally { busy = false; }
   };
+  const selfieOn = !!(plan && plan.selfie && plan.selfie !== 'off');
+  // PIN (and selfie) done for one person: sign in, or add them to the crew strip
+  const proceed = async (entry) => {
+    if (!crewMode) { face.set('main', entry.s); busy = true; try { await signIn({ code: entry.s.code, pin: entry.pin, at: entry.at, ticket: entry.ticket, face: entry.face }, []); } catch (e) { busy = false; errToast(e); morph(scanStep, 'back'); } return; }
+    const i = crew.findIndex((c) => c.s.id === entry.s.id);
+    if (i >= 0) crew[i] = { ...entry, at: crew[i].at }; else crew.push(entry);
+    lastAdded = entry.s.id;
+    if (navigator.vibrate) navigator.vibrate(30);
+    await morph(scanStep, 'add'); // the photo flies down into the crew strip
+    if (crew.length >= need) { toast(`ครบ ${need} คนตามตารางแล้ว · เลือกคนหลัก`, 'ok'); setTimeout(toMain, 500); }
+  };
+  const ofEntry = (c) => ({ code: c.s.code, pin: c.pin, at: c.at, ticket: c.ticket, face: c.face });
   const toMain = () => {
     if (!crew.length) return;
-    if (crew.length === 1) { const c = crew[0]; face.set('main', c.s); busy = true; return signIn({ code: c.s.code, pin: c.pin, at: c.at }, []).catch((e) => { busy = false; errToast(e); }); }
+    if (crew.length === 1) { const c = crew[0]; face.set('main', c.s); busy = true; return signIn(ofEntry(c), []).catch((e) => { busy = false; errToast(e); }); }
     morph(mainStep, 'main');
   };
   const press = (k) => { if (k === '⌫') pin = pin.slice(0, -1); else if (k === 'C') pin = ''; else if (pin.length < 6) pin += k; drawDots(); if (pin.length === 6) go(); };
@@ -192,6 +203,27 @@ async function loginScreen() {
         version())));
   };
 
+  // ---- step: clock-in selfie (camera here, or the person's phone through a QR) ----
+  let selfieBoxEl = null;
+  const selfieStep = (entry) => {
+    step = 'selfie';
+    root.className = 'login-staff step-pin step-selfie';
+    const s = entry.s;
+    const leaveSelfie = () => { if (selfieBoxEl) selfieBoxEl.stop(); selfieBoxEl = null; };
+    selfieBoxEl = selfieBox({ ticket: entry.ticket, phoneUrl: location.origin + '/selfie/#' + encodeURIComponent(entry.ticket), allowSkip: plan.selfie === 'optional',
+      onUse: (res) => { leaveSelfie(); entry.face = { ok: res.face_ok, score: res.score }; entry.s.selfie = res.url; proceed(entry); },
+      onSkip: () => { leaveSelfie(); proceed(entry); } });
+    root.replaceChildren(
+      h('div', { class: 'ls-art' }, h('div', { class: 'ls-staff' },
+        h('div', { class: 'ph', style: named(s) }, s.photo ? h('img', { src: s.photo, alt: '' }) : initial(s.name)),
+        h('div', { class: 'hello' }, '📸 ถ่ายรูปเข้างาน'),
+        h('h1', {}, s.name, s.last_name ? h('span', {}, ' ' + s.last_name) : null),
+        h('div', { class: 'code' }, 'ยืนยันตัวตนด้วยใบหน้า · ระบบตรวจว่าเป็นคนจริง'))),
+      h('div', { class: 'ls-form' }, h('div', { class: 'card' },
+        h('h2', {}, '📸 ถ่ายรูปเข้างาน'), selfieBoxEl,
+        h('button', { class: 'btn ghost block ls-back', onclick: () => { leaveSelfie(); back(); } }, '← ยกเลิก / สแกนบัตรใหม่'))));
+  };
+
   // ---- step: pick the main person (crew days) ----
   const mainStep = () => {
     step = 'main'; who = null;
@@ -212,7 +244,7 @@ async function loginScreen() {
       const main = crew.find((c) => c.s.id === chosen);
       for (const c of crew) face.set(c.s.id, c.s);
       face.set('main', main.s);
-      try { await signIn({ code: main.s.code, pin: main.pin, at: main.at }, crew.filter((c) => c !== main).map((c) => ({ code: c.s.code, pin: c.pin, at: c.at }))); }
+      try { await signIn(ofEntry(main), crew.filter((c) => c !== main).map(ofEntry)); }
       catch (e) { errToast(e); busy = false; btn.disabled = false; }
     };
     root.replaceChildren(bg(), h('div', { class: 'ls-pop wide' },
@@ -313,6 +345,7 @@ async function loginScreen() {
       else if (/^[\d.]$/.test(e.key) || e.key === 'Backspace') { e.preventDefault(); root.querySelector(`.bigpad .key[data-key="${e.key === 'Backspace' ? '⌫' : e.key}"]`)?.click(); }
       return;
     }
+    if (step === 'selfie') { if (e.key === 'Escape') { e.preventDefault(); root.querySelector('.ls-back')?.click(); } return; }
     if (step === 'main') {
       if (e.key === 'Enter') { e.preventDefault(); root.querySelector('.crew-go')?.click(); }
       if (e.key === 'Escape') { e.preventDefault(); morph(scanStep, 'back'); }
@@ -528,13 +561,28 @@ function joinDialog() {
   }, 120));
   const dlg = modal('👥 พนักงานเข้างานเพิ่ม', h('div', { class: 'join-grid' }, who, h('div', {}, h('label', { class: 'field' }, 'รหัสพนักงาน (หรือสแกนบัตร)', code), h('label', { class: 'field' }, 'PIN', pin), keypad(pin, { onEnter: () => go() }))),
     { actions: [{ label: 'ยกเลิก', onClick: () => {} }, { label: 'เข้ารอบนี้', class: 'primary', onClick: () => go() }] });
+  const join = async (extra = {}) => {
+    const r = await api.post('/shifts/join', { code: code.value.trim(), pin: pin.value, at, ...extra });
+    st.shift = { ...st.shift, crew: r.crew };
+    toast(`👋 ${r.name} เข้างานในรอบนี้แล้ว`, 'ok');
+    dlg.close(); loadCrewPlan();
+  };
+  let at = null;
   const go = async () => {
     if (!code.value.trim() || !pin.value) { toast('สแกนบัตร/กรอกรหัส และใส่ PIN', 'warn'); return false; }
     try {
-      const r = await api.post('/shifts/join', { code: code.value.trim(), pin: pin.value, at: new Date().toISOString() });
-      st.shift = { ...st.shift, crew: r.crew };
-      toast(`👋 ${r.name} เข้างานในรอบนี้แล้ว`, 'ok');
-      dlg.close(); loadCrewPlan();
+      at = new Date().toISOString();
+      const mode = (st.crewPlan && st.crewPlan.selfie) || 'off';
+      if (mode === 'off') { await join(); return false; }
+      const v = await api.post('/auth/verify', { code: code.value.trim(), pin: pin.value }, { token: null });
+      if (v.clocked_today) { await join(); return false; }
+      // first clock-in today: the selfie, in this dialog (camera here, or the phone through the QR)
+      const box = selfieBox({ ticket: v.ticket, phoneUrl: location.origin + '/selfie/#' + encodeURIComponent(v.ticket), allowSkip: mode === 'optional',
+        onUse: (res) => join({ ticket: v.ticket, face: { ok: res.face_ok, score: res.score } }).catch(errToast), onSkip: () => join().catch(errToast) });
+      dlg.box.querySelector('.modal-body').replaceChildren(h('div', { class: 'jd-selfie' }, h('b', {}, `📸 ${v.name} · ถ่ายรูปเข้างาน`), box));
+      const foot = dlg.box.querySelector('.modal-actions'); if (foot) foot.remove();
+      const stop = new MutationObserver(() => { if (!document.body.contains(box)) { box.stop(); stop.disconnect(); } });
+      stop.observe(document.body, { childList: true, subtree: true });
     } catch (e) { errToast(e); pin.value = ''; return false; }
     return false;
   };
@@ -1233,6 +1281,22 @@ function openShiftDialog() {
   modal('เปิดรอบการขาย', h('div', {}, h('p', { class: 'muted' }, `${st.terminal.name} · ${st.staff.name} · ${new Date().toLocaleString('th-TH')}`), h('label', { class: 'field' }, 'เงินสดเริ่มต้นในลิ้นชัก (บาท)', cash), keypad(cash, { decimal: true }), h('label', { class: 'field', style: { marginTop: '.8em' } }, 'หมายเหตุ', note)),
     { actions: [{ label: 'ภายหลัง', onClick: () => {} }, { label: 'เปิดรอบ', class: 'primary', onClick: async () => { st.shift = await api.post('/shifts/open', { opening_cash: toSatang(cash.value), note: note.value }); toast('เปิดรอบแล้ว', 'ok'); renderTop(); } }] });
 }
+// after closing a shift: stay a few seconds so this device (the print host) finishes the report, then sign out
+function leaveAfterPrint(r, secs = 8) {
+  let left = secs;
+  const num = h('b', { class: 'lp-num' }, String(left));
+  const ring = h('i', { class: 'lp-ring', style: `--s:${secs}s` });
+  const box = h('div', { class: 'leave-print' }, h('div', { class: 'card' },
+    h('div', { class: 'lp-clock' }, ring, num),
+    h('h2', {}, '✓ ปิดรอบแล้ว'),
+    h('p', {}, '🖨️ กำลังพิมพ์รายงานปิดรอบ… อย่าเพิ่งปิดเครื่อง'),
+    h('p', { class: 'muted' }, r.diff === 0 ? 'เงินสดตรงพอดี' : r.diff > 0 ? `เงินสดเกิน ${baht(r.diff)} บาท` : `เงินสดขาด ${baht(-r.diff)} บาท`),
+    h('div', { class: 'row', style: { justifyContent: 'center' } },
+      h('button', { class: 'btn', onclick: () => { left += 10; num.textContent = String(left); ring.style.setProperty('--s', left + 's'); ring.style.animation = 'none'; void ring.offsetWidth; ring.style.animation = ''; } }, '+10 วินาที'),
+      h('button', { class: 'btn primary', onclick: () => { clearInterval(t); logout(); } }, 'ออกจากระบบเลย'))));
+  document.body.append(box);
+  const t = setInterval(() => { left--; num.textContent = String(Math.max(0, left)); if (left <= 0) { clearInterval(t); logout(); } }, 1000);
+}
 async function shiftDialog() {
   const s = await api.get('/shifts/current');
   st.shift = s;
@@ -1262,7 +1326,7 @@ async function shiftDialog() {
     toast(`ปิดรอบแล้ว · ${r.diff === 0 ? 'เงินตรง' : r.diff > 0 ? 'เกิน ' + baht(r.diff) : 'ขาด ' + baht(-r.diff)}`, r.diff === 0 ? 'ok' : 'warn', 8000);
     // closing the shift signs this device out; the summary is shown on the login screen
     store.set('closed_shift', { ...r, names, qr: qrUrl });
-    setTimeout(logout, 600);
+    leaveAfterPrint(r);
   } }] : [] });
 }
 

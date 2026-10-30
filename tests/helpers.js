@@ -11,6 +11,8 @@ export async function startServer() {
   }
   const ctx = await createApp({ db: { url: process.env.TEST_DATABASE_URL || '', file: ':memory:' }, noTimers: true });
   await new Promise((r) => ctx.server.listen(0, '127.0.0.1', r));
+  // tests sign in on the POS without a camera: the clock-in selfie is tested on its own (it turns it back on)
+  { const { setSetting, getSettings } = await import('../server/lib/util.js'); await setSetting('crew', { ...(await getSettings()).crew, selfie: 'off' }); }
   const base = `http://127.0.0.1:${ctx.server.address().port}`;
   const call = async (method, path, body, { token, terminal, headers = {} } = {}) => {
     const h = { ...headers };

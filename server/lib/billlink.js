@@ -56,3 +56,18 @@ export async function attendanceFromToken(tok, wanted) {
   const gap = Math.abs(Date.parse(day + 'T00:00:00Z') - Date.parse(m[1] + 'T00:00:00Z')) / 864e5;
   return gap <= ATT_WINDOW_DAYS ? { base: m[1], day } : null;
 }
+
+// Clock-in ticket: handed out when a PIN is accepted on the POS, so the selfie (taken on the POS or on a phone via QR)
+// can be tied to that person without a session. <staff id>.<expiry base36>.<12 hex>, valid 15 minutes.
+const signTicket = async (body) => crypto.createHmac('sha256', await secret()).update('clockin:' + body).digest('hex').slice(0, 12);
+export async function clockinTicket(staffId, minutes = 15) {
+  const body = `${staffId}.${(Date.now() + minutes * 60e3).toString(36)}`;
+  return `${body}.${await signTicket(body)}`;
+}
+export async function staffFromTicket(tok) {
+  const m = /^([A-Za-z0-9_-]{1,64})\.([0-9a-z]{6,12})\.([0-9a-f]{12})$/.exec(String(tok || '').trim());
+  if (!m) return null;
+  const want = Buffer.from(await signTicket(`${m[1]}.${m[2]}`)), got = Buffer.from(m[3]);
+  if (!(want.length === got.length && crypto.timingSafeEqual(want, got))) return null;
+  return parseInt(m[2], 36) > Date.now() ? m[1] : null;
+}

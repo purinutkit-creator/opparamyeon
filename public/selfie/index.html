@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#d4202f">
+<meta name="robots" content="noindex">
+<title>ถ่ายรูปเข้างาน · Oppa Ramyeon</title>
+<link rel="icon" type="image/png" href="/assets/icon-192.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@500;600;700&family=Sarabun:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="/shared/style.css">
+<style>
+  body { max-width: 520px; margin: 0 auto; padding: 16px 14px 40px; background: var(--bg); }
+  .head { color: #fff; border-radius: 24px; padding: 18px; margin-bottom: 14px; text-align: center; background: var(--grad, linear-gradient(135deg, #e8321f, #a3141c)); }
+  .head small { opacity: .85; font-weight: 700; } .head h1 { margin: .1em 0; font-family: 'Prompt', sans-serif; font-size: 1.5em; }
+  .card { background: var(--surface); border-radius: 24px; padding: 18px; box-shadow: var(--shadow); }
+  .done { text-align: center; padding: 2em 1em; } .done b { display: grid; place-items: center; width: 96px; height: 96px; margin: 0 auto 12px; border-radius: 50%; background: #22c55e; color: #fff; font-size: 52px; animation: m-modal .6s var(--ease-spring) both; }
+  .done img { width: 160px; height: 160px; border-radius: 50%; object-fit: cover; margin: 10px auto; display: block; }
+</style>
+</head>
+<body>
+<div id="app"><div class="empty">กำลังโหลด…</div></div>
+<script type="module">
+// Clock-in selfie on the person's own phone (the POS has no camera): opened from the QR on the POS sign-in screen.
+import { h, $ } from '/shared/ui.js';
+import { selfieBox, SELFIE_CSS } from '/shared/selfie.js';
+document.head.append(Object.assign(document.createElement('style'), { textContent: SELFIE_CSS }));
+const app = $('#app');
+const ticket = decodeURIComponent(location.hash.slice(1));
+try {
+  const r = await fetch('/api/clockin/ticket/' + encodeURIComponent(ticket));
+  const who = await r.json();
+  if (!r.ok) throw new Error(who.error || 'ลิงก์ไม่ถูกต้อง');
+  const card = h('div', { class: 'card' }, selfieBox({ ticket, source: 'phone', useLabel: '✓ ส่งรูปนี้ไปที่ POS', onUse: (res) => {
+    card.replaceChildren(h('div', { class: 'done' }, h('b', {}, '✓'), h('h2', {}, 'ส่งรูปแล้ว'), h('img', { src: res.url, alt: '' }),
+      h('p', { class: 'muted' }, 'กลับไปที่เครื่อง POS แล้วกด "ใช้รูปนี้" เพื่อเข้างาน')));
+  } }));
+  app.replaceChildren(h('div', { class: 'head' }, h('small', {}, who.store), h('h1', {}, '📸 ถ่ายรูปเข้างาน'), h('small', {}, `สวัสดี ${who.nickname || who.name} · หันหน้าซ้าย-ขวาเล็กน้อยให้ระบบรู้ว่าเป็นคนจริง`)), card);
+} catch (e) { app.replaceChildren(h('div', { class: 'empty' }, '⚠️ ' + e.message)); }
+</script>
+</body>
+</html>
