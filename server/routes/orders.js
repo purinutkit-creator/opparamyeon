@@ -5,7 +5,7 @@ import { staffAuth, staffForAction, can, requirePerm } from '../lib/auth.js';
 import { saveOrder, payOrder, checkout, voidOrder, refundItems, orderFull, getOrder, sendKitchen, freeTableIfIdle, idemRetry } from '../lib/orders.js';
 import { enqueue, orderDocData, reprint, retry } from '../lib/print.js';
 import { cookerStatus, finishTicket, finishOrder, voidOrderJobs } from '../lib/cookers.js';
-import { billFromToken } from '../lib/billlink.js';
+import { billFromToken, shiftToken, shiftFromToken } from '../lib/billlink.js';
 
 const r = Router();
 
@@ -228,6 +228,20 @@ r.post('/shifts/close', staffAuth('shift'), ah(async (req, res) => {
   await enqueue('shift', sh.id, await shiftDoc(closed, 'ใบสรุปปิดรอบการขาย'), { dedupe: 'shift-close:' + sh.id });
   res.json(closed);
 }));
+// shift report from the QR on the shift slip (no login)
+r.get('/public/shift/:token', ah(async (req, res) => {
+  const sid = await shiftFromToken(req.params.token);
+  const sh = sid && await db.get('SELECT * FROM shifts WHERE id = ?', [sid]);
+  if (!sh) throw notFound('ลิงก์รายงานรอบไม่ถูกต้อง');
+  const s = await getSettings();
+  res.set('Cache-Control', 'no-store');
+  res.json({ store: s.store.name || '', count_unit: s.sale.count_unit || 'ชาม', payment_names: Object.fromEntries(s.sale.payment_methods.map((m) => [m.id, m.name])), shift: await shiftSummary(sh) });
+}));
+// link for the POS screen (QR shown when closing a shift)
+r.get('/shifts/:id/link', staffAuth('shift'), ah(async (req, res) => {
+  const base = process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '';
+  res.json({ url: `${base || ''}/s/#${await shiftToken(req.params.id)}` });
+}));
 r.get('/shifts', staffAuth('view_sales'), ah(async (req, res) => {
   const rows = await db.all('SELECT sh.*, s.name AS staff_name, t.name AS terminal_name FROM shifts sh LEFT JOIN staff s ON s.id = sh.staff_id LEFT JOIN terminals t ON t.id = sh.terminal_id ORDER BY opened_at DESC LIMIT 100');
   res.json(rows.map((x) => ({ ...x, summary: J(x.summary) })));
@@ -274,12 +288,38 @@ export async function shiftSummary(sh) {
     voids: { count: Number(voids.n), amount: Number(voids.amount), bowls: Number(voids.bowls) }, refunds: { count: Number(refunds.n), amount: Number(refunds.amount), bowls: Number(refunds.bowls) },
     net_sales: Number(bills.total) - Number(voids.amount) - Number(refunds.amount), net_bowls: Number(bills.bowls) - Number(voids.bowls) - Number(refunds.bowls),
     cash_in: cin, cash_out: cout, cash_moves: moves, cash_sales: cash, cash_refunds: Number(cashRefund.a),
-    expected_cash: sh.status === 'closed' ? sh.expected_cash : expected, counted_cash: sh.counted_cash, diff: sh.diff };
+    expected_cash: sh.status === 'closed' ? sh.expected_cash : expected, counted_cash: sh.counted_cash, diff: sh.diff, ...(await shiftDetails(sh)) };
+}
+// the finer picture of a shift: when, what sold, dine-in vs takeaway, members, busiest hours
+async function shiftDetails(sh) {
+  const orders = await db.all("SELECT id, total, discount, packaging, tax, dine_type, source, member_id, points_earned, paid_at, bowls FROM orders WHERE shift_id = ? AND status = 'paid' AND paid_at IS NOT NULL ORDER BY paid_at", [sh.id]);
+  const items = await db.all(`SELECT oi.name, oi.category_id, SUM(oi.qty - oi.void_qty - oi.refunded_qty) AS qty, SUM(oi.line_total) AS amount FROM order_items oi JOIN orders o ON o.id = oi.order_id
+    WHERE o.shift_id = ? AND o.status = 'paid' GROUP BY oi.name, oi.category_id`, [sh.id]);
+  const cats = Object.fromEntries((await db.all('SELECT id, name FROM categories')).map((c) => [c.id, c.name]));
+  const sum = (a, f) => a.reduce((x, o) => x + Number(f(o) || 0), 0);
+  const group = (key) => { const m = {}; for (const o of orders) { const k = key(o); m[k] = m[k] || { n: 0, amount: 0 }; m[k].n++; m[k].amount += Number(o.total); } return m; };
+  const hourOf = (iso) => Number(new Date(iso).toLocaleString('en-GB', { timeZone: 'Asia/Bangkok', hour: '2-digit', hour12: false }).slice(0, 2)) % 24;
+  const hours = group((o) => hourOf(o.paid_at));
+  const byCat = {};
+  for (const i of items) { const k = cats[i.category_id] || 'อื่นๆ'; byCat[k] = byCat[k] || { name: k, qty: 0, amount: 0 }; byCat[k].qty += Number(i.qty); byCat[k].amount += Number(i.amount); }
+  const top = items.map((i) => ({ name: i.name, qty: Number(i.qty), amount: Number(i.amount) })).filter((i) => i.qty > 0).sort((a, b) => b.qty - a.qty || b.amount - a.amount);
+  const members = orders.filter((o) => o.member_id);
+  return {
+    first_bill_at: orders[0] ? orders[0].paid_at : null, last_bill_at: orders.length ? orders[orders.length - 1].paid_at : null,
+    avg_bill: orders.length ? Math.round(sum(orders, (o) => o.total) / orders.length) : 0,
+    items_count: sum(top, (i) => i.qty), packaging: sum(orders, (o) => o.packaging), tax: sum(orders, (o) => o.tax), discount_bills: orders.filter((o) => Number(o.discount) > 0).length,
+    by_dine: group((o) => o.dine_type || 'dine_in'), by_source: group((o) => o.source || 'pos'),
+    member_bills: members.length, member_sales: sum(members, (o) => o.total), points_given: sum(members, (o) => o.points_earned),
+    top_items: top.slice(0, 10), categories: Object.values(byCat).sort((a, b) => b.amount - a.amount),
+    hours: Object.entries(hours).map(([h, v]) => ({ hour: Number(h), ...v })).sort((a, b) => a.hour - b.hour),
+  };
 }
 async function shiftDoc(sum, title) {
   const s = await getSettings();
   const names = Object.fromEntries(s.sale.payment_methods.map((m) => [m.id, m.name]));
-  return { store_name: s.store.name, ticket_kind: title, shift: { ...sum, payments: sum.payments.map((p) => ({ ...p, name: names[p.method] || p.method })) } };
+  const base = process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '';
+  return { store_name: s.store.name, ticket_kind: title, count_unit: s.sale.count_unit || 'ชาม', shift_url: `${base}/s/#${await shiftToken(sum.id)}`,
+    shift: { ...sum, payments: sum.payments.map((p) => ({ ...p, name: names[p.method] || p.method })) } };
 }
 
 export default r;

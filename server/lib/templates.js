@@ -95,6 +95,8 @@ export const DEFAULT_TEMPLATES = {
     { type: 'field', field: 'store_name', align: 'center', size: 30, weight: 700 },
     { type: 'field', field: 'ticket_kind', align: 'center', size: 30, weight: 800 },
     { type: 'shift_summary', size: 24 },
+    { type: 'divider', style: 'dash' },
+    { type: 'qr', value: '{shift_url}', size_mm: 26, align: 'center', caption: 'สแกนดูรายงานรอบนี้ (ไม่ต้องเข้าสู่ระบบ)', caption_size: 20 },
   ]),
   // Short merchant copy: total, time, staff + bill barcode (scan at POS to look the bill up) + small QR (full details)
   merchant: base([

@@ -3,6 +3,8 @@ import { loginHero, h, $, toast, errToast, modal, confirmBox, promptBox, keypad,
 import { baht, toSatang, addToCart, computeTotals, countBowls, dineLabel, lineUnitTotal, lineTotal, orderDineType, promptPayPayload, VERSION, maskPhone, pointsFor, isAddon, renamedLine, markOf, displayOption, fromThaiKeys, billTokenOf } from '/shared/core.js';
 import { applyTheme } from '/shared/theme.js';
 import { rememberTap, flyToCart, countTo, lineChanges, setFxLevel } from './fx.js';
+import { shiftDetailsView, shiftStats, SHIFT_CSS } from '/shared/shiftview.js';
+document.head.append(Object.assign(document.createElement('style'), { textContent: SHIFT_CSS }));
 import { applyFonts } from '/shared/fonts.js';
 import { PrintHost, pairPrinter, unpairPrinter, isLinkedHere, testPrint, support, agentUrl, linkOf } from '/shared/printers.js';
 import { playSound, unlock, beep } from '/shared/sound.js';
@@ -202,14 +204,21 @@ function renderTop() {
     h('span', { class: 'version' }, 'v' + VERSION));
 }
 
+// shop management inside the same app window (no new tab / browser, no second login):
+// the admin site reuses this staff session and shows a "back to sales" button
+function openAdminInApp(hash = '') {
+  store.set('admin_token', store.get('staff_token'));
+  store.set('admin_from_pos', true);
+  location.href = '/admin/' + hash;
+}
 // secondary actions live in a small menu so the top bar stays readable on tablets
 function moreMenu(e) {
   e.stopPropagation();
   const old = $('.menu-pop'); if (old) return old.remove();
   const pop = h('div', { class: 'menu-pop', role: 'menu' },
-    h('a', { href: '/guide/', target: '_blank' }, '📖 คู่มือการใช้งาน'),
-    (can('view_sales') || can('settings')) && h('a', { href: '/admin/', target: '_blank' }, '📊 เว็บไซต์จัดการร้าน'),
-    h('a', { href: '/kitchen/', target: '_blank' }, '👩‍🍳 จอครัว'),
+    h('a', { href: '/guide/' }, '📖 คู่มือการใช้งาน'),
+    (can('view_sales') || can('settings')) && h('a', { href: '/admin/', onclick: (e) => { e.preventDefault(); openAdminInApp(); } }, '📊 จัดการร้าน'),
+    h('a', { href: '/kitchen/' }, '👩‍🍳 จอครัว'),
     h('button', { onclick: () => { pop.remove(); lockNow(); } }, '🔒 ล็อกหน้าจอ'),
     h('button', { onclick: logout }, '🚪 ออกจากระบบ / สลับผู้ใช้'),
     h('div', { class: 'version', style: { padding: '.4em .8em' } }, `${st.staff.name} · ${st.terminal.name} · เวอร์ชัน ${VERSION}`));
@@ -894,14 +903,14 @@ async function shiftDialog() {
   const counted = h('input', { class: 'input', inputmode: 'decimal', placeholder: 'เงินสดที่นับได้' });
   const diffEl = h('div', { class: 'bigsum' });
   counted.addEventListener('input', () => { const d = toSatang(counted.value) - s.expected_cash; diffEl.textContent = counted.value ? (d === 0 ? 'ตรงพอดี' : d > 0 ? `เกิน ${baht(d)}` : `ขาด ${baht(-d)}`) : ''; diffEl.style.color = d === 0 ? 'var(--ok)' : 'var(--bad)'; });
-  const body = h('div', { class: 'pay-grid' }, h('div', {},
-    row('เปิดรอบ', fmtTime(s.opened_at)), row('เงินสดเริ่มต้น', baht(s.opening_cash)), row('จำนวนบิล', s.bills), row(('จำนวน' + U() + 'สุทธิ'), s.net_bowls), row('ยอดขายสุทธิ', baht(s.net_sales)),
-    row('ส่วนลด', baht(s.discount)), row('ยกเลิก', `${s.voids.count} บิล ${baht(s.voids.amount)}`), row('คืนเงิน', `${s.refunds.count} ครั้ง ${baht(s.refunds.amount)}`), h('hr'),
-    ...s.payments.map((p) => row(names[p.method] || p.method, baht(p.amount))), row('เงินเข้าลิ้นชัก', baht(s.cash_in)), row('เงินออกลิ้นชัก', baht(s.cash_out)),
-    h('div', { class: 'r', style: { display: 'flex', justifyContent: 'space-between', fontWeight: 800 } }, h('span', {}, 'เงินสดที่ควรมี'), h('span', {}, baht(s.expected_cash))),
+  const link = await api.get(`/shifts/${s.id}/link`).catch(() => null);
+  const qrUrl = link && link.url ? (/^https?:/.test(link.url) ? link.url : location.origin + link.url) : null;
+  const body = h('div', { class: 'pay-grid shift-grid' }, h('div', { class: 'shift-left' },
+    shiftStats(s, U()), shiftDetailsView(s, names, U()),
     can('cash_move') && h('div', { class: 'row', style: { marginTop: '.8em' } }, h('button', { class: 'btn', onclick: () => cashMove('in') }, '+ เงินเข้าลิ้นชัก'), h('button', { class: 'btn', onclick: () => cashMove('out') }, '− เงินออกลิ้นชัก')),
     h('button', { class: 'btn', style: { marginTop: '.5em' }, onclick: () => api.post(`/shifts/${s.id}/print`).then(() => toast('ส่งพิมพ์สรุปแล้ว', 'ok')).catch(errToast) }, '🖨 พิมพ์สรุประหว่างรอบ')),
-  h('div', {}, h('h4', {}, 'ปิดรอบ'), h('label', { class: 'field' }, 'เงินสดที่นับได้ (บาท)', counted), keypad(counted, { decimal: true }), diffEl));
+  h('div', {}, h('h4', {}, 'ปิดรอบ'), h('label', { class: 'field' }, 'เงินสดที่นับได้ (บาท)', counted), keypad(counted, { decimal: true }), diffEl,
+    qrUrl ? h('div', { class: 'shift-qr' }, h('img', { src: '/api/qr.svg?d=' + encodeURIComponent(qrUrl), alt: 'QR รายงานรอบ' }), h('small', {}, 'สแกนดูรายงานรอบนี้บนมือถือ (ไม่ต้องเข้าสู่ระบบ)')) : null));
   const cashMove = async (type) => {
     const amount = await promptBox(type === 'in' ? 'เงินเข้าลิ้นชัก' : 'เงินออกลิ้นชัก', { label: 'จำนวนเงิน (บาท)', type: 'number' }); if (!amount) return;
     const reason = await promptBox('เหตุผล', { label: 'เช่น ทอนเพิ่ม, ซื้อน้ำแข็ง' }); if (!reason) return;
@@ -913,6 +922,8 @@ async function shiftDialog() {
     const r = await api.post('/shifts/close', { counted_cash: toSatang(counted.value) });
     st.shift = null; renderTop();
     toast(`ปิดรอบแล้ว · ${r.diff === 0 ? 'เงินตรง' : r.diff > 0 ? 'เกิน ' + baht(r.diff) : 'ขาด ' + baht(-r.diff)}`, r.diff === 0 ? 'ok' : 'warn', 8000);
+    setTimeout(() => modal('สรุปปิดรอบการขาย', h('div', { class: 'pay-grid shift-grid' }, h('div', { class: 'shift-left' }, shiftStats(r, U()), shiftDetailsView(r, names, U())),
+      qrUrl ? h('div', { class: 'shift-qr' }, h('img', { src: '/api/qr.svg?d=' + encodeURIComponent(qrUrl), alt: '' }), h('small', {}, 'สแกนเก็บรายงานรอบนี้ไว้ดูบนมือถือ')) : null), { wide: true }), 300);
   } }] : [] });
 }
 

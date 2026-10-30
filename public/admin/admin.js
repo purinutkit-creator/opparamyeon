@@ -37,11 +37,13 @@ async function boot() {
 function login() {
   const code = h('input', { class: 'input', placeholder: 'รหัสพนักงาน', inputmode: 'numeric', autocomplete: 'username' });
   const pin = h('input', { class: 'input', type: 'password', placeholder: 'PIN', inputmode: 'numeric', autocomplete: 'current-password' });
-  const go = async () => { try { const r = await api.post('/auth/login', { code: code.value, pin: pin.value }, { token: null }); store.set('admin_token', r.token); location.reload(); } catch (e) { errToast(e); } };
+  const go = async () => { try { const r = await api.post('/auth/login', { code: code.value, pin: pin.value }, { token: null }); store.set('admin_token', r.token); store.del('admin_from_pos'); location.reload(); } catch (e) { errToast(e); } };
   pin.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
   app.replaceChildren(loginHero('เว็บไซต์จัดการร้าน', 'ดูยอดขายวันนี้ รายงาน เมนู สมาชิก และตั้งค่าร้านได้จากทุกที่', h('div', { class: 'card' }, h('h2', {}, 'เข้าสู่ระบบ'), h('p', { class: 'muted' }, 'สำหรับเจ้าของและผู้จัดการ'),
     h('label', { class: 'field' }, 'รหัสพนักงาน', code), h('label', { class: 'field' }, 'PIN', pin), keypad(pin, { onEnter: go }), h('p', { class: 'version' }, 'v' + VERSION))));
 }
+const fromPos = !!store.get('admin_from_pos');
+function backToPos(e) { e && e.preventDefault(); store.del('admin_token'); store.del('admin_from_pos'); location.href = '/pos/'; }
 function shell(r, content) {
   const side = h('nav', { class: 'side' }, h('div', { class: 'brandbox' }, h('img', { src: '/assets/bowl.svg', alt: '' }),
       h('div', {}, h('b', {}, ctx.settings.store.name), h('small', {}, ctx.staff.name, ' · ', ctx.staff.role_name))),
@@ -49,11 +51,15 @@ function shell(r, content) {
       const vis = items.filter(([, , p]) => can(p));
       return vis.length ? [h('h4', {}, g), ...vis.map(([k, t]) => h('a', { href: '#/' + k, class: r === k ? 'on' : '', onclick: () => side.classList.remove('open') }, t))] : [];
     }),
-    h('h4', {}, 'ลิงก์'), h('a', { href: '/pos/', target: '_blank' }, '🛒 หน้าขาย POS'), h('a', { href: '/kitchen/', target: '_blank' }, '👩‍🍳 จอครัว'), h('a', { href: '/display/', target: '_blank' }, '📺 จอลูกค้า'),
-    h('a', { href: '/member/', target: '_blank' }, '⭐ เว็บไซต์สมาชิก'), h('a', { href: '/guide/', target: '_blank' }, '📖 คู่มือ'),
-    h('a', { href: '#', onclick: async (e) => { e.preventDefault(); await api.post('/auth/logout').catch(() => {}); store.del('admin_token'); location.reload(); } }, '🚪 ออกจากระบบ'),
+    // opened from the POS app: everything stays in this window, and leaving goes back to the sales screen (the POS session stays signed in)
+    ...(fromPos ? [h('h4', {}, 'ลิงก์'), h('a', { href: '/kitchen/' }, '👩‍🍳 จอครัว'), h('a', { href: '/guide/' }, '📖 คู่มือ'), h('a', { href: '/pos/', class: 'backpos', onclick: backToPos }, '← กลับหน้าขาย POS')]
+      : [h('h4', {}, 'ลิงก์'), h('a', { href: '/pos/', target: '_blank' }, '🛒 หน้าขาย POS'), h('a', { href: '/kitchen/', target: '_blank' }, '👩‍🍳 จอครัว'), h('a', { href: '/display/', target: '_blank' }, '📺 จอลูกค้า'),
+        h('a', { href: '/member/', target: '_blank' }, '⭐ เว็บไซต์สมาชิก'), h('a', { href: '/guide/', target: '_blank' }, '📖 คู่มือ'),
+        h('a', { href: '#', onclick: async (e) => { e.preventDefault(); await api.post('/auth/logout').catch(() => {}); store.del('admin_token'); location.reload(); } }, '🚪 ออกจากระบบ')]),
     h('p', { class: 'version', style: { padding: '0 .5em' } }, `เวอร์ชัน ${VERSION}`));
-  app.replaceChildren(h('div', { class: 'topm' }, h('button', { class: 'btn sm', onclick: () => side.classList.toggle('open') }, '☰'), h('strong', {}, ctx.settings.store.name)),
+  app.replaceChildren(h('div', { class: 'topm' }, h('button', { class: 'btn sm', onclick: () => side.classList.toggle('open') }, '☰'), h('strong', {}, ctx.settings.store.name),
+      fromPos ? h('a', { href: '/pos/', class: 'btn sm primary', style: { marginLeft: 'auto' }, onclick: backToPos }, '← หน้าขาย') : null),
+    fromPos ? h('a', { href: '/pos/', class: 'backpos-fab', onclick: backToPos }, '← กลับหน้าขาย POS') : null,
     h('div', { class: 'layout' }, side, h('main', { class: 'content', id: 'content' }, content)));
 }
 async function route() {

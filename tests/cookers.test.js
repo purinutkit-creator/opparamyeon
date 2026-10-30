@@ -112,3 +112,21 @@ test('QR ใบสรุปร้านค้า: เปิดรายละเ
   assert.equal(billTokenOf(fromThaiKeys(typed)), tok);
   assert.equal(fromThaiKeys('คคถ-ต/'), '885392');
 });
+
+test('รายงานรอบ: รายละเอียดเพิ่ม และ QR เปิดดูได้โดยไม่ต้องเข้าสู่ระบบ', async () => {
+  await S.call('POST', '/api/orders/checkout', { idempotency_key: key(), cart: { lines: [line('p_d001', 3), line('p_r001', 1, { options: ramyeonOpts, bowl_group: 1 })] }, payments: [{ method: 'cash', amount: 1e6, received: 1e6 }] }, { token: owner, terminal: 'pos1' });
+  const cur = (await S.call('GET', '/api/shifts/current', undefined, { token: owner, terminal: 'pos1' })).body;
+  assert.ok(cur.top_items.length && cur.top_items[0].qty >= 1, 'ขายดี');
+  assert.ok(cur.hours.length >= 1 && cur.first_bill_at && cur.avg_bill > 0);
+  assert.ok(cur.by_dine.dine_in.n >= 1);
+  const link = (await S.call('GET', `/api/shifts/${cur.id}/link`, undefined, { token: owner, terminal: 'pos1' })).body.url;
+  const tok = decodeURIComponent(link.split('/s/#')[1]);
+  const pub = await S.call('GET', '/api/public/shift/' + encodeURIComponent(tok));
+  assert.equal(pub.status, 200);
+  assert.equal(pub.body.shift.id, cur.id);
+  assert.equal((await S.call('GET', '/api/public/shift/' + encodeURIComponent(cur.id + '.000000000000'))).status, 404);
+  // the printed shift slip carries the same link
+  await S.call('POST', `/api/shifts/${cur.id}/print`, {}, { token: owner, terminal: 'pos1' });
+  const job = await db.get("SELECT payload FROM print_jobs WHERE ref_id = ? AND doc_type = 'shift' ORDER BY seq DESC", [cur.id]);
+  if (job) assert.match(JSON.parse(job.payload).data.shift_url || '', /\/s\/#/);
+});

@@ -16,7 +16,7 @@ export const FIELD_LABELS = {
 };
 export const ELEMENT_TYPES = { logo: 'โลโก้', field: 'ข้อมูลจากระบบ', text: 'ข้อความอิสระ', items: 'รายการสินค้า', totals: 'ยอดรวม', payments: 'การชำระเงิน', divider: 'เส้นคั่น',
   space: 'ช่องว่าง', image: 'รูปภาพ', barcode: 'บาร์โค้ด', qr: 'QR Code', cut: 'จุดตัดกระดาษ', shift_summary: 'สรุปรอบการขาย', points: 'กรอบสะสมแต้ม (QR รับแต้ม / แต้มสมาชิก)' };
-export const VARS = ['detail_url', 'queue_number', 'bill_no', 'table_name', 'customer_name', 'member_name', 'total', 'store_name', 'datetime', 'staff', 'claim_url', 'mobile_url', 'footer', 'phone', 'pay_qr'];
+export const VARS = ['detail_url', 'shift_url', 'queue_number', 'bill_no', 'table_name', 'customer_name', 'member_name', 'total', 'store_name', 'datetime', 'staff', 'claim_url', 'mobile_url', 'footer', 'phone', 'pay_qr'];
 
 const imgCache = new Map();
 function loadImage(src) {
@@ -326,6 +326,25 @@ export async function renderDoc(tpl, data, opts = {}) {
           twoCol('เงินเข้าลิ้นชัก', baht(s.cash_in), e); twoCol('เงินออกลิ้นชัก', baht(s.cash_out), e);
           twoCol('เงินสดที่ควรมี', baht(s.expected_cash), e, { weight: 800 });
           if (s.counted_cash !== null && s.counted_cash !== undefined) { twoCol('เงินสดที่นับได้', baht(s.counted_cash), e); twoCol('ขาด/เกิน', baht(s.diff), e, { weight: 800 }); }
+          if (e.details === false) break;
+          // more detail: times, averages, dine-in/takeaway, members, best sellers, categories, busiest hours
+          const t = (iso) => (iso ? new Date(iso).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' }) : '-');
+          const sub = (title) => text(`— ${title} —`, { ...e, align: 'center' }, { weight: 700 });
+          sub('ภาพรวม');
+          const dd = (iso) => (iso ? new Date(iso).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short' }) : '');
+          twoCol('บิลแรก – บิลสุดท้าย', dd(s.first_bill_at) === dd(s.last_bill_at) ? `${t(s.first_bill_at)} – ${t(s.last_bill_at)}` : `${dd(s.first_bill_at)} ${t(s.first_bill_at)} – ${dd(s.last_bill_at)} ${t(s.last_bill_at)}`, e);
+          twoCol('เฉลี่ยต่อบิล', baht(s.avg_bill || 0), e);
+          twoCol('จำนวนสินค้า (ชิ้น)', String(s.items_count || 0), e);
+          if (s.discount_bills) twoCol('บิลที่มีส่วนลด', `${s.discount_bills} บิล`, e);
+          if (s.packaging) twoCol('ค่าบรรจุภัณฑ์', baht(s.packaging), e);
+          if (s.tax) twoCol('VAT', baht(s.tax), e);
+          const DINE = { dine_in: 'ทานที่ร้าน', takeaway: 'กลับบ้าน', mixed: 'ทานที่ร้าน+กลับบ้าน' }, SRC = { pos: 'หน้าร้าน', mobile_table: 'สั่งที่โต๊ะ', mobile_pickup: 'Pick Up' };
+          if (s.by_dine && Object.keys(s.by_dine).length) { sub('ทานที่ร้าน / กลับบ้าน'); for (const [k, v] of Object.entries(s.by_dine)) twoCol(`${DINE[k] || k} (${v.n})`, baht(v.amount), e); }
+          if (s.by_source && Object.keys(s.by_source).length > 1) { sub('ช่องทางสั่ง'); for (const [k, v] of Object.entries(s.by_source)) twoCol(`${SRC[k] || k} (${v.n})`, baht(v.amount), e); }
+          if (s.member_bills) { sub('สมาชิก'); twoCol(`บิลสมาชิก (${s.member_bills})`, baht(s.member_sales), e); twoCol('แต้มที่ให้', String(s.points_given || 0), e); }
+          if ((s.top_items || []).length) { sub('ขายดี'); for (const [i, it] of s.top_items.slice(0, e.top || 5).entries()) twoCol(`${i + 1}. ${it.name} ×${it.qty}`, baht(it.amount), e); }
+          if ((s.categories || []).length > 1) { sub('ตามหมวด'); for (const c of s.categories) twoCol(`${c.name} (${c.qty})`, baht(c.amount), e); }
+          if ((s.hours || []).length) { sub('ตามช่วงเวลา'); for (const hr of s.hours) twoCol(`${String(hr.hour).padStart(2, '0')}:00 (${hr.n} บิล)`, baht(hr.amount), e); }
           break;
         }
         case 'label': {

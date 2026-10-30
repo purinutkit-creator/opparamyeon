@@ -21,3 +21,13 @@ export async function billFromToken(tok) {
   return want.length === got.length && crypto.timingSafeEqual(want, got) ? billNo : null;
 }
 export const resetBillSecretCache = () => { cached = null; };
+
+// shift reports use the same idea: <shift id>.<signature> (QR on the shift slip)
+const signShift = async (id) => crypto.createHmac('sha256', await secret()).update('shift:' + id).digest('hex').slice(0, 12);
+export async function shiftToken(id) { return `${id}.${await signShift(id)}`; }
+export async function shiftFromToken(tok) {
+  const m = /^([0-9a-f-]{8,40})\.([0-9a-f]{12})$/i.exec(String(tok || '').trim());
+  if (!m) return null;
+  const want = Buffer.from(await signShift(m[1].toLowerCase())), got = Buffer.from(m[2].toLowerCase());
+  return want.length === got.length && crypto.timingSafeEqual(want, got) ? m[1].toLowerCase() : null;
+}

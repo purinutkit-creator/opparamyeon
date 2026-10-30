@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#d4202f">
+<meta name="robots" content="noindex">
+<title>รายงานรอบการขาย · Oppa Ramyeon</title>
+<link rel="icon" type="image/png" href="/assets/icon-192.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@500;600;700&family=Sarabun:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="/shared/style.css">
+<style>
+  body { max-width: 640px; margin: 0 auto; padding: 16px 14px 40px; background: var(--bg); }
+  .head { color: #fff; border-radius: 24px; padding: 18px; margin-bottom: 12px; background: var(--grad, linear-gradient(135deg, #e8321f, #a3141c)); }
+  .head small { opacity: .85; font-weight: 700; } .head h1 { margin: .1em 0; font-family: 'Prompt', sans-serif; font-size: 1.5em; }
+  .card { background: var(--surface); border-radius: 22px; padding: 16px; box-shadow: var(--shadow); }
+</style>
+</head>
+<body>
+<div id="app"><div class="empty">กำลังโหลด…</div></div>
+<script type="module">
+import { h, $ } from '/shared/ui.js';
+import { shiftDetailsView, shiftStats, SHIFT_CSS } from '/shared/shiftview.js';
+document.head.append(Object.assign(document.createElement('style'), { textContent: SHIFT_CSS }));
+const app = $('#app');
+try {
+  const r = await fetch('/api/public/shift/' + encodeURIComponent(decodeURIComponent(location.hash.slice(1))));
+  const b = await r.json();
+  if (!r.ok) throw new Error(b.error || 'โหลดรายงานไม่สำเร็จ');
+  const s = b.shift;
+  app.replaceChildren(h('div', { class: 'head' }, h('small', {}, b.store), h('h1', {}, s.status === 'closed' ? 'สรุปปิดรอบการขาย' : 'สรุประหว่างรอบ (ยังเปิดอยู่)'),
+    h('small', {}, `${s.terminal_name || ''} · ${s.staff_name || ''}`)), h('div', { class: 'card' }, shiftStats(s, b.count_unit), shiftDetailsView(s, b.payment_names, b.count_unit)));
+} catch (e) { app.replaceChildren(h('div', { class: 'empty' }, '⚠️ ' + e.message)); }
+</script>
+</body>
+</html>

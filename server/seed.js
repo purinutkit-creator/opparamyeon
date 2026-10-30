@@ -61,6 +61,16 @@ export async function seed({ demo = process.env.SEED_DEMO !== 'false' } = {}) {
     }
     await db.run("INSERT INTO settings(key, value) VALUES('seed_v1191', 'true') ON CONFLICT(key) DO NOTHING");
   }
+  // v1.22: shift slips get a QR to the full shift report
+  if (!(await db.get("SELECT key FROM settings WHERE key = 'seed_v122'"))) {
+    for (const t of await db.all('SELECT id, data FROM templates WHERE doc_type = ?', ['shift'])) {
+      const d = J(t.data, null);
+      if (!d || !Array.isArray(d.elements) || d.elements.some((e) => e.type === 'qr' && e.value === '{shift_url}')) continue;
+      d.elements.push({ type: 'divider', style: 'dash' }, { type: 'qr', value: '{shift_url}', size_mm: 26, align: 'center', caption: 'สแกนดูรายงานรอบนี้ (ไม่ต้องเข้าสู่ระบบ)', caption_size: 20 });
+      await db.run('UPDATE templates SET data = ?, updated_at = ? WHERE id = ?', [S(d), now(), t.id]);
+    }
+    await db.run("INSERT INTO settings(key, value) VALUES('seed_v122', 'true') ON CONFLICT(key) DO NOTHING");
+  }
   // v1.3: the receipt's plain claim QR becomes the framed points box (custom elements are kept as they are)
   if (!(await db.get("SELECT key FROM settings WHERE key = 'seed_v13'"))) {
     for (const t of await db.all('SELECT id, data FROM templates WHERE doc_type = ?', ['receipt'])) {
