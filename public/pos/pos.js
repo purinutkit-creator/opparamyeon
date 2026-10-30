@@ -33,6 +33,7 @@ async function boot() {
   st.catalog = await api.get('/catalog');
   st.cart = store.get('cart_' + st.terminal.id) || newCart();
   render();
+  if (justIn()) { justIn(false); const p = $('.pos'); p.classList.add('enter'); setTimeout(() => { p.classList.remove('enter'); document.documentElement.classList.remove('just-in'); }, 1200); }
   await connect();
   if (!st.shift) openShiftDialog();
   setupScanner();
@@ -42,7 +43,21 @@ async function boot() {
 
 // Login: scan the QR on the staff card (fills the staff and shows who it is on the left), then the PIN on a big keypad
 const staffTokenOf = (text) => { const m = /(?:\/st\/#|^)([A-Za-z0-9_-]{1,20}\.[0-9a-f]{12})\s*$/i.exec(String(text || '').trim()); return m ? m[1] : null; };
+// "just signed in" flag for the reload: the POS then fades in out of the brand colour
+function justIn(v) {
+  try { if (v === undefined) return !!sessionStorage.getItem('opp.just_in'); if (v) sessionStorage.setItem('opp.just_in', '1'); else sessionStorage.removeItem('opp.just_in'); } catch { /* storage blocked */ }
+  return false;
+}
+// morph between two screens with the View Transitions API (Chrome/Android); plain swap elsewhere — the CSS entrances still play
+const motionOk = () => !matchMedia('(prefers-reduced-motion: reduce)').matches;
+function morph(update, kind) {
+  if (!document.startViewTransition || !motionOk()) { update(); return Promise.resolve(); }
+  document.documentElement.dataset.vt = kind;
+  // data-vt stays set afterwards: removing it would switch the CSS entrance animations back on and replay them
+  return document.startViewTransition(update).finished.catch(() => {});
+}
 function loginScreen() {
+  document.documentElement.classList.remove('just-in'); justIn(false);
   // step 1: a popup asks for the staff card (or the code typed by hand) · step 2: big PIN pad with the staff on the left
   let pin = '', who = null;
   const root = h('div', { class: 'login-staff' });
@@ -57,6 +72,13 @@ function loginScreen() {
       const r = await api.post('/auth/login', { code: who.code, pin, terminal_id: store.get('terminal_id') }, { token: null });
       store.set('staff_token', r.token); store.set('last_code', who.code);
       document.removeEventListener('keydown', onKey, true);
+      justIn(true);
+      const card = root.querySelector('.ls-form .card');
+      if (card && motionOk()) {
+        card.classList.add('done');
+        root.append(h('div', { class: 'ls-flood' }, h('div', { class: 'ls-welcome' }, h('b', {}, '✓'), h('span', {}, 'ยินดีต้อนรับ ' + (r.staff ? r.staff.name : (who.name || ''))))));
+        await new Promise((res) => setTimeout(res, 1100));
+      }
       location.reload();
     } catch (e) { errToast(e); pin = ''; drawDots(); dots.classList.remove('shake'); void dots.offsetWidth; dots.classList.add('shake'); }
   };
@@ -69,19 +91,27 @@ function loginScreen() {
     const manual = h('form', { class: 'ls-manual', hidden: true, onsubmit: (e) => {
       e.preventDefault(); const c = code.value.trim();
       if (!c) return toast('กรอกรหัสพนักงาน', 'warn');
-      root.querySelector('.ls-pop').classList.add('ok');
-      setTimeout(() => pinStep({ code: c, typed: true }), 450);
+      toPin({ code: c, typed: true });
     } }, code, h('button', { class: 'btn primary', type: 'submit' }, 'ถัดไป'));
     const toggle = h('button', { type: 'button', class: 'ls-link', onclick: () => { manual.hidden = false; toggle.hidden = true; code.focus(); } }, '⌨️ หรือกรอกรหัสพนักงาน');
     root.className = 'login-staff step-scan';
-    root.replaceChildren(h('div', { class: 'ls-bg' }, h('img', { class: 'bowl', src: '/assets/bowl.svg', alt: '' }), h('h1', {}, '🍜 ', shop, h('br'), 'หน้าขาย POS')),
+    root.replaceChildren(h('div', { class: 'ls-bg' }, h('i', { class: 'blob b1' }), h('i', { class: 'blob b2' }), h('i', { class: 'blob b3' }), h('img', { class: 'bowl', src: '/assets/bowl.svg', alt: '' }), h('h1', {}, '🍜 ', shop, h('br'), 'หน้าขาย POS')),
       h('div', { class: 'ls-pop' },
         h('div', { class: 'ls-beam' }, h('span', { class: 'cardico' }, '🪪'), h('i', { class: 'line' })),
         h('h2', {}, 'สแกนบัตรพนักงาน'), h('p', { class: 'muted' }, 'ยิง QR บนบัตรพนักงานด้วยเครื่องยิงได้เลย'),
         h('div', { class: 'ls-wait' }, h('i'), h('i'), h('i'), h('span', {}, 'รอสแกน')),
         toggle, manual, version()));
   };
-  const back = () => { who = null; root.classList.add('leaving'); setTimeout(scanStep, 320); };
+  const back = () => {
+    who = null;
+    if (document.startViewTransition && motionOk()) return morph(scanStep, 'back');
+    root.classList.add('leaving'); setTimeout(scanStep, 320);
+  };
+  const toPin = (s) => {
+    if (document.startViewTransition && motionOk()) return morph(() => pinStep(s), 'in');
+    const pop = root.querySelector('.ls-pop'); if (pop) pop.classList.add('ok');
+    setTimeout(() => pinStep(s), 450);
+  };
   const pinStep = (s) => {
     who = s; pin = ''; drawDots();
     root.className = 'login-staff step-pin';
@@ -112,14 +142,14 @@ function loginScreen() {
       if (!s.active) return toast('บัตรนี้ถูกปิดใช้งาน', 'error');
       if (navigator.vibrate) navigator.vibrate(40);
       const pop = root.querySelector('.ls-pop');
-      if (pop) { // found: tick on the popup, then it flies off and the PIN screen slides in
-        pop.querySelector('.ls-beam').replaceChildren(s.photo ? h('img', { src: s.photo, alt: '' }) : h('span', { class: 'cardico' }, '✅'));
+      if (pop) { // found: the card turns into the staff photo with a ring burst, then the photo morphs into the big avatar
+        pop.querySelector('.ls-beam').replaceChildren(s.photo ? h('img', { src: s.photo, alt: '' }) : h('span', { class: 'ini' }, (s.name || '?')[0]));
         pop.querySelector('h2').textContent = 'พบบัตรแล้ว · ' + s.name;
         pop.querySelector('p').textContent = 'กำลังไปหน้าใส่ PIN…';
-        pop.classList.add('ok');
-        await new Promise((r) => setTimeout(r, 650));
+        pop.classList.add('found');
+        await new Promise((r) => setTimeout(r, 700));
       }
-      pinStep(s);
+      toPin(s);
     } catch (e) { errToast(e); }
   };
   const endBurst = () => {

@@ -472,3 +472,83 @@ body { background: var(--bg); }
 @keyframes waitdot { 0%, 80%, 100% { opacity: .25; transform: scale(.8); } 40% { opacity: 1; transform: scale(1.15); } }
 @keyframes popin { from { opacity: 0; transform: translateY(18px) scale(.94); } to { opacity: 1; transform: none; } }
 @media (max-width: 860px) { .login-staff { grid-template-columns: 1fr; } .ls-art { min-height: 34vh; padding: 3vh 6vw; } .ls-art .bowl { width: 22vh; top: 4%; } .ls-staff .ph { width: 20vh; } }
+
+/* ---- login: ultra-smooth motion (v1.23.2) ---- */
+:root { --ease-out: cubic-bezier(.22, 1, .36, 1); --ease-spring: cubic-bezier(.34, 1.56, .64, 1); --ease-io: cubic-bezier(.65, 0, .35, 1); }
+/* living background behind the scan popup */
+.ls-bg { overflow: hidden; }
+.ls-bg .blob { position: absolute; border-radius: 50%; filter: blur(70px); opacity: .5; will-change: transform; animation: drift 18s ease-in-out infinite alternate; }
+.ls-bg .b1 { width: 55vmax; height: 55vmax; left: -18vmax; top: -18vmax; background: color-mix(in srgb, var(--brand) 35%, #fff); }
+.ls-bg .b2 { width: 42vmax; height: 42vmax; right: -12vmax; bottom: -18vmax; background: color-mix(in srgb, var(--brand) 70%, #ff9f1c); animation-duration: 23s; animation-direction: alternate-reverse; }
+.ls-bg .b3 { width: 30vmax; height: 30vmax; left: 38%; top: 46%; background: #ffd36e; opacity: .28; animation-duration: 27s; }
+@keyframes drift { 33% { transform: translate(8vmax, 5vmax) scale(1.12); } 66% { transform: translate(-5vmax, 9vmax) scale(.94); } 100% { transform: translate(6vmax, -6vmax) scale(1.06); } }
+/* popup: soft spring with focus pull, contents rise one after another */
+.ls-pop { animation: popin2 .9s var(--ease-out) both; will-change: transform; }
+@keyframes popin2 { from { opacity: 0; transform: translateY(40px) scale(.9); filter: blur(10px); } }
+.step-scan .ls-pop > * { animation: rise .7s var(--ease-out) both; }
+.step-scan .ls-pop > :nth-child(1) { animation-delay: .12s; } .step-scan .ls-pop > :nth-child(2) { animation-delay: .2s; }
+.step-scan .ls-pop > :nth-child(3) { animation-delay: .26s; } .step-scan .ls-pop > :nth-child(4) { animation-delay: .32s; }
+.step-scan .ls-pop > :nth-child(n+5) { animation-delay: .38s; }
+@keyframes rise { from { opacity: 0; transform: translateY(16px); filter: blur(4px); } }
+/* card found: the card icon turns into the staff photo with a double ring burst */
+.ls-beam { transition: width .5s var(--ease-out), height .5s var(--ease-out), border-radius .5s var(--ease-out), background .4s; }
+.ls-pop.found .ls-beam { width: 124px; height: 124px; border-radius: 50%; background: #dcfce7; animation: ring 1.1s var(--ease-out); }
+.ls-beam img { width: 100%; height: 100%; object-fit: cover; animation: photoin .55s var(--ease-out); }
+.ls-beam .ini { font-family: var(--head-font); font-size: 60px; font-weight: 800; color: var(--brand); animation: photoin .55s var(--ease-spring); }
+.ls-pop.found h2 { color: #16a34a; animation: rise .45s var(--ease-out); }
+.ls-pop .ls-wait, .ls-pop .ls-link, .ls-pop .ls-manual { transition: opacity .3s, transform .3s var(--ease-out); }
+.ls-pop.found .ls-wait, .ls-pop.found .ls-link, .ls-pop.found .ls-manual { opacity: 0; transform: translateY(8px); }
+@keyframes ring { 0% { box-shadow: 0 0 0 0 rgb(34 197 94 / .55), 0 0 0 0 rgb(34 197 94 / .3); } 100% { box-shadow: 0 0 0 26px rgb(34 197 94 / 0), 0 0 0 64px rgb(34 197 94 / 0); } }
+@keyframes photoin { from { opacity: 0; transform: scale(1.35); filter: blur(6px); } }
+/* PIN step without View Transitions: smoother curves */
+.step-pin .ls-art { animation: reveal 1s var(--ease-out) both; }
+.step-pin .ls-form .card { animation: slidein-r2 .8s var(--ease-out) both; animation-delay: .08s; }
+@keyframes reveal { from { clip-path: circle(0% at 100% 50%); } to { clip-path: circle(150% at 100% 50%); } }
+@keyframes slidein-r2 { from { opacity: 0; transform: translateX(70px) scale(.96); filter: blur(6px); } }
+.step-pin .ls-art .ls-staff > * { animation: rise .7s var(--ease-out) both; }
+.step-pin .ls-art .ls-staff > :nth-child(1) { animation: photoin .8s var(--ease-spring) both; animation-delay: .15s; }
+.step-pin .ls-art .ls-staff > :nth-child(2) { animation-delay: .3s; } .step-pin .ls-art .ls-staff > :nth-child(3) { animation-delay: .36s; }
+.step-pin .ls-art .ls-staff > :nth-child(n+4) { animation-delay: .44s; }
+.step-pin .bigpad .key { animation: keyin2 .6s var(--ease-spring) both; animation-delay: calc(.3s + var(--i, 0) * 32ms); }
+@keyframes keyin2 { from { opacity: 0; transform: translateY(18px) scale(.8); } }
+.pin-dots i { transition: transform .3s var(--ease-spring), background .2s, border-color .2s; }
+.pin-dots i.on { animation: dotpop .35s var(--ease-spring); }
+@keyframes dotpop { 0% { transform: scale(.4); } 100% { transform: scale(1.12); } }
+.bigpad .key { transition: transform .18s var(--ease-spring), background .2s, box-shadow .2s; }
+.bigpad .key:active { transform: translateY(3px) scale(.94); box-shadow: 0 0 0 rgb(0 0 0 / 0); }
+/* View Transitions: popup ⇄ PIN card, scanned photo ⇄ big avatar, red panel opens as a circle */
+.ls-pop, .step-pin .ls-form .card { view-transition-name: login-card; }
+.ls-pop.found .ls-beam, .step-pin .ls-staff .ph { view-transition-name: staff-ph; }
+.step-pin .ls-art { view-transition-name: ls-art; }
+html[data-vt] .ls-pop, html[data-vt] .step-pin .ls-art, html[data-vt] .step-pin .ls-form .card,
+html[data-vt] .step-pin .ls-art .ls-staff > :nth-child(1) { animation: none; }
+::view-transition-group(*) { animation-duration: .8s; animation-timing-function: var(--ease-out); }
+::view-transition-group(staff-ph) { animation-duration: .95s; animation-timing-function: cubic-bezier(.3, 1.25, .5, 1); z-index: 3; }
+::view-transition-old(root) { animation: vt-out .5s var(--ease-io) both; }
+::view-transition-new(root) { animation: vt-in .8s var(--ease-out) .1s both; }
+::view-transition-old(login-card) { animation: vt-fade-out .35s ease both; }
+::view-transition-new(login-card) { animation: vt-fade-in .55s var(--ease-out) .18s both; }
+::view-transition-old(login-card), ::view-transition-new(login-card) { height: 100%; object-fit: cover; object-position: top; }
+::view-transition-new(ls-art) { animation: reveal 1s var(--ease-out) both; }
+::view-transition-old(ls-art) { animation: unreveal .6s var(--ease-io) both; }
+html[data-vt="back"]::view-transition-old(staff-ph) { animation: vt-pop-out .45s var(--ease-io) both; }
+@keyframes vt-out { to { opacity: 0; transform: scale(1.04); filter: blur(10px); } }
+@keyframes vt-in { from { opacity: 0; transform: scale(.98); } }
+@keyframes vt-fade-out { to { opacity: 0; filter: blur(6px); } }
+@keyframes vt-fade-in { from { opacity: 0; filter: blur(6px); } }
+@keyframes unreveal { from { clip-path: circle(150% at 100% 50%); } to { clip-path: circle(0% at 100% 50%); } }
+@keyframes vt-pop-out { to { opacity: 0; transform: scale(.6); filter: blur(8px); } }
+/* signed in: tick, brand wave floods the screen, the POS fades in out of it */
+.ls-form .card.done { animation: carddone .5s var(--ease-spring); }
+@keyframes carddone { 40% { transform: scale(.97); } 100% { transform: scale(1); } }
+.ls-flood { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: var(--grad); clip-path: circle(0% at 76% 76%); animation: flood .9s var(--ease-io) forwards; }
+@keyframes flood { to { clip-path: circle(150% at 76% 76%); } }
+.ls-welcome { color: #fff; text-align: center; display: grid; gap: .5em; animation: rise .7s var(--ease-out) .45s both; }
+.ls-welcome b { width: 112px; height: 112px; margin: auto; border-radius: 50%; background: #fff; color: var(--brand); display: grid; place-items: center; font-size: 62px; animation: photoin .6s var(--ease-spring) .5s both; }
+.ls-welcome span { font-family: var(--head-font); font-size: clamp(24px, 3.4vw, 44px); font-weight: 800; }
+.pos.enter { background: var(--bg); animation: vt-in .9s var(--ease-out) both; }
+.pos.enter::after { content: ''; position: fixed; inset: 0; z-index: 60; background: var(--grad); pointer-events: none; animation: floodout .9s var(--ease-io) forwards; }
+@keyframes floodout { to { opacity: 0; visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) { .ls-bg .blob { animation: none; } .ls-flood, .pos.enter::after { display: none; } }
+/* while the POS reloads after sign-in, keep the brand colour instead of a white flash */
+html.just-in, html.just-in body { background: var(--grad); }
