@@ -4,18 +4,20 @@ import { ah, id, now, bad, notFound, hashSecret, audit, conflict } from '../lib/
 import { staffAuth, verifyStaffPin, createSession, PERMS } from '../lib/auth.js';
 import { getSettings } from '../lib/util.js';
 import { staffToken, staffFromToken } from '../lib/billlink.js';
-import { joinShiftCrew } from '../lib/crew.js';
+import { joinShiftCrew, crewPlan, verifyOnDuty } from '../lib/crew.js';
 
 const r = Router();
 
 const person = (s) => ({ id: s.id, code: s.code, name: s.name });
 r.post('/auth/login', ah(async (req, res) => {
   const { code, pin, terminal_id } = req.body || {};
-  const s = await verifyStaffPin(code, pin);
+  // on a POS the owner's roster applies (people on leave today can't sign in); the shop website is not affected
+  const plan = terminal_id ? await crewPlan() : null;
+  const s = plan ? await verifyOnDuty(code, pin, plan) : await verifyStaffPin(code, pin);
   // the rest of the crew who scanned in on this device (each with their own PIN)
   const crew = [];
   for (const c of (Array.isArray(req.body.crew) ? req.body.crew : []).slice(0, 12)) {
-    const m = await verifyStaffPin(c && c.code, c && c.pin);
+    const m = await verifyOnDuty(c && c.code, c && c.pin, plan || undefined);
     if (m.id !== s.id && !crew.some((x) => x.id === m.id)) crew.push(person(m));
   }
   const term = terminal_id ? await db.get('SELECT id FROM terminals WHERE id = ?', [terminal_id]) : null;
@@ -29,7 +31,7 @@ r.post('/auth/login', ah(async (req, res) => {
 }));
 // several staff signing in together: check one person's PIN (same lockout rules) without opening a session
 r.post('/auth/verify', ah(async (req, res) => {
-  const s = await verifyStaffPin((req.body || {}).code, (req.body || {}).pin);
+  const s = await verifyOnDuty((req.body || {}).code, (req.body || {}).pin);
   const role = await db.get('SELECT name FROM roles WHERE id = ?', [s.role_id]);
   res.json({ ...person(s), last_name: s.last_name || '', nickname: s.nickname || '', title: s.title || '', photo: s.photo || '', role_name: role ? role.name : '' });
 }));
@@ -52,6 +54,20 @@ r.post('/auth/approve', staffAuth(), ah(async (req, res) => {
   const role = await db.get('SELECT perms FROM roles WHERE id = ?', [s.role_id]);
   const ok = J(role.perms, []).includes(req.body.perm);
   res.json({ ok, name: s.name });
+}));
+
+// today's roster for the POS sign-in screen (no login yet): how many scan in, who is on leave / joining later (names only)
+r.get('/crew/today', ah(async (req, res) => {
+  const p = await crewPlan();
+  const ids = [...p.leave, ...p.late];
+  const people = ids.length ? await db.all(`SELECT id, name, nickname FROM staff WHERE id IN (${ids.map(() => '?').join(',')})`, ids) : [];
+  const nm = (x) => { const s = people.find((y) => y.id === x); return s ? s.nickname || s.name : null; };
+  const tid = String(req.query.terminal || '');
+  const sh = tid ? await db.get("SELECT crew FROM shifts WHERE terminal_id = ? AND status = 'open'", [tid]) : null;
+  const inShift = new Set(J(sh && sh.crew, []).map((c) => c.id));
+  res.set('Cache-Control', 'no-store');
+  res.json({ date: p.date, weekday: p.weekday, need: p.need, base: p.base, max: p.max, special: p.special, shift_open: !!sh,
+    leave: p.leave.map(nm).filter(Boolean), late: p.late.map((x) => ({ name: nm(x), joined: inShift.has(x) })).filter((x) => x.name) });
 }));
 
 // ---------- terminals (เครื่องขาย) ----------

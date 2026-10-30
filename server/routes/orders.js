@@ -6,7 +6,7 @@ import { saveOrder, payOrder, checkout, voidOrder, refundItems, orderFull, getOr
 import { enqueue, orderDocData, reprint, retry } from '../lib/print.js';
 import { cookerStatus, finishTicket, finishOrder, voidOrderJobs } from '../lib/cookers.js';
 import { billFromToken, shiftToken, shiftFromToken } from '../lib/billlink.js';
-import { joinShiftCrew } from '../lib/crew.js';
+import { joinShiftCrew, verifyOnDuty } from '../lib/crew.js';
 
 const r = Router();
 
@@ -205,6 +205,14 @@ r.post('/shifts/open', staffAuth('shift'), ah(async (req, res) => {
   const sh = await db.get('SELECT * FROM shifts WHERE id = ?', [sid]);
   await enqueue('shift', sid, await shiftDoc(await shiftSummary(sh), 'ใบเปิดรอบการขาย'), { dedupe: 'shift-open:' + sid });
   res.json(await shiftSummary(sh));
+}));
+// someone joins the open shift later (scan + PIN on the POS) without changing who is signed in
+r.post('/shifts/join', staffAuth(), ah(async (req, res) => {
+  const sh = await needShift(req);
+  const s = await verifyOnDuty((req.body || {}).code, (req.body || {}).pin);
+  const crew = await joinShiftCrew(sh.id, [{ id: s.id, code: s.code, name: s.name, late: true }]);
+  await audit(req.staff.id, 'shift_join', 'shift', sh.id, null, { staff: s.code });
+  res.json({ name: s.name, crew });
 }));
 r.post('/shifts/cash', staffAuth('cash_move'), ah(async (req, res) => {
   const sh = await needShift(req);

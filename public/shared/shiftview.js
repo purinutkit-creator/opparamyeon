@@ -23,7 +23,7 @@ export function shiftDetailsView(s, names = {}, unit = 'ชาม', { cash = tru
   return h('div', { class: 'sv' },
     sec('⏱ เวลา', row('เปิดรอบ', d(s.opened_at)), s.closed_at ? row('ปิดรอบ', d(s.closed_at)) : null, row('บิลแรก – บิลสุดท้าย', span(s.first_bill_at, s.last_bill_at)),
       row('เครื่องขาย / พนักงาน', `${s.terminal_name || '-'} · ${s.staff_name || '-'}`),
-      (s.crew || []).length > 1 ? row(`พนักงานในรอบ (${s.crew.length} คน)`, s.crew.map((c) => (c.main ? '👑 ' : '') + c.name).join(', ')) : null),
+      (s.crew || []).length > 1 ? row(`พนักงานในรอบ (${s.crew.length} คน)`, s.crew.map((c) => (c.main ? '👑 ' : c.late ? '⏰ ' : '') + c.name).join(', ')) : null),
     sec('💳 ช่องทางรับเงิน', ...bars(pays, (p) => `${names[p.method] || p.method} (${p.count})`, (p) => p.amount, (p) => baht(p.amount))),
     cash ? sec('💵 เงินสดในลิ้นชัก', row('เงินสดเริ่มต้น', baht(s.opening_cash)), row('รับเงินสด', baht(s.cash_sales || 0)), row('เงินเข้าลิ้นชัก', baht(s.cash_in)), row('เงินออกลิ้นชัก', baht(s.cash_out)),
       s.cash_refunds ? row('คืนเงินสด', '-' + baht(s.cash_refunds)) : null, row('เงินสดที่ควรมี', baht(s.expected_cash), 'strong'),

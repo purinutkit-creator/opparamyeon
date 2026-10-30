@@ -229,19 +229,64 @@ export async function staffPage() {
       h('div', { class: 'grid2', style: { marginTop: '.6em' } }, Object.entries(rr.perms).map(([k, t]) => { const cb = h('input', { type: 'checkbox', checked: set.has(k) }); cb.onchange = () => (cb.checked ? set.add(k) : set.delete(k)); return h('label', { class: 'switch' }, cb, t); })),
       saveBtn('บันทึกสิทธิ์ ' + r.name, () => api.put('/roles/' + r.id, { name: r.name, perms: [...set] })));
   }));
-  // several staff per shift: on these days the POS asks everyone to scan in, then which one is the main sign-in
-  const crewCfg = { mode: 'off', days: [5, 6, 0], max: 6, ...((await api.get('/settings')).crew || {}) };
-  const crewMode = h('select', { class: 'input' }, [['off', 'ปิด — เข้าระบบทีละคนตามปกติ'], ['days', 'เฉพาะวันที่เลือก'], ['always', 'ทุกวัน']].map(([v, t]) => h('option', { value: v, selected: crewCfg.mode === v }, t)));
-  const DAYS = [[1, 'จ.'], [2, 'อ.'], [3, 'พ.'], [4, 'พฤ.'], [5, 'ศ.'], [6, 'ส.'], [0, 'อา.']];
-  const dayBox = DAYS.map(([d, t]) => { const cb = h('input', { type: 'checkbox', checked: crewCfg.days.includes(d) }); return [d, cb, h('label', { class: 'switch' }, cb, t)]; });
-  const crewMax = h('input', { class: 'input', type: 'number', min: 2, max: 12, value: crewCfg.max });
-  const daysRow = h('div', { class: 'row' }, dayBox.map((x) => x[2]));
-  const syncDays = () => { daysRow.style.display = crewMode.value === 'days' ? '' : 'none'; };
-  crewMode.onchange = syncDays; syncDays();
-  const crewCard = card(h('h3', {}, '👥 พนักงานหลายคนต่อรอบ'),
-    h('p', { class: 'small muted' }, 'วันที่ตั้งไว้ หน้าเข้าสู่ระบบ POS จะให้ทุกคนที่เข้างานสแกนบัตร + ใส่ PIN ทีละคน แล้วเลือกว่าใครเป็นคนหลัก (ชื่อที่ใช้เข้าระบบ) · ทุกคนจะถูกบันทึกไว้ในรอบการขายและรายงานปิดรอบ · วันอื่นกด "เข้างานหลายคนวันนี้" ที่หน้าเข้าสู่ระบบได้'),
-    h('div', { class: 'form-grid' }, h('label', { class: 'field' }, 'ใช้เมื่อ', crewMode), h('label', { class: 'field' }, 'สูงสุดกี่คนต่อเครื่อง', crewMax)), daysRow,
-    h('div', { style: { marginTop: '.6em' } }, saveBtn('บันทึก', () => api.put('/settings/crew', { value: { mode: crewMode.value, days: dayBox.filter((x) => x[1].checked).map((x) => x[0]), max: Math.max(2, Math.min(12, Number(crewMax.value) || 6)) } }))));
+  // ---- roster (set by the owner): how many scan in at opening each weekday, special days with people on leave / joining later ----
+  const C0 = (await api.get('/settings')).crew || {};
+  const crew = { weekly: { 0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, ...(C0.weekly || {}) }, dates: { ...(C0.dates || {}) }, max: C0.max || 8 };
+  const plan = await api.get('/crew/today').catch(() => null);
+  const DAYS = [[1, 'จันทร์'], [2, 'อังคาร'], [3, 'พุธ'], [4, 'พฤหัส'], [5, 'ศุกร์'], [6, 'เสาร์'], [0, 'อาทิตย์']];
+  const wIn = Object.fromEntries(DAYS.map(([d]) => [d, h('input', { class: 'input', type: 'number', min: 1, max: 12, value: crew.weekly[d] })]));
+  const active = staff.filter((x) => x.active);
+  const nameOf = (id) => { const x = staff.find((y) => y.id === id); return x ? x.nickname || x.name : '(ลบแล้ว)'; };
+  const thDate = (d) => new Date(d + 'T12:00:00Z').toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: '2-digit', timeZone: 'UTC' });
+  const saveCrew = () => api.put('/settings/crew', { value: { weekly: Object.fromEntries(DAYS.map(([d]) => [d, Number(wIn[d].value) || 1])), dates: crew.dates, max: crew.max } });
+  const specialBox = h('div');
+  const drawSpecial = () => {
+    const today = plan ? plan.date : new Date().toISOString().slice(0, 10);
+    const rows = Object.entries(crew.dates).filter(([d]) => d >= today).sort(([a], [b]) => a.localeCompare(b));
+    specialBox.replaceChildren(rows.length ? table([
+      { t: 'วันที่', f: ([d]) => thDate(d) + (d === today ? ' (วันนี้)' : '') },
+      { t: 'เข้างานตอนเปิด', f: ([d, x]) => { const wd = new Date(d + 'T12:00:00Z').getUTCDay(); const base = x.count || Number(wIn[wd].value) || 1; return `${Math.max(1, base - (x.leave || []).length)} คน` + (x.count ? ' (ตั้งพิเศษ)' : ''); } },
+      { t: '🏖️ ลาหยุด', f: ([, x]) => (x.leave || []).map(nameOf).join(', ') || '-' },
+      { t: '⏰ เข้าทีหลัง', f: ([, x]) => (x.late || []).map(nameOf).join(', ') || '-' },
+      { t: 'หมายเหตุ', f: ([, x]) => x.note || '' },
+      { t: '', f: ([d]) => h('button', { class: 'btn sm danger', onclick: async (e) => { e.stopPropagation(); delete crew.dates[d]; await saveCrew(); toast('ลบวันพิเศษแล้ว', 'ok'); drawSpecial(); } }, 'ลบ') },
+    ], rows, { onRow: ([d]) => editDay(d) }) : h('p', { class: 'small muted' }, 'ยังไม่มีวันพิเศษ'));
+  };
+  const editDay = (d0) => {
+    const x = crew.dates[d0] || {};
+    const date = h('input', { class: 'input', type: 'date', value: d0 || (plan ? plan.date : '') });
+    const count = h('input', { class: 'input', type: 'number', min: 1, max: 12, placeholder: 'ตามตารางประจำสัปดาห์', value: x.count || '' });
+    const note = h('input', { class: 'input', placeholder: 'เช่น งานวัด ลูกค้าเยอะ', value: x.note || '' });
+    const pick = (sel) => active.map((st) => { const cb = h('input', { type: 'checkbox', checked: (sel || []).includes(st.id) }); return [st.id, cb, h('label', { class: 'switch' }, cb, `${st.name}${st.nickname ? ` (${st.nickname})` : ''}`)]; });
+    const leave = pick(x.leave), late = pick(x.late);
+    modal(d0 ? 'แก้วันพิเศษ' : 'เพิ่มวันพิเศษ', h('div', {},
+      h('div', { class: 'form-grid' }, h('label', { class: 'field' }, 'วันที่', date), h('label', { class: 'field' }, 'จำนวนคนเข้างาน (ไม่กรอก = ตามตารางประจำสัปดาห์)', count)),
+      h('h4', {}, '🏖️ ลาหยุด (หักออกจากจำนวนคน และเข้าระบบ POS วันนั้นไม่ได้)'), h('div', { class: 'grid2' }, leave.map((r) => r[2])),
+      h('h4', {}, '⏰ เข้างานเพิ่มแต่มาทีหลัง (ไม่ต้องสแกนตอนเปิดร้าน มาถึงแล้วสแกนเข้ารอบที่ POS → ⋯ → พนักงานเข้างานเพิ่ม)'), h('div', { class: 'grid2' }, late.map((r) => r[2])),
+      h('label', { class: 'field' }, 'หมายเหตุ', note)), { wide: true, actions: [
+      { label: 'ยกเลิก', onClick: () => {} },
+      { label: 'บันทึก', class: 'primary', onClick: async () => {
+        if (!date.value) { toast('เลือกวันที่', 'warn'); return false; }
+        const on = (list) => list.filter((r) => r[1].checked).map((r) => r[0]);
+        const lv = on(leave), lt = on(late).filter((i) => !lv.includes(i));
+        if (d0 && d0 !== date.value) delete crew.dates[d0];
+        crew.dates[date.value] = { count: count.value ? Number(count.value) : null, leave: lv, late: lt, note: note.value.trim() };
+        await saveCrew(); toast('บันทึกวันพิเศษแล้ว', 'ok'); drawSpecial();
+      } }] });
+  };
+  drawSpecial();
+  const todayLine = plan ? h('div', { class: 'crew-today' },
+    h('b', {}, `วันนี้ ${thDate(plan.date)} · สแกนเข้างานตอนเปิดร้าน ${plan.need} คน`),
+    plan.leave.length ? h('span', { class: 'badge bad' }, '🏖️ ลา: ' + plan.leave.join(', ')) : null,
+    plan.late.length ? h('span', { class: 'badge info' }, '⏰ เข้าทีหลัง: ' + plan.late.map((x) => x.name + (x.joined ? ' ✓' : '')).join(', ')) : null) : null;
+  const crewCard = card(h('h3', {}, '👥 ตารางเข้างาน'),
+    h('p', { class: 'small muted' }, 'ร้านตั้งว่าแต่ละวันมีพนักงานเข้างานกี่คน · ถ้ามากกว่า 1 คน หน้าเข้าสู่ระบบ POS จะให้ทุกคนสแกนบัตร + ใส่ PIN จนครบ แล้วเลือกคนหลัก (ชื่อที่ใช้เข้าระบบ) · ทุกคนถูกบันทึกในรอบการขายและรายงานปิดรอบ'),
+    todayLine,
+    h('h4', {}, 'ตารางประจำสัปดาห์ (จำนวนคนที่สแกนเข้างานตอนเปิดร้าน)'),
+    h('div', { class: 'week-grid' }, DAYS.map(([d, t]) => h('label', { class: 'field' }, t, wIn[d]))),
+    h('div', { style: { marginTop: '.4em' } }, saveBtn('บันทึกตารางประจำสัปดาห์', saveCrew)),
+    h('div', { class: 'row between', style: { marginTop: '1em' } }, h('h4', { style: { margin: 0 } }, 'วันพิเศษ (ลาหยุด / มีคนเข้าเพิ่มทีหลัง / จำนวนคนไม่เหมือนปกติ)'), h('button', { class: 'btn', onclick: () => editDay(null) }, '+ เพิ่มวันพิเศษ')),
+    specialBox);
   return page('พนักงานและสิทธิ์', h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => open(null) }, '+ เพิ่มพนักงาน'),
       h('button', { class: 'btn', onclick: () => cardDialog(staff.filter((x) => x.active)) }, '🪪 บัตรพนักงานทั้งหมด')),
     card(table([{ t: '', f: (s) => h('div', { class: 'staff-photo sm' }, s.photo ? h('img', { src: s.photo, alt: '' }) : h('span', {}, (s.name || '?')[0])) },

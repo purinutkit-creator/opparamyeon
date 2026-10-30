@@ -178,3 +178,31 @@ test('เข้างานหลายคน: ยืนยัน PIN ทีล�
   assert.equal(pub.body.shift.crew.length, 4);
   assert.ok(pub.body.shift.crew.every((c) => c.code === undefined && c.id === undefined));
 });
+
+test('ตารางเข้างาน: เจ้าของตั้งจำนวนคนต่อวัน คนลาหยุดเข้าไม่ได้ คนเข้าทีหลังสแกนเข้ารอบภายหลัง', async () => {
+  const staff = (await S.call('GET', '/api/staff', undefined, { token: owner })).body;
+  const idOf = (c) => staff.find((x) => x.code === c).id;
+  const today = (await S.call('GET', '/api/crew/today')).body.date;
+  const wd = new Date(today + 'T12:00:00Z').getUTCDay();
+  const weekly = { 0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, [wd]: 3 };
+  let r = await S.call('PUT', '/api/settings/crew', { value: { weekly, dates: {}, max: 8 } }, { token: owner });
+  assert.equal(r.status, 200);
+  assert.equal((await S.call('GET', '/api/crew/today')).body.need, 3, 'วันนี้ตั้งไว้ 3 คน');
+  // special day: one on leave, one joining later
+  await S.call('PUT', '/api/settings/crew', { value: { weekly, dates: { [today]: { count: null, leave: [idOf('7702')], late: [idOf('7703')] } }, max: 8 } }, { token: owner });
+  const plan = (await S.call('GET', '/api/crew/today?terminal=pos1')).body;
+  assert.equal(plan.need, 2, '3 คน − ลา 1 คน');
+  assert.deepEqual(plan.leave, ['จีซู']); assert.deepEqual(plan.late.map((x) => x.name), ['โรเซ่']);
+  assert.equal(JSON.stringify(plan).includes('7702'), false, 'ไม่เปิดเผยรหัสพนักงาน');
+  const v = await S.call('POST', '/api/auth/verify', { code: '7702', pin: '5555' });
+  assert.equal(v.status, 403); assert.match(v.body.error, /ลาหยุด/);
+  assert.equal((await S.call('POST', '/api/auth/login', { code: '7702', pin: '5555', terminal_id: 'pos1' })).status, 403, 'เข้า POS ไม่ได้วันที่ลา');
+  assert.equal((await S.call('POST', '/api/auth/login', { code: '0001', pin: '1234', terminal_id: 'pos1', crew: [{ code: '7702', pin: '5555' }] })).status, 403);
+  // the late one joins the open shift from the POS
+  const j = await S.call('POST', '/api/shifts/join', { code: '7703', pin: '6666' }, { token: owner, terminal: 'pos1' });
+  assert.equal(j.status, 200, JSON.stringify(j.body));
+  assert.ok(j.body.crew.some((c) => c.name === 'โรเซ่' && c.late));
+  assert.equal((await S.call('GET', '/api/crew/today?terminal=pos1')).body.late[0].joined, true);
+  assert.equal((await S.call('POST', '/api/shifts/join', { code: '7702', pin: '5555' }, { token: owner, terminal: 'pos1' })).status, 403);
+  await S.call('PUT', '/api/settings/crew', { value: { weekly: { 0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1 }, dates: {}, max: 8 } }, { token: owner });
+});

@@ -34,6 +34,7 @@ async function boot() {
   st.catalog = await api.get('/catalog');
   st.cart = store.get('cart_' + st.terminal.id) || newCart();
   render();
+  loadCrewPlan();
   if (justIn()) { justIn(false); const p = $('.pos'); p.classList.add('enter'); setTimeout(() => { p.classList.remove('enter'); document.documentElement.classList.remove('just-in'); }, 1200); }
   await connect();
   let later = false; try { later = !!sessionStorage.getItem('opp.shift_later'); sessionStorage.removeItem('opp.shift_later'); } catch { /* storage blocked */ }
@@ -58,15 +59,16 @@ function morph(update, kind) {
   // data-vt stays set afterwards: removing it would switch the CSS entrance animations back on and replay them
   return document.startViewTransition(update).finished.catch(() => {});
 }
-function loginScreen() {
+async function loginScreen() {
   document.documentElement.classList.remove('just-in'); justIn(false);
+  // today's roster from the owner (how many scan in at opening); a shift already open on this device = a normal single sign-in
+  const plan = await fetch('/api/crew/today?terminal=' + encodeURIComponent(store.get('terminal_id') || '')).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   // steps: "scan" popup (card, or the code typed by hand) → "pin" big keypad with the person on the left.
-  // Crew days (ตั้งค่า → พนักงานหลายคนต่อรอบ): everyone scans in one after another, then "main" picks who the POS signs in as.
-  // No shift open yet → "shift" opens it right here. Steps morph into each other (View Transitions, CSS fallback).
-  const cfg = (st.settings && st.settings.crew) || {};
-  const wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Bangkok', weekday: 'short' }).format(new Date()));
-  let crewMode = cfg.mode === 'always' || (cfg.mode === 'days' && (cfg.days || []).includes(wd));
-  const max = Math.max(2, Math.min(12, Number(cfg.max) || 6));
+  // Days the owner set for 2+ people (จัดการร้าน → พนักงาน → ตารางเข้างาน): everyone scans in one after another until the count is reached,
+  // then "main" picks who the POS signs in as. No shift open yet → "shift" opens it right here. Steps morph into each other.
+  const need = plan && !plan.shift_open ? plan.need : 1;
+  const crewMode = need >= 2;
+  const max = Math.max(need, (plan && plan.max) || 8);
   let pin = '', who = null, step = 'scan', busy = false, chosen = null, lastAdded = null;
   const crew = []; // { s: staff details, pin } — PINs stay in memory only until sign-in
   const root = h('div', { class: 'login-staff' });
@@ -116,7 +118,7 @@ function loginScreen() {
       if (navigator.vibrate) navigator.vibrate(30);
       who = null; pin = '';
       await morph(scanStep, 'add'); // the big photo flies down into the crew strip
-      if (crew.length >= max) { toast(`ครบ ${max} คนแล้ว เลือกคนหลักได้เลย`, 'info'); toMain(); }
+      if (crew.length >= need) { toast(`ครบ ${need} คนตามตารางแล้ว · เลือกคนหลัก`, 'ok'); setTimeout(toMain, 500); }
     } catch (e) { errToast(e); shake(); } finally { busy = false; }
   };
   const toMain = () => {
@@ -140,16 +142,20 @@ function loginScreen() {
     const toggle = h('button', { type: 'button', class: 'ls-link', onclick: () => { manual.hidden = false; toggle.hidden = true; code.focus(); } }, '⌨️ หรือกรอกรหัสพนักงาน');
     const n = crew.length;
     root.className = 'login-staff step-scan' + (crewMode ? ' crew' : '');
+    const info = crewMode && plan ? [plan.leave.length ? '🏖️ ลา: ' + plan.leave.join(', ') : '', plan.late.length ? '⏰ มาทีหลัง: ' + plan.late.map((x) => x.name).join(', ') : ''].filter(Boolean).join(' · ') : '';
     root.replaceChildren(bg(), h('div', { class: 'ls-pop' },
-      crewMode ? h('div', { class: 'ls-chip' }, '👥 วันนี้เข้างานหลายคน · สแกนให้ครบทุกคน') : null,
+      crewMode ? h('div', { class: 'ls-chip' }, `📋 วันนี้เข้างาน ${need} คน · สแกนแล้ว ${n}/${need}`, h('span', { class: 'ls-prog' }, h('i', { style: `--p:${Math.min(1, n / need)}` }))) : null,
       h('div', { class: 'ls-beam' }, h('span', { class: 'cardico' }, '🪪'), h('i', { class: 'line' })),
       h('h2', {}, !crewMode ? 'สแกนบัตรพนักงาน' : n ? `สแกนคนที่ ${n + 1}` : 'สแกนบัตรพนักงานคนแรก'),
       h('p', { class: 'muted' }, crewMode && n ? 'ยิง QR บนบัตรของคนถัดไป หรือกดเสร็จแล้วเพื่อเลือกคนหลัก' : 'ยิง QR บนบัตรพนักงานด้วยเครื่องยิงได้เลย'),
       crewMode && n ? h('div', { class: 'crew-strip' }, crew.map((c) => h('div', { class: 'cs' + (c.s.id === lastAdded ? ' new' : '') }, avatar(c.s), h('small', {}, c.s.nickname || c.s.name)))) : null,
       h('div', { class: 'ls-wait' }, h('i'), h('i'), h('i'), h('span', {}, 'รอสแกน')),
-      crewMode && n ? h('button', { class: 'btn primary big block crew-done', onclick: toMain }, n === 1 ? 'เสร็จแล้ว · เข้าสู่ระบบ' : `เสร็จแล้ว · เลือกคนหลัก (${n} คน)`) : null,
+      crewMode && n >= need ? h('button', { class: 'btn primary big block crew-done', onclick: toMain }, `ครบแล้ว · เลือกคนหลัก (${n} คน)`) : null,
+      info ? h('p', { class: 'ls-info' }, info) : null,
       toggle, manual,
-      h('button', { type: 'button', class: 'ls-link sm', onclick: () => { crewMode = !crewMode; if (!crewMode) crew.length = 0; morph(scanStep, 'mode'); } }, crewMode ? 'เข้าคนเดียว' : '👥 เข้างานหลายคนวันนี้'),
+      crewMode && n && n < need ? h('button', { type: 'button', class: 'ls-link sm', onclick: async () => {
+        if (await confirmBox('ยังมาไม่ครบ', `ตารางวันนี้ ${need} คน สแกนแล้ว ${n} คน — คนที่มาทีหลังสแกนเข้ารอบได้ที่ ⋯ → พนักงานเข้างานเพิ่ม`, 'ไปต่อเลย')) toMain();
+      } }, `ยังมาไม่ครบ · ไปต่อก่อน (${n}/${need})`) : null,
       version()));
     lastAdded = null;
   };
@@ -348,7 +354,7 @@ async function connect() {
   s.on('connect', () => { setNet(true); pushDisplay(); refreshBadges(); loadCookers(); });
   s.on('disconnect', () => setNet(false));
   s.on('catalog:changed', async () => { st.catalog = await api.get('/catalog'); renderMenu(); });
-  s.on('settings:changed', async () => { st.settings = await fetch('/api/settings/public').then((r) => r.json()); applyTheme(st.settings.theme); setFxLevel((st.settings.theme || {}).pos_fx); render(); });
+  s.on('settings:changed', async () => { loadCrewPlan(); st.settings = await fetch('/api/settings/public').then((r) => r.json()); applyTheme(st.settings.theme); setFxLevel((st.settings.theme || {}).pos_fx); render(); });
   s.on('mobile:new_order', (o) => {
     st.pending.mobile++; renderTop();
     playSound(st.settings.sound, 'new_order', 'pos');
@@ -464,6 +470,7 @@ function renderTop() {
     h('span', { class: 'brand' }, h('img', { src: st.settings.store.logo || '/assets/bowl.svg', alt: '' }), st.settings.store.name), h('span', { id: 'net', class: 'status-dot ' + (online ? 'ok' : 'bad') }),
     h('span', { class: 'who muted' }, `${st.terminal.name} · ${st.staff.name}`),
     st.shift ? h('span', { class: 'badge ok' }, 'รอบเปิดอยู่') : h('button', { class: 'btn sm danger', onclick: openShiftDialog }, 'ยังไม่เปิดรอบ'),
+    lateWaiting().length ? h('button', { class: 'btn sm late-chip', onclick: joinDialog }, '⏰ รอเข้างาน: ' + lateWaiting().join(', ')) : null,
     h('span', { class: 'spacer' }),
     h('button', { class: 'btn', onclick: ordersDialog }, '🧾 บิล/ออเดอร์', badge(st.pending.mobile, st.pending.mobile > 0)),
     can('redeem') && h('button', { class: 'btn', onclick: () => couponDialog() }, '🎁 แลกรางวัล'),
@@ -476,6 +483,46 @@ function renderTop() {
     h('span', { class: 'version' }, 'v' + VERSION));
 }
 
+// ---------------- staff joining the open shift later (roster: "มาทีหลัง") ----------------
+async function loadCrewPlan() {
+  try { st.crewPlan = await fetch('/api/crew/today?terminal=' + encodeURIComponent(st.terminal.id)).then((r) => r.json()); } catch { /* offline */ }
+  renderTop();
+}
+const lateWaiting = () => (st.shift && st.crewPlan ? st.crewPlan.late.filter((x) => !x.joined).map((x) => x.name) : []);
+function joinDialog() {
+  if (!st.shift) return toast('ยังไม่เปิดรอบการขาย', 'warn');
+  const who = h('div', { class: 'jd-who' });
+  const inShift = () => (st.shift.crew || []).map((c) => (c.main ? '👑 ' : '') + c.name).join(', ');
+  const idle = () => who.replaceChildren(h('div', { class: 'jd-ph' }, '🪪'), h('b', {}, 'สแกนบัตรพนักงาน'), h('small', {}, 'ยิง QR บนบัตร หรือกรอกรหัส แล้วใส่ PIN'),
+    lateWaiting().length ? h('div', { class: 'badge warn' }, '⏰ ตามตาราง: ' + lateWaiting().join(', ')) : null,
+    h('small', { class: 'muted' }, 'ในรอบตอนนี้: ' + (inShift() || '-')));
+  idle();
+  const code = h('input', { class: 'input', placeholder: 'รหัสพนักงาน', autocomplete: 'off' });
+  const pin = h('input', { class: 'input', type: 'password', inputmode: 'numeric', placeholder: 'PIN', autocomplete: 'off' });
+  // the scanner types the card link into the code box (also with a Thai keyboard): turn it into the person
+  code.addEventListener('input', debounce(async () => {
+    const tok = staffTokenOf(fromThaiKeys(code.value)); if (!tok) return;
+    try {
+      const r = await fetch('/api/public/staff/' + encodeURIComponent(tok)); const s = await r.json();
+      if (!r.ok) throw new Error(s.error);
+      code.value = s.code;
+      who.replaceChildren(h('div', { class: 'jd-ph' }, s.photo ? h('img', { src: s.photo, alt: '' }) : (s.name || '?')[0]), h('b', {}, s.name + (s.last_name ? ' ' + s.last_name : '')), h('small', {}, s.title || s.role_name || ''));
+      pin.focus();
+    } catch (e) { errToast(e); code.value = ''; }
+  }, 120));
+  const dlg = modal('👥 พนักงานเข้างานเพิ่ม', h('div', { class: 'join-grid' }, who, h('div', {}, h('label', { class: 'field' }, 'รหัสพนักงาน (หรือสแกนบัตร)', code), h('label', { class: 'field' }, 'PIN', pin), keypad(pin, { onEnter: () => go() }))),
+    { actions: [{ label: 'ยกเลิก', onClick: () => {} }, { label: 'เข้ารอบนี้', class: 'primary', onClick: () => go() }] });
+  const go = async () => {
+    if (!code.value.trim() || !pin.value) { toast('สแกนบัตร/กรอกรหัส และใส่ PIN', 'warn'); return false; }
+    try {
+      const r = await api.post('/shifts/join', { code: code.value.trim(), pin: pin.value });
+      st.shift = { ...st.shift, crew: r.crew };
+      toast(`👋 ${r.name} เข้างานในรอบนี้แล้ว`, 'ok');
+      dlg.close(); loadCrewPlan();
+    } catch (e) { errToast(e); pin.value = ''; return false; }
+    return false;
+  };
+}
 // shop management inside the same app window (no new tab / browser, no second login):
 // the admin site reuses this staff session and shows a "back to sales" button
 function openAdminInApp(hash = '') {
@@ -491,6 +538,7 @@ function moreMenu(e) {
     h('a', { href: '/guide/' }, '📖 คู่มือการใช้งาน'),
     (can('view_sales') || can('settings')) && h('a', { href: '/admin/', onclick: (e) => { e.preventDefault(); openAdminInApp(); } }, '📊 จัดการร้าน'),
     h('a', { href: '/kitchen/' }, '👩‍🍳 จอครัว'),
+    h('button', { onclick: () => { pop.remove(); joinDialog(); } }, '👥 พนักงานเข้างานเพิ่ม'),
     h('button', { onclick: () => { pop.remove(); lockNow(); } }, '🔒 ล็อกหน้าจอ'),
     h('button', { onclick: logout }, '🚪 ออกจากระบบ / สลับผู้ใช้'),
     h('div', { class: 'version', style: { padding: '.4em .8em' } }, `${st.staff.name} · ${st.terminal.name} · เวอร์ชัน ${VERSION}`));
