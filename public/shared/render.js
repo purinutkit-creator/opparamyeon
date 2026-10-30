@@ -15,7 +15,7 @@ export const FIELD_LABELS = {
   pay_amount: 'ยอดชำระ (QR)', promptpay_name: 'ชื่อบัญชีพร้อมเพย์', promptpay_masked: 'เลขพร้อมเพย์ (ปิดบางส่วน)',
 };
 export const ELEMENT_TYPES = { logo: 'โลโก้', field: 'ข้อมูลจากระบบ', text: 'ข้อความอิสระ', items: 'รายการสินค้า', totals: 'ยอดรวม', payments: 'การชำระเงิน', divider: 'เส้นคั่น',
-  space: 'ช่องว่าง', image: 'รูปภาพ', barcode: 'บาร์โค้ด', qr: 'QR Code', cut: 'จุดตัดกระดาษ', shift_summary: 'สรุปรอบการขาย', points: 'กรอบสะสมแต้ม (QR รับแต้ม / แต้มสมาชิก)' };
+  space: 'ช่องว่าง', image: 'รูปภาพ', barcode: 'บาร์โค้ด', qr: 'QR Code', cut: 'จุดตัดกระดาษ', shift_summary: 'สรุปรอบการขาย', rows: 'ตารางสองคอลัมน์', points: 'กรอบสะสมแต้ม (QR รับแต้ม / แต้มสมาชิก)' };
 export const VARS = ['detail_url', 'shift_url', 'queue_number', 'bill_no', 'table_name', 'customer_name', 'member_name', 'total', 'store_name', 'datetime', 'staff', 'claim_url', 'mobile_url', 'footer', 'phone', 'pay_qr'];
 
 const imgCache = new Map();
@@ -312,6 +312,10 @@ export async function renderDoc(tpl, data, opts = {}) {
           if (draw) { ctx.fillStyle = '#000'; mods.forEach((w, i) => { if (i % 2 === 0) ctx.fillRect(x, y, w * mw, bh); x += w * mw; }); }
           y += bh + 2;
           text(v, { ...e, align: 'center' }, { size: 20 });
+          break;
+        }
+        case 'rows': { // [[left, right], …] from the data (e.g. clock-in slip: name · time)
+          for (const r of data[e.field || 'rows'] || []) twoCol(String(r[0] ?? ''), String(r[1] ?? ''), e, { weight: e.weight });
           break;
         }
         case 'shift_summary': {

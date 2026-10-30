@@ -41,3 +41,18 @@ export async function staffFromToken(tok) {
   const want = Buffer.from(await signStaff(m[1])), got = Buffer.from(m[2].toLowerCase());
   return want.length === got.length && crypto.timingSafeEqual(want, got) ? m[1] : null;
 }
+
+// Attendance (staff clock-in) link on the clock-in slip: /at/#<YYYY-MM-DD>.<12 hex>
+// It opens that day and lets the owner step through the days around it (31 days either side).
+const signAtt = async (day) => crypto.createHmac('sha256', await secret()).update('att:' + day).digest('hex').slice(0, 12);
+export async function attendanceToken(day) { return `${day}.${await signAtt(day)}`; }
+export const ATT_WINDOW_DAYS = 31;
+export async function attendanceFromToken(tok, wanted) {
+  const m = /^(\d{4}-\d{2}-\d{2})\.([0-9a-f]{12})$/i.exec(String(tok || '').trim());
+  if (!m) return null;
+  const want = Buffer.from(await signAtt(m[1])), got = Buffer.from(m[2].toLowerCase());
+  if (!(want.length === got.length && crypto.timingSafeEqual(want, got))) return null;
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(wanted || '')) ? wanted : m[1];
+  const gap = Math.abs(Date.parse(day + 'T00:00:00Z') - Date.parse(m[1] + 'T00:00:00Z')) / 864e5;
+  return gap <= ATT_WINDOW_DAYS ? { base: m[1], day } : null;
+}

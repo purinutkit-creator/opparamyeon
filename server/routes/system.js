@@ -257,6 +257,7 @@ r.put('/settings/:key', staffAuth('settings'), ah(async (req, res) => {
     v.dates = Object.fromEntries(Object.entries(v.dates || {}).filter(([d]) => /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= keep)
       .map(([d, x]) => [d, { count: x && x.count ? Math.max(1, Math.min(12, Math.round(Number(x.count)))) : null, late: ids(x && x.late), leave: ids(x && x.leave), note: String((x && x.note) || '').slice(0, 120) }]));
     v.max = Math.max(2, Math.min(12, Math.round(Number(v.max) || 8)));
+    v.print = ['crew', 'always', 'off'].includes(v.print) ? v.print : 'crew'; v.printer_id = String(v.printer_id || '');
   }
   const after = await setSetting(key, v);
   await audit(req.staff.id, 'settings', 'settings', key, before, after, req.body.reason);

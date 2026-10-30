@@ -206,3 +206,41 @@ test('ตารางเข้างาน: เจ้าของตั้งจ
   assert.equal((await S.call('POST', '/api/shifts/join', { code: '7702', pin: '5555' }, { token: owner, terminal: 'pos1' })).status, 403);
   await S.call('PUT', '/api/settings/crew', { value: { weekly: { 0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1 }, dates: {}, max: 8 } }, { token: owner });
 });
+
+test('ลงเวลาเข้างาน: บันทึกเวลาแต่ละคน พิมพ์ใบลงเวลา QR ดูได้ (ย้อนวันได้ในช่วง) และปุ่มเงินเท่าเมื่อวาน', async () => {
+  await S.call('POST', '/api/printers', { name: 'ใบเสร็จทดสอบลงเวลา', conn: 'lan', address: '10.9.9.30', port: 9100, paper: 80, roles: ['receipt'] }, { token: owner });
+  await S.call('POST', '/api/staff', { code: '7901', name: 'ฮานา', pin: '1212', role_id: 'cashier' }, { token: owner });
+  await S.call('POST', '/api/staff', { code: '7902', name: 'ดาอึน', pin: '3434', role_id: 'cashier' }, { token: owner });
+  const t1 = new Date(Date.now() - 4 * 60e3).toISOString(), t2 = new Date(Date.now() - 2 * 60e3).toISOString();
+  const lg = await S.call('POST', '/api/auth/login', { code: '7901', pin: '1212', at: t2, terminal_id: 'pos1', crew: [{ code: '7902', pin: '3434', at: t1 }] });
+  assert.equal(lg.status, 200, JSON.stringify(lg.body));
+  const rows = await db.all("SELECT name, at, main FROM attendance WHERE name IN ('ฮานา', 'ดาอึน') ORDER BY at");
+  assert.deepEqual(rows.map((r) => [r.name, r.at, Number(r.main)]), [['ดาอึน', t1, 0], ['ฮานา', t2, 1]], 'เวลาที่สแกนของแต่ละคน');
+  const job = await db.get("SELECT payload FROM print_jobs WHERE doc_type = 'attendance' ORDER BY seq DESC LIMIT 1");
+  assert.ok(job, 'พิมพ์ใบลงเวลา');
+  const data = JSON.parse(job.payload).data;
+  assert.ok(data.rows.some((r) => r[0].startsWith('ดาอึน')) && data.rows.some((r) => r[0] === 'ฮานา (หลัก)'));
+  // signing in again the same day keeps the first time and prints nothing new
+  const n0 = (await db.get("SELECT COUNT(*) AS n FROM print_jobs WHERE doc_type = 'attendance'")).n;
+  await S.call('POST', '/api/auth/login', { code: '7901', pin: '1212', terminal_id: 'pos1' });
+  assert.equal((await db.get("SELECT COUNT(*) AS n FROM print_jobs WHERE doc_type = 'attendance'")).n, n0);
+  assert.equal((await db.get("SELECT at FROM attendance WHERE name = 'ฮานา'")).at, t2);
+  // a time from the POS that is far off falls back to the server clock
+  await S.call('POST', '/api/staff', { code: '7903', name: 'ซอล', pin: '5656', role_id: 'cashier' }, { token: owner });
+  await S.call('POST', '/api/auth/login', { code: '7903', pin: '5656', terminal_id: 'pos1', at: '2001-01-01T00:00:00Z' });
+  assert.ok(Date.parse((await db.get("SELECT at FROM attendance WHERE name = 'ซอล'")).at) > Date.now() - 60e3);
+  // the QR: that day, other days within the window, nothing outside it, no forging
+  const tok = decodeURIComponent(data.att_url.split('/at/#')[1]);
+  const day = tok.split('.')[0];
+  const pub = await S.call('GET', '/api/public/attendance/' + encodeURIComponent(tok));
+  assert.equal(pub.status, 200);
+  assert.ok(pub.body.rows.some((r) => r.name === 'ดาอึน'));
+  assert.equal(JSON.stringify(pub.body).includes('7902'), false, 'ไม่มีรหัสพนักงาน');
+  const back = (n) => new Date(Date.parse(day + 'T12:00:00Z') - n * 864e5).toISOString().slice(0, 10);
+  assert.equal((await S.call('GET', `/api/public/attendance/${encodeURIComponent(tok)}?date=${back(5)}`)).status, 200);
+  assert.equal((await S.call('GET', `/api/public/attendance/${encodeURIComponent(tok)}?date=${back(40)}`)).status, 404);
+  assert.equal((await S.call('GET', '/api/public/attendance/' + encodeURIComponent(back(1) + tok.slice(10)))).status, 404);
+  // "same as yesterday": the opening cash of the last shift on this device
+  const last = (await S.call('GET', '/api/shifts/last-opening', undefined, { token: owner, terminal: 'pos1' })).body;
+  assert.equal(typeof last.amount, 'number'); assert.ok(last.business_date);
+});

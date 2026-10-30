@@ -94,13 +94,13 @@ async function loginScreen() {
     } else location.reload();
   };
   const signIn = async (main, others) => {
-    const r = await api.post('/auth/login', { code: main.code, pin: main.pin, crew: others, terminal_id: store.get('terminal_id') }, { token: null });
+    const r = await api.post('/auth/login', { code: main.code, pin: main.pin, at: main.at, crew: others, terminal_id: store.get('terminal_id') }, { token: null });
     store.set('staff_token', r.token); store.set('last_code', main.code);
     crew.length = 0; // forget the PINs
     const tid = store.get('terminal_id');
     if (tid && (r.staff.perms || []).includes('shift')) {
-      const [shift, terms] = await Promise.all([api.get('/shifts/current').catch(() => 'unknown'), api.get('/terminals').catch(() => [])]);
-      if (shift === null) { r.terminal = (terms.find((t) => t.id === tid) || {}).name; return morph(() => shiftStep(r), 'shift'); }
+      const [shift, terms, lastOpen] = await Promise.all([api.get('/shifts/current').catch(() => 'unknown'), api.get('/terminals').catch(() => []), api.get('/shifts/last-opening').catch(() => null)]);
+      if (shift === null) { r.terminal = (terms.find((t) => t.id === tid) || {}).name; r.lastOpen = lastOpen; return morph(() => shiftStep(r), 'shift'); }
     }
     finish(r.staff.name);
   };
@@ -109,11 +109,12 @@ async function loginScreen() {
     if (!pin) return toast('กรุณาใส่ PIN', 'warn');
     busy = true;
     try {
-      if (!crewMode) { face.set('main', who); await signIn({ code: who.code, pin }, []); return; }
+      const at = new Date().toISOString(); // clock-in time = when this person's PIN was accepted
+      if (!crewMode) { face.set('main', who); await signIn({ code: who.code, pin, at }, []); return; }
       const s = await api.post('/auth/verify', { code: who.code, pin }, { token: null });
       const det = { ...who, ...s, typed: false };
       const i = crew.findIndex((c) => c.s.id === s.id);
-      if (i >= 0) crew[i] = { s: det, pin }; else crew.push({ s: det, pin });
+      if (i >= 0) crew[i] = { s: det, pin, at: crew[i].at }; else crew.push({ s: det, pin, at });
       lastAdded = s.id;
       if (navigator.vibrate) navigator.vibrate(30);
       who = null; pin = '';
@@ -123,7 +124,7 @@ async function loginScreen() {
   };
   const toMain = () => {
     if (!crew.length) return;
-    if (crew.length === 1) { const c = crew[0]; face.set('main', c.s); busy = true; return signIn({ code: c.s.code, pin: c.pin }, []).catch((e) => { busy = false; errToast(e); }); }
+    if (crew.length === 1) { const c = crew[0]; face.set('main', c.s); busy = true; return signIn({ code: c.s.code, pin: c.pin, at: c.at }, []).catch((e) => { busy = false; errToast(e); }); }
     morph(mainStep, 'main');
   };
   const press = (k) => { if (k === '⌫') pin = pin.slice(0, -1); else if (k === 'C') pin = ''; else if (pin.length < 6) pin += k; drawDots(); if (pin.length === 6) go(); };
@@ -211,7 +212,7 @@ async function loginScreen() {
       const main = crew.find((c) => c.s.id === chosen);
       for (const c of crew) face.set(c.s.id, c.s);
       face.set('main', main.s);
-      try { await signIn({ code: main.s.code, pin: main.pin }, crew.filter((c) => c !== main).map((c) => ({ code: c.s.code, pin: c.pin }))); }
+      try { await signIn({ code: main.s.code, pin: main.pin, at: main.at }, crew.filter((c) => c !== main).map((c) => ({ code: c.s.code, pin: c.pin, at: c.at }))); }
       catch (e) { errToast(e); busy = false; btn.disabled = false; }
     };
     root.replaceChildren(bg(), h('div', { class: 'ls-pop wide' },
@@ -248,7 +249,12 @@ async function loginScreen() {
       } catch (e) { errToast(e); busy = false; btn.disabled = false; }
     };
     btn.onclick = openShiftNow;
-    card.append(h('h2', {}, '💰 เงินสดเริ่มต้นในลิ้นชัก'), h('p', { class: 'muted' }, 'ใส่จำนวนเงินทอนที่มีในลิ้นชักตอนเปิดร้าน'), amt,
+    const lo = r.lastOpen;
+    const yest = plan ? new Date(Date.parse(plan.date + 'T12:00:00Z') - 864e5).toISOString().slice(0, 10) : '';
+    const loDay = lo ? new Date(lo.business_date + 'T12:00:00Z').toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: '2-digit', timeZone: 'UTC' }) : '';
+    const same = lo ? h('button', { type: 'button', class: 'same-cash', onclick: () => { cash = String(lo.amount / 100); drawAmt(); same.classList.add('on'); } },
+      h('b', {}, '↺ ', lo.business_date === yest ? 'ใส่เท่าเมื่อวาน' : 'ใส่เท่ารอบก่อน', ' · ', baht(lo.amount), ' ฿'), h('small', {}, 'วันที่ ' + loDay)) : null;
+    card.append(h('h2', {}, '💰 เงินสดเริ่มต้นในลิ้นชัก'), h('p', { class: 'muted' }, 'ใส่จำนวนเงินทอนที่มีในลิ้นชักตอนเปิดร้าน'), amt, same,
       h('div', { class: 'cash-quick' }, ['500', '1000', '2000', '3000'].map((v) => h('button', { type: 'button', class: 'chip', onclick: () => { cash = v; drawAmt(); } }, Number(v).toLocaleString('th-TH')))),
       keys(pressCash, ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫']), note, btn,
       h('button', { class: 'btn ghost block ls-back', onclick: () => { try { sessionStorage.setItem('opp.shift_later', '1'); } catch { /* storage blocked */ } finish(main.name); } }, 'ภายหลัง'));
@@ -256,7 +262,7 @@ async function loginScreen() {
       h('div', { class: 'ls-art' }, h('div', { class: 'ls-shift' },
         h('div', { class: 'shift-crew' }, people.map((p, i) => h('div', { class: 'sc' + (p.main ? ' lead' : ''), style: `--i:${i}` }, p.main ? h('span', { class: 'crown' }, '👑') : null, avatar(p, 'av'), h('small', {}, p.nickname || p.name)))),
         h('h1', {}, 'เปิดรอบการขาย'),
-        h('p', {}, [r.terminal, new Date().toLocaleString('th-TH', { dateStyle: 'long', timeStyle: 'short' })].filter(Boolean).join(' · ')),
+        h('p', {}, [r.terminal, new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'long', timeStyle: 'short' })].filter(Boolean).join(' · ')),
         people.length > 1 ? h('p', { class: 'small' }, `คนหลัก ${main.name} · เข้างาน ${people.length} คน`) : null)),
       h('div', { class: 'ls-form' }, card));
   };
@@ -326,8 +332,18 @@ async function loginScreen() {
     if (onPin && /\d/.test(e.key) && pin.length < 6) { pin += e.key; fromBurst++; drawDots(); }
   };
   document.addEventListener('keydown', onKey, true);
+  // big clock with seconds and the date, kept still while the steps morph
+  const clock = h('div', { class: 'ls-clock' }, h('b'), h('span'));
+  const tick = () => {
+    if (!document.body.contains(clock)) return clearInterval(clockTimer);
+    const d = new Date();
+    clock.firstChild.textContent = d.toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    clock.lastChild.textContent = d.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  };
+  const clockTimer = setInterval(tick, 1000);
   scanStep();
-  app.replaceChildren(root);
+  app.replaceChildren(root, clock);
+  tick();
   // the shift was just closed (and this device signed out): show its summary once
   const closed = store.get('closed_shift');
   if (closed) {
@@ -515,7 +531,7 @@ function joinDialog() {
   const go = async () => {
     if (!code.value.trim() || !pin.value) { toast('สแกนบัตร/กรอกรหัส และใส่ PIN', 'warn'); return false; }
     try {
-      const r = await api.post('/shifts/join', { code: code.value.trim(), pin: pin.value });
+      const r = await api.post('/shifts/join', { code: code.value.trim(), pin: pin.value, at: new Date().toISOString() });
       st.shift = { ...st.shift, crew: r.crew };
       toast(`👋 ${r.name} เข้างานในรอบนี้แล้ว`, 'ok');
       dlg.close(); loadCrewPlan();

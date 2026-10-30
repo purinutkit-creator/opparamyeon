@@ -64,6 +64,9 @@ CREATE TABLE IF NOT EXISTS fonts (id TEXT PRIMARY KEY, name TEXT NOT NULL, sourc
 CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, name TEXT, mime TEXT, size INTEGER, data TEXT, path TEXT, created_at TEXT);
 CREATE TABLE IF NOT EXISTS shifts (id TEXT PRIMARY KEY, terminal_id TEXT, staff_id TEXT, opened_at TEXT, opening_cash INTEGER DEFAULT 0, note TEXT,
   closed_at TEXT, closed_by TEXT, counted_cash INTEGER, expected_cash INTEGER, diff INTEGER, summary TEXT, status TEXT DEFAULT 'open', business_date TEXT);
+CREATE TABLE IF NOT EXISTS attendance (id TEXT PRIMARY KEY, staff_id TEXT NOT NULL, name TEXT, business_date TEXT NOT NULL, at TEXT NOT NULL, terminal_id TEXT,
+  shift_id TEXT, kind TEXT, main INTEGER DEFAULT 0, created_at TEXT);
+CREATE INDEX IF NOT EXISTS idx_att_day ON attendance (business_date);
 CREATE TABLE IF NOT EXISTS cash_moves (id TEXT PRIMARY KEY, shift_id TEXT, type TEXT, amount INTEGER, reason TEXT, staff_id TEXT, created_at TEXT);
 CREATE TABLE IF NOT EXISTS counters (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS audit (id TEXT PRIMARY KEY, actor TEXT, action TEXT, entity TEXT, entity_id TEXT, before_val TEXT, after_val TEXT,

@@ -6,7 +6,7 @@ import { saveOrder, payOrder, checkout, voidOrder, refundItems, orderFull, getOr
 import { enqueue, orderDocData, reprint, retry } from '../lib/print.js';
 import { cookerStatus, finishTicket, finishOrder, voidOrderJobs } from '../lib/cookers.js';
 import { billFromToken, shiftToken, shiftFromToken } from '../lib/billlink.js';
-import { joinShiftCrew, verifyOnDuty } from '../lib/crew.js';
+import { joinShiftCrew, verifyOnDuty, clockIn, printAttendance } from '../lib/crew.js';
 
 const r = Router();
 
@@ -206,11 +206,18 @@ r.post('/shifts/open', staffAuth('shift'), ah(async (req, res) => {
   await enqueue('shift', sid, await shiftDoc(await shiftSummary(sh), 'ใบเปิดรอบการขาย'), { dedupe: 'shift-open:' + sid });
   res.json(await shiftSummary(sh));
 }));
+// opening cash of the shift before (for the "same as yesterday" button)
+r.get('/shifts/last-opening', staffAuth(), ah(async (req, res) => {
+  const sh = req.terminalId ? await db.get('SELECT opening_cash, business_date, opened_at FROM shifts WHERE terminal_id = ? ORDER BY opened_at DESC LIMIT 1', [req.terminalId]) : null;
+  res.json(sh ? { amount: Number(sh.opening_cash), business_date: sh.business_date, opened_at: sh.opened_at } : null);
+}));
 // someone joins the open shift later (scan + PIN on the POS) without changing who is signed in
 r.post('/shifts/join', staffAuth(), ah(async (req, res) => {
   const sh = await needShift(req);
   const s = await verifyOnDuty((req.body || {}).code, (req.body || {}).pin);
   const crew = await joinShiftCrew(sh.id, [{ id: s.id, code: s.code, name: s.name, late: true }]);
+  const ci = await clockIn([{ id: s.id, name: s.name, at: req.body.at }], { terminalId: req.terminalId, shiftId: sh.id, kind: 'late' });
+  if (ci.added.length) await printAttendance(ci.day, req.terminalId, { crewSize: 2 }).catch(() => {});
   await audit(req.staff.id, 'shift_join', 'shift', sh.id, null, { staff: s.code });
   res.json({ name: s.name, crew });
 }));

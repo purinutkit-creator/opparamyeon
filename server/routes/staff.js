@@ -4,7 +4,8 @@ import { ah, id, now, bad, notFound, hashSecret, audit, conflict } from '../lib/
 import { staffAuth, verifyStaffPin, createSession, PERMS } from '../lib/auth.js';
 import { getSettings } from '../lib/util.js';
 import { staffToken, staffFromToken } from '../lib/billlink.js';
-import { joinShiftCrew, crewPlan, verifyOnDuty } from '../lib/crew.js';
+import { joinShiftCrew, crewPlan, verifyOnDuty, clockIn, printAttendance, attendanceOf, attendanceUrl } from '../lib/crew.js';
+import { attendanceFromToken, ATT_WINDOW_DAYS } from '../lib/billlink.js';
 
 const r = Router();
 
@@ -18,16 +19,21 @@ r.post('/auth/login', ah(async (req, res) => {
   const crew = [];
   for (const c of (Array.isArray(req.body.crew) ? req.body.crew : []).slice(0, 12)) {
     const m = await verifyOnDuty(c && c.code, c && c.pin, plan || undefined);
-    if (m.id !== s.id && !crew.some((x) => x.id === m.id)) crew.push(person(m));
+    if (m.id !== s.id && !crew.some((x) => x.id === m.id)) crew.push({ ...person(m), at: c.at });
   }
   const term = terminal_id ? await db.get('SELECT id FROM terminals WHERE id = ?', [terminal_id]) : null;
   const tok = await createSession('staff', s.id, term ? term.id : null);
-  if (crew.length) await db.run('UPDATE sessions SET crew = ? WHERE token = ?', [S(crew), tok]);
+  if (crew.length) await db.run('UPDATE sessions SET crew = ? WHERE token = ?', [S(crew.map(person)), tok]);
   const open = term ? await db.get("SELECT id FROM shifts WHERE terminal_id = ? AND status = 'open'", [term.id]) : null;
-  if (open) await joinShiftCrew(open.id, [{ ...person(s), main: true }, ...crew]);
+  if (open) await joinShiftCrew(open.id, [{ ...person(s), main: true }, ...crew.map(person)]);
+  // clock-in on the POS: the first sign-in of the day for each person; the slip prints when someone new came in
+  if (term) {
+    const ci = await clockIn([{ ...person(s), main: true, at: req.body.at }, ...crew], { terminalId: term.id, shiftId: open && open.id });
+    if (ci.added.length) await printAttendance(ci.day, term.id, { crewSize: 1 + crew.length }).catch(() => {});
+  }
   const role = await db.get('SELECT * FROM roles WHERE id = ?', [s.role_id]);
   await audit(s.id, 'login', 'staff', s.id, null, { terminal_id: term && term.id, crew: crew.map((x) => x.code) });
-  res.json({ token: tok, crew, staff: { id: s.id, code: s.code, name: s.name, photo: s.photo, role_id: s.role_id, role_name: role.name, perms: J(role.perms, []) } });
+  res.json({ token: tok, crew: crew.map(person), staff: { id: s.id, code: s.code, name: s.name, photo: s.photo, role_id: s.role_id, role_name: role.name, perms: J(role.perms, []) } });
 }));
 // several staff signing in together: check one person's PIN (same lockout rules) without opening a session
 r.post('/auth/verify', ah(async (req, res) => {
@@ -55,6 +61,21 @@ r.post('/auth/approve', staffAuth(), ah(async (req, res) => {
   const ok = J(role.perms, []).includes(req.body.perm);
   res.json({ ok, name: s.name });
 }));
+
+// clock-in times for the owner: the QR on the clock-in slip opens a day and steps through the days around it (no login)
+r.get('/public/attendance/:token', ah(async (req, res) => {
+  const a = await attendanceFromToken(req.params.token, req.query.date);
+  if (!a) throw notFound('ลิงก์เวลาเข้างานไม่ถูกต้องหรือเกินช่วงที่ดูได้');
+  const shift = (d, n) => new Date(Date.parse(d + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const from = shift(a.base, -ATT_WINDOW_DAYS), to = shift(a.base, ATT_WINDOW_DAYS);
+  const days = await db.all('SELECT business_date AS day, COUNT(*) AS n FROM attendance WHERE business_date >= ? AND business_date <= ? GROUP BY business_date ORDER BY business_date', [from, to]);
+  const rows = await attendanceOf(a.day);
+  res.set('Cache-Control', 'no-store');
+  res.json({ store: (await getSettings()).store.name || '', day: a.day, from, to, days: days.map((d) => ({ day: d.day, n: Number(d.n) })),
+    rows: rows.map((r) => ({ name: r.name, at: r.at, kind: r.kind, main: !!r.main, terminal: r.terminal || '' })) });
+}));
+// link for the shop website / POS (today)
+r.get('/attendance/link', staffAuth(), ah(async (req, res) => res.json({ url: await attendanceUrl(req.query.date || (await crewPlan()).date) })));
 
 // today's roster for the POS sign-in screen (no login yet): how many scan in, who is on leave / joining later (names only)
 r.get('/crew/today', ah(async (req, res) => {

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#d4202f">
+<meta name="robots" content="noindex">
+<title>เวลาเข้างาน · Oppa Ramyeon</title>
+<link rel="icon" type="image/png" href="/assets/icon-192.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@500;600;700&family=Sarabun:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="/shared/style.css">
+<style>
+  body { max-width: 640px; margin: 0 auto; padding: 16px 14px 40px; background: var(--bg); }
+  .head { color: #fff; border-radius: 24px; padding: 18px; margin-bottom: 12px; background: var(--grad, linear-gradient(135deg, #e8321f, #a3141c)); }
+  .head small { opacity: .85; font-weight: 700; } .head h1 { margin: .1em 0; font-family: 'Prompt', sans-serif; font-size: 1.5em; }
+  .nav { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .nav .day { text-align: center; font-weight: 800; font-size: 1.1em; }
+  .nav input { width: 100%; }
+  .card { background: var(--surface); border-radius: 22px; padding: 6px 16px; box-shadow: var(--shadow); }
+  .at-row { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px dashed var(--line); animation: m-rise .45s var(--ease-out) both; }
+  .at-row:last-child { border-bottom: 0; }
+  .at-row .n { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--brand-soft); color: var(--brand); font-weight: 800; }
+  .at-row b { display: block; font-size: 1.05em; } .at-row small { color: var(--muted); }
+  .at-row .t { font-family: 'Prompt', sans-serif; font-size: 1.5em; font-weight: 700; color: var(--brand); }
+  .tag { display: inline-block; margin-left: 6px; padding: 0 .5em; border-radius: 99px; font-size: .75em; font-weight: 800; background: #fef3c7; color: #92400e; }
+  .tag.main { background: var(--brand-soft); color: var(--brand); }
+  .strip { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 12px; }
+  .strip button { flex: none; border: 1px solid var(--line); background: var(--surface); border-radius: 14px; padding: .35em .7em; font: inherit; font-weight: 700; cursor: pointer; }
+  .strip button.on { background: var(--brand); color: #fff; border-color: var(--brand); }
+  .strip button small { display: block; font-weight: 600; opacity: .75; font-size: .75em; }
+</style>
+</head>
+<body>
+<div id="app"><div class="empty">กำลังโหลด…</div></div>
+<script type="module">
+// Staff clock-in times, opened from the QR on the clock-in slip. The link opens its day; the owner can step to the days around it.
+import { h, $ } from '/shared/ui.js';
+const app = $('#app');
+const tok = decodeURIComponent(location.hash.slice(1).split('?')[0]);
+const thDay = (d, opt = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) => new Date(d + 'T12:00:00Z').toLocaleDateString('th-TH', { ...opt, timeZone: 'UTC' });
+const hm = (iso) => new Date(iso).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' });
+const step = (d, n) => new Date(Date.parse(d + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+async function show(day) {
+  try {
+    const r = await fetch('/api/public/attendance/' + encodeURIComponent(tok) + (day ? '?date=' + day : ''));
+    const b = await r.json();
+    if (!r.ok) throw new Error(b.error || 'โหลดไม่สำเร็จ');
+    const pick = h('input', { class: 'input', type: 'date', value: b.day, min: b.from, max: b.to, onchange: () => pick.value && show(pick.value) });
+    const go = (n) => { const d = step(b.day, n); if (d >= b.from && d <= b.to) show(d); };
+    app.replaceChildren(
+      h('div', { class: 'head' }, h('small', {}, b.store), h('h1', {}, '🕘 เวลาเข้างาน'), h('small', {}, thDay(b.day))),
+      h('div', { class: 'nav' }, h('button', { class: 'btn', disabled: b.day <= b.from, onclick: () => go(-1) }, '‹ วันก่อน'), pick, h('button', { class: 'btn', disabled: b.day >= b.to, onclick: () => go(1) }, 'วันถัดไป ›')),
+      b.days.length ? h('div', { class: 'strip' }, b.days.slice().reverse().map((d) => h('button', { class: d.day === b.day ? 'on' : '', onclick: () => show(d.day) }, thDay(d.day, { day: 'numeric', month: 'short' }), h('small', {}, `${d.n} คน`)))) : null,
+      h('div', { class: 'card' }, b.rows.length ? b.rows.map((x, i) => h('div', { class: 'at-row', style: `animation-delay:${i * 40}ms` },
+        h('span', { class: 'n' }, i + 1),
+        h('div', {}, h('b', {}, x.name, x.main ? h('span', { class: 'tag main' }, 'คนหลัก') : null, x.kind === 'late' ? h('span', { class: 'tag' }, 'มาทีหลัง') : null), h('small', {}, x.terminal)),
+        h('span', { class: 't' }, hm(x.at)))) : h('div', { class: 'empty' }, 'ไม่มีการลงเวลาวันนี้')),
+      h('p', { class: 'small muted', style: 'text-align:center' }, `ดูย้อนหลัง/ล่วงหน้าได้ ${thDay(b.from, { day: 'numeric', month: 'short' })} – ${thDay(b.to, { day: 'numeric', month: 'short' })} · เวลาคือครั้งแรกที่สแกนบัตรเข้าระบบ POS ของวันนั้น`));
+    history.replaceState(null, '', '#' + encodeURIComponent(tok));
+  } catch (e) { app.replaceChildren(h('div', { class: 'empty' }, '⚠️ ' + e.message)); }
+}
+show();
+</script>
+</body>
+</html>

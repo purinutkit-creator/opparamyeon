@@ -232,3 +232,17 @@ export const RECEIPT_STYLES = [
   ])],
 ];
 
+
+// Staff clock-in slip (printed when the crew signs in / someone joins later): who came in at what time + QR for the owner
+export const ATTENDANCE_SLIP = (paper = 80) => base([
+  { type: 'field', field: 'store_name', align: 'center', size: 28, weight: 800 },
+  { type: 'text', text: 'บันทึกเวลาเข้างาน', align: 'center', size: 30, weight: 800, invert: true },
+  { type: 'field', field: 'day_text', align: 'center', size: 24, weight: 700 },
+  { type: 'field', field: 'terminal', label: 'เครื่อง ', align: 'center', size: 20 },
+  { type: 'divider', style: 'dash' },
+  { type: 'rows', field: 'rows', size: 26, weight: 700 },
+  { type: 'divider', style: 'dash' },
+  { type: 'field', field: 'summary', align: 'center', size: 20 },
+  { type: 'qr', value: '{att_url}', size_mm: 24, align: 'center', caption: 'เจ้าของร้านสแกนดูเวลาเข้างาน (ดูวันอื่นได้)', caption_size: 18 },
+  { type: 'field', field: 'printed_at', label: 'พิมพ์ ', align: 'center', size: 18 },
+], { paper, size: 24, feed_after: 3 });
