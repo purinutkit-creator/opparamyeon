@@ -103,7 +103,7 @@ export async function enqueue(docType, refId, data, { stationId = null, dedupe =
   if (docType === 'kitchen' && stationId && !printerId) printers = printers.filter((p) => { const st = J(p.station_ids, []); return !st.length || st.includes(stationId); });
   const jobs = [];
   for (const p of printers) {
-    const tpl = template ? { id: null, data: template } : ['drawer', 'cut', 'test'].includes(docType) ? { id: null, data: {} } : await templateFor(docType, p);
+    const tpl = template ? { id: null, data: template } : ['drawer', 'cut', 'feed', 'test'].includes(docType) ? { id: null, data: {} } : await templateFor(docType, p);
     const byDoc = printerOptions(p).copies_by_doc[docType];
     const copies = byDoc !== undefined ? Number(byDoc) : Math.max(1, Number((tpl.data && tpl.data.copies) || p.copies || 1));
     for (let c = 1; c <= copies; c++) {
@@ -190,4 +190,21 @@ export async function reprint(jobId, actor) {
 export function publicPrinter(p) {
   if (!p) return null;
   return { ...p, roles: J(p.roles, []), station_ids: J(p.station_ids, []), templates: J(p.templates, {}), options: printerOptions(p) };
+}
+
+// the merchant summary roll (compact style, usually 58 mm, no cut per slip): feed paper out so it can be torn off,
+// and cut as well when the shop wants it and the printer has a cutter (cut mode not "ไม่ตัด")
+export async function feedMerchantRoll({ lines, cut } = {}) {
+  const P = (await getSettings()).print || {};
+  const n = Math.max(1, Math.min(30, Math.round(Number(lines ?? P.merchant_end_feed ?? 6) || 6)));
+  let printers = await db.all('SELECT id, name, roles, cut_mode, paper FROM printers WHERE active = 1');
+  printers = P.merchant_printer_id ? printers.filter((p) => p.id === P.merchant_printer_id) : printers.filter((p) => J(p.roles, []).includes('merchant'));
+  const out = [];
+  for (const p of printers) {
+    const canCut = (p.cut_mode || 'full') !== 'none';
+    const doCut = !!(cut ?? P.merchant_end_cut) && canCut;
+    await enqueue('feed', 'feed-' + Date.now(), { lines: n, cut: doCut }, { printerId: p.id });
+    out.push({ id: p.id, name: p.name, paper: p.paper, can_cut: canCut, cut: doCut });
+  }
+  return out;
 }

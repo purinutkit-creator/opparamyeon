@@ -1282,8 +1282,23 @@ function openShiftDialog() {
   modal('เปิดรอบการขาย', h('div', {}, h('p', { class: 'muted' }, `${st.terminal.name} · ${st.staff.name} · ${new Date().toLocaleString('th-TH')}`), h('label', { class: 'field' }, 'เงินสดเริ่มต้นในลิ้นชัก (บาท)', cash), keypad(cash, { decimal: true }), h('label', { class: 'field', style: { marginTop: '.8em' } }, 'หมายเหตุ', note)),
     { actions: [{ label: 'ภายหลัง', onClick: () => {} }, { label: 'เปิดรอบ', class: 'primary', onClick: async () => { st.shift = await api.post('/shifts/open', { opening_cash: toSatang(cash.value), note: note.value }); toast('เปิดรอบแล้ว', 'ok'); renderTop(); } }] });
 }
+// the merchant summary roll (58 mm, no cut per slip) was fed out at close: tear it off, feed more, or cut (printers with a cutter)
+function rollBox(roll, onPress) {
+  if (!roll.length) return null;
+  const cut = roll.some((p) => p.cut), canCut = roll.some((p) => p.can_cut);
+  const say = h('small', {}, cut ? '✂️ ป้อนกระดาษและตัดให้แล้ว' : '⬆️ ป้อนกระดาษออกมาแล้ว ฉีกได้เลย');
+  const send = async (lines, doCut, msg) => {
+    onPress();
+    try { await api.post('/print/merchant-feed', { lines, cut: doCut }); say.textContent = msg; say.classList.remove('flash'); void say.offsetWidth; say.classList.add('flash'); } catch (e) { errToast(e); }
+  };
+  return h('div', { class: 'roll-box' },
+    h('b', {}, '🧻 ใบสรุปร้านค้า · ', roll.map((p) => p.name).join(', ')), say,
+    h('div', { class: 'row', style: { justifyContent: 'center' } },
+      h('button', { class: 'btn', onclick: () => send(4, false, '⬆️ ป้อนเพิ่มแล้ว') }, '⬆️ ป้อนกระดาษเพิ่ม'),
+      canCut ? h('button', { class: 'btn', onclick: () => send(2, true, '✂️ ตัดแล้ว') }, '✂️ ตัดกระดาษ') : null));
+}
 // after closing a shift: stay a few seconds so this device (the print host) finishes the report, then sign out
-function leaveAfterPrint(r, secs = 8) {
+function leaveAfterPrint(r, secs = 10) {
   let left = secs;
   const num = h('b', { class: 'lp-num' }, String(left));
   const ring = h('i', { class: 'lp-ring', style: `--s:${secs}s` });
@@ -1292,6 +1307,7 @@ function leaveAfterPrint(r, secs = 8) {
     h('h2', {}, '✓ ปิดรอบแล้ว'),
     h('p', {}, '🖨️ กำลังพิมพ์รายงานปิดรอบ… อย่าเพิ่งปิดเครื่อง'),
     h('p', { class: 'muted' }, r.diff === 0 ? 'เงินสดตรงพอดี' : r.diff > 0 ? `เงินสดเกิน ${baht(r.diff)} บาท` : `เงินสดขาด ${baht(-r.diff)} บาท`),
+    rollBox(r.roll || [], () => { if (left < 4) { left = 4; num.textContent = '4'; } }),
     h('div', { class: 'row', style: { justifyContent: 'center' } },
       h('button', { class: 'btn', onclick: () => { left += 10; num.textContent = String(left); ring.style.setProperty('--s', left + 's'); ring.style.animation = 'none'; void ring.offsetWidth; ring.style.animation = ''; } }, '+10 วินาที'),
       h('button', { class: 'btn primary', onclick: () => { clearInterval(t); logout(); } }, 'ออกจากระบบเลย'))));

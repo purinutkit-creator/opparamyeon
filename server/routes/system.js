@@ -7,7 +7,7 @@ import QRCode from 'qrcode';
 import { db, J, S } from '../db.js';
 import { ah, id, now, bad, notFound, conflict, audit, emit, getSettings, setSetting, clearRulesCache, dayRules, businessDateOf, DEFAULT_SETTINGS } from '../lib/util.js';
 import { staffAuth, can, requirePerm } from '../lib/auth.js';
-import { claimNext, report, retry, reprint, publicPrinter, enqueue, storeData, normalizePrinterOptions } from '../lib/print.js';
+import { claimNext, report, retry, reprint, publicPrinter, enqueue, storeData, normalizePrinterOptions, feedMerchantRoll } from '../lib/print.js';
 import { DEFAULT_TEMPLATES, DOC_TYPES, COMPACT_MERCHANT, COMPACT_MERCHANT_NAME } from '../lib/templates.js';
 import { VERSION, businessRange } from '../../public/shared/core.js';
 
@@ -148,6 +148,11 @@ r.post('/print/test', staffAuth('manage_printers'), ah(async (req, res) => {
     ? await enqueue(req.body.doc_type || 'receipt', 'test-' + Date.now(), { ...(req.body.data || {}), ...(await storeData()) }, { printerId: p.id, template: req.body.template })
     : await enqueue('test', 'test-' + Date.now(), { ...(await storeData()), test: req.body.what || 'all', datetime: new Date().toLocaleString('th-TH') }, { printerId: p.id });
   res.json({ jobs });
+}));
+// "feed more" / "cut" for the merchant summary roll (shift close screen)
+r.post('/print/merchant-feed', staffAuth(), ah(async (req, res) => {
+  const b = req.body || {};
+  res.json({ printers: await feedMerchantRoll({ lines: b.lines, cut: b.cut }) });
 }));
 r.post('/print/cut', staffAuth('cut_paper'), ah(async (req, res) => {
   await audit(req.staff.id, 'manual_cut', 'printer', req.body.printer_id);

@@ -634,3 +634,6 @@ html[data-vt] .shift-crew .av, html[data-vt] .cp .av { animation: none; }
 @property --p { syntax: '<percentage>'; inherits: false; initial-value: 100%; }
 @keyframes lp-turn { to { --p: 0%; } }
 .lp-num { font-family: var(--head-font); font-size: 44px; font-weight: 800; color: var(--brand); }
+.roll-box { display: grid; gap: 6px; margin: .4em 0 .9em; padding: .8em; border-radius: 16px; background: var(--surface2); }
+.roll-box small { font-weight: 700; color: var(--muted); }
+.roll-box small.flash { animation: m-rise .4s var(--ease-out); color: var(--ok); }

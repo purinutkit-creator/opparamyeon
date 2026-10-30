@@ -65,7 +65,9 @@ export const DEFAULT_SETTINGS = {
   theme: {},
   print: { order: ['receipt', 'kitchen', 'merchant', 'queue'], auto_receipt: true, auto_merchant: true, auto_queue: false, kitchen_every_order: true, payqr_auto: 'no_display', mark_additions: false,
     // merchant summary: 'normal' = the usual slip, 'compact' = short block on a continuous roll; printer '' = printers with the merchant role
-    merchant_style: 'normal', merchant_printer_id: '', merchant_template_id: '' },
+    merchant_style: 'normal', merchant_printer_id: '', merchant_template_id: '',
+    // compact roll at shift close: feed this many lines so it can be torn off; also cut when the printer has a cutter and this is on
+    merchant_end_feed: 6, merchant_end_cut: true },
   // noodle cookers: bowls are queued on the machine that is free first (estimates shown on the POS)
   cookers: { enabled: true, count: 2, minutes_per_bowl: 4, split_by_bowl: true, machines: [{ name: 'เครื่องต้ม 1', printer_id: '' }, { name: 'เครื่องต้ม 2', printer_id: '' }] },
   week_start: 1,

@@ -3,7 +3,7 @@ import { db, J, S } from '../db.js';
 import { ah, id, now, bad, notFound, conflict, emit, audit, getSettings, businessDateOf } from '../lib/util.js';
 import { staffAuth, staffForAction, can, requirePerm } from '../lib/auth.js';
 import { saveOrder, payOrder, checkout, voidOrder, refundItems, orderFull, getOrder, sendKitchen, freeTableIfIdle, idemRetry } from '../lib/orders.js';
-import { enqueue, orderDocData, reprint, retry } from '../lib/print.js';
+import { enqueue, orderDocData, reprint, retry, feedMerchantRoll } from '../lib/print.js';
 import { cookerStatus, finishTicket, finishOrder, voidOrderJobs } from '../lib/cookers.js';
 import { billFromToken, shiftToken, shiftFromToken } from '../lib/billlink.js';
 import { joinShiftCrew, verifyOnDuty, clockIn, printAttendance, selfieOf, needSelfie } from '../lib/crew.js';
@@ -246,7 +246,9 @@ r.post('/shifts/close', staffAuth('shift'), ah(async (req, res) => {
   const s = await getSettings();
   if (s.queue.reset === 'shift') emit('shop', 'queue:reset', {});
   await enqueue('shift', sh.id, await shiftDoc(closed, 'ใบสรุปปิดรอบการขาย'), { dedupe: 'shift-close:' + sh.id });
-  res.json(closed);
+  // the compact merchant roll: feed it out (and cut, if set and possible) so the day's slips can be torn off
+  const roll = s.print && s.print.merchant_style === 'compact' ? await feedMerchantRoll() : [];
+  res.json({ ...closed, roll });
 }));
 // shift report from the QR on the shift slip (no login)
 r.get('/public/shift/:token', ah(async (req, res) => {

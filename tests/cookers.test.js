@@ -280,3 +280,29 @@ test('รูปเข้างาน: ต้องถ่ายรูปก่อ
   assert.ok(w.ticket);
   await S.call('PUT', '/api/settings/crew', { value: { ...cur, selfie: 'off', selfie_when: 'every' } }, { token: owner });
 });
+
+test('ปิดรอบ: ม้วนใบสรุป 58 มม. ป้อนกระดาษให้ฉีก / ตัดเมื่อเครื่องมีมีดตัดและตั้งให้ตัด / ป้อนเพิ่มได้', async () => {
+  const roll = (await S.call('POST', '/api/printers', { name: 'ม้วนสรุป 58', conn: 'lan', address: '10.9.9.58', port: 9100, paper: 58, roles: ['merchant'], cut_mode: 'none' }, { token: owner })).body;
+  const P = (await S.call('GET', '/api/settings', undefined, { token: owner })).body.print;
+  await S.call('PUT', '/api/settings/print', { value: { ...P, merchant_style: 'compact', merchant_printer_id: roll.id, merchant_end_feed: 7, merchant_end_cut: true } }, { token: owner });
+  const lastFeed = async () => JSON.parse((await db.get("SELECT payload FROM print_jobs WHERE doc_type = 'feed' AND printer_id = ? ORDER BY seq DESC LIMIT 1", [roll.id])).payload).data;
+  const cur = (await S.call('GET', '/api/shifts/current', undefined, { token: owner, terminal: 'pos1' })).body;
+  const closed = await S.call('POST', '/api/shifts/close', { counted_cash: cur.expected_cash }, { token: owner, terminal: 'pos1' });
+  assert.equal(closed.status, 200, JSON.stringify(closed.body));
+  assert.deepEqual(closed.body.roll.map((p) => [p.name, p.can_cut, p.cut]), [['ม้วนสรุป 58', false, false]], 'ไม่มีมีดตัด → ป้อนอย่างเดียว');
+  let d = await lastFeed(); assert.equal(d.lines, 7); assert.equal(d.cut, false);
+  // a printer with a cutter: feed + cut; "feed more" from the close screen; cutting can be switched off
+  await S.call('PUT', '/api/printers/' + roll.id, { ...roll, cut_mode: 'full' }, { token: owner });
+  assert.equal((await S.call('POST', '/api/print/merchant-feed', {}, { token: owner })).body.printers[0].cut, true);
+  d = await lastFeed(); assert.equal(d.cut, true);
+  await S.call('POST', '/api/print/merchant-feed', { lines: 4, cut: false }, { token: owner });
+  d = await lastFeed(); assert.equal(d.lines, 4); assert.equal(d.cut, false);
+  await S.call('PUT', '/api/settings/print', { value: { ...P, merchant_style: 'compact', merchant_printer_id: roll.id, merchant_end_cut: false } }, { token: owner });
+  assert.equal((await S.call('POST', '/api/print/merchant-feed', {}, { token: owner })).body.printers[0].cut, false, 'ปิดการตัดไว้');
+  // usual (normal) merchant slips: nothing to feed at close
+  await S.call('PUT', '/api/settings/print', { value: P }, { token: owner });
+  await S.call('POST', '/api/shifts/open', { opening_cash: 0 }, { token: owner, terminal: 'pos1' });
+  const c2 = (await S.call('GET', '/api/shifts/current', undefined, { token: owner, terminal: 'pos1' })).body;
+  assert.deepEqual((await S.call('POST', '/api/shifts/close', { counted_cash: c2.expected_cash }, { token: owner, terminal: 'pos1' })).body.roll, []);
+  await S.call('POST', '/api/shifts/open', { opening_cash: 0 }, { token: owner, terminal: 'pos1' });
+});

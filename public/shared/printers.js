@@ -182,6 +182,8 @@ export async function printDocument(printer, template, data, docType) {
   const mode = o.buzzer_mode || (printer.buzzer ? 'kitchen' : 'off');
   const buzz = mode === 'all' || (mode === 'kitchen' && docType === 'kitchen') || (mode === 'receipt' && docType === 'receipt');
   if (docType === 'cut') bytes = concat([init(), feed(printer.feed_before || 3), cutCmd(printer.cut_mode || 'full')]);
+  // feed the roll out (shift close on the merchant roll), and cut when asked and the printer has a cutter
+  else if (docType === 'feed') { if (t.kind === 'browser') return { status: 'sent', note: 'เครื่องพิมพ์ผ่านเบราว์เซอร์ป้อนกระดาษไม่ได้' }; bytes = concat([init(), feed(Number(data.lines) || 6), ...(data.cut && (printer.cut_mode || 'full') !== 'none' ? [cutCmd(printer.cut_mode || 'full')] : [])]); }
   else if (docType === 'drawer') { if (t.kind === 'browser') return { status: 'sent', note: 'เครื่องพิมพ์ผ่านเบราว์เซอร์เปิดลิ้นชักไม่ได้' }; bytes = concat([init(), drawerCmd(o.drawer_pin)]); }
   else {
     const tpl = docType === 'test' ? testTemplate(printer.paper, template && template.font) : { ...template, paper: printer.paper || template.paper };
@@ -250,7 +252,7 @@ export class PrintHost {
           const r = await printDocument(p, job.template, job.payload.data, job.doc_type);
           await this.api.post(`/print/jobs/${job.id}/report`, { status: r.status, error: r.status === 'sent' ? r.note : null });
           this.push(p, job, r.status, r.note);
-          if ((job.doc_type === 'kitchen' || (this.settings.sound.docs === 'all' && !['drawer', 'cut'].includes(job.doc_type))) && (r.status === 'printed' || this.settings.sound.on === 'sent')) playSound(this.settings.sound, 'printed', this.device);
+          if ((job.doc_type === 'kitchen' || (this.settings.sound.docs === 'all' && !['drawer', 'cut', 'feed'].includes(job.doc_type))) && (r.status === 'printed' || this.settings.sound.on === 'sent')) playSound(this.settings.sound, 'printed', this.device);
           this.api.post(`/printers/${pid}/status`, { status: 'ok' }).catch(() => {});
         } catch (e) {
           await this.api.post(`/print/jobs/${job.id}/report`, { status: 'failed', error: e.message }).catch(() => {});
