@@ -148,3 +148,33 @@ test('บัตรพนักงาน: ชื่อ นามสกุล ร�
   assert.equal((await S.call('GET', '/api/public/staff/' + encodeURIComponent(tok.replace('7701', '0001')))).status, 404);
   assert.equal((await S.call('POST', '/api/auth/login', { code: '7701', pin: '4321' })).status, 200);
 });
+
+test('เข้างานหลายคน: ยืนยัน PIN ทีละคน เลือกคนหลัก แล้วรอบการขายบันทึกทุกคน', async () => {
+  await S.call('POST', '/api/staff', { code: '7702', name: 'จีซู', pin: '5555', role_id: 'cashier' }, { token: owner });
+  await S.call('POST', '/api/staff', { code: '7703', name: 'โรเซ่', pin: '6666', role_id: 'cashier' }, { token: owner });
+  const v = await S.call('POST', '/api/auth/verify', { code: '7702', pin: '5555' });
+  assert.equal(v.status, 200); assert.equal(v.body.name, 'จีซู'); assert.equal(v.body.pin_hash, undefined); assert.equal(v.body.token, undefined, 'ยืนยันอย่างเดียว ไม่เปิด session');
+  assert.equal((await S.call('POST', '/api/auth/verify', { code: '7703', pin: '0000' })).status, 401);
+  // a crew member with a wrong PIN stops the whole sign-in
+  assert.equal((await S.call('POST', '/api/auth/login', { code: '0001', pin: '1234', crew: [{ code: '7702', pin: '1111' }] })).status, 401);
+  // new terminal, no shift yet: the main signs in with the crew, then opens the shift
+  const term = (await S.call('POST', '/api/terminals', { name: 'เครื่องทดสอบทีม' }, { token: owner })).body;
+  const lg = await S.call('POST', '/api/auth/login', { code: '0001', pin: '1234', terminal_id: term.id, crew: [{ code: '7702', pin: '5555' }, { code: '7703', pin: '6666' }, { code: '0001', pin: '1234' }] });
+  assert.equal(lg.status, 200, JSON.stringify(lg.body));
+  assert.deepEqual(lg.body.crew.map((c) => c.code), ['7702', '7703'], 'คนหลักไม่ซ้ำในทีม');
+  const sh = await S.call('POST', '/api/shifts/open', { opening_cash: 50000 }, { token: lg.body.token, terminal: term.id });
+  assert.equal(sh.status, 200, JSON.stringify(sh.body));
+  assert.deepEqual(sh.body.crew.map((c) => [c.code, !!c.main]), [['0001', true], ['7702', false], ['7703', false]]);
+  // joining a shift that is already open adds the person
+  await S.call('POST', '/api/staff', { code: '7704', name: 'ลิซ่า', pin: '7777', role_id: 'cashier' }, { token: owner });
+  await S.call('POST', '/api/auth/login', { code: '7704', pin: '7777', terminal_id: term.id });
+  const cur = (await S.call('GET', '/api/shifts/current', undefined, { token: lg.body.token, terminal: term.id })).body;
+  for (const n of ['จีซู', 'โรเซ่', 'ลิซ่า']) assert.ok(cur.crew.some((c) => c.name === n), n + ' อยู่ในรอบ');
+  assert.equal(cur.crew.length, 4);
+  // the public report (QR) lists names only, never staff codes
+  const link = (await S.call('GET', `/api/shifts/${cur.id}/link`, undefined, { token: lg.body.token, terminal: term.id })).body.url;
+  const pub = await S.call('GET', '/api/public/shift/' + encodeURIComponent(decodeURIComponent(link.split('/s/#')[1])));
+  assert.equal(pub.status, 200);
+  assert.equal(pub.body.shift.crew.length, 4);
+  assert.ok(pub.body.shift.crew.every((c) => c.code === undefined && c.id === undefined));
+});

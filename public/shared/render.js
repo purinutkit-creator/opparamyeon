@@ -320,6 +320,8 @@ export async function renderDoc(tpl, data, opts = {}) {
             ['ปิดรอบ', s.closed_at ? new Date(s.closed_at).toLocaleString('th-TH') : '-'], ['เงินสดเริ่มต้น', baht(s.opening_cash)], ['จำนวนบิล', String(s.bills ?? '')],
             ['จำนวนชามสุทธิ', String(s.net_bowls ?? '')], ['ยอดขายสุทธิ', baht(s.net_sales)], ['ส่วนลด', baht(s.discount)],
             ['ยกเลิก', `${(s.voids || {}).count || 0} บิล ${baht((s.voids || {}).amount)}`], ['คืนเงิน', `${(s.refunds || {}).count || 0} ครั้ง ${baht((s.refunds || {}).amount)}`]];
+          const crew = (s.crew || []).filter((c) => !c.main || c.name !== s.staff_name);
+          if (crew.length) rows.splice(2, 0, ['พนักงานในรอบ', crew.map((c) => c.name).join(', ')]);
           for (const [a, b] of rows) twoCol(a, b, e);
           text('— แยกช่องทางรับเงิน —', { ...e, align: 'center' });
           for (const p of s.payments || []) twoCol(`${p.name || p.method} (${p.count})`, baht(p.amount), e);

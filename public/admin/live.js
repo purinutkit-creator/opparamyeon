@@ -136,6 +136,7 @@ export async function livePage(sock) {
     for (const [tid, d] of lastDone) if (Date.now() - d.t > 20000) { lastDone.delete(tid); drawGrid(); }
   }, 1000);
   setStatus(); snapshot(); refreshSales();
+  setTimeout(() => kpis.closest('.page, #content > *')?.classList.add('calm'), 900); // updates arrive every few seconds: only the first paint cascades in
   return page('Live View · หน้าร้านตอนนี้', h('div', { class: 'row', style: { marginBottom: '.8em' } }, status, h('span', { class: 'small muted' }, 'เห็นสิ่งที่แคชเชียร์กำลังคีย์ สมาชิก และการชำระเงินของทุกเครื่องแบบเรียลไทม์ · ข้อมูลส่วนนี้ไม่แสดงบนจอลูกค้า')),
     kpis, h('div', { class: 'live-wrap' }, grid, feed), big);
 }

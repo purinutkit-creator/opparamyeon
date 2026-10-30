@@ -6,6 +6,7 @@ import { saveOrder, payOrder, checkout, voidOrder, refundItems, orderFull, getOr
 import { enqueue, orderDocData, reprint, retry } from '../lib/print.js';
 import { cookerStatus, finishTicket, finishOrder, voidOrderJobs } from '../lib/cookers.js';
 import { billFromToken, shiftToken, shiftFromToken } from '../lib/billlink.js';
+import { joinShiftCrew } from '../lib/crew.js';
 
 const r = Router();
 
@@ -198,6 +199,8 @@ r.post('/shifts/open', staffAuth('shift'), ah(async (req, res) => {
     await db.run('INSERT INTO shifts(id, terminal_id, staff_id, opened_at, opening_cash, note, status, business_date) VALUES(?,?,?,?,?,?,?,?)',
       [sid, req.terminalId, req.staff.id, now(), Math.round(Number(req.body.opening_cash) || 0), req.body.note || '', 'open', await businessDateOf()]);
   });
+  const sess = await db.get('SELECT crew FROM sessions WHERE token = ?', [req.staff.token]);
+  await joinShiftCrew(sid, [{ id: req.staff.id, code: req.staff.code, name: req.staff.name, main: true }, ...J(sess && sess.crew, [])]);
   await audit(req.staff.id, 'shift_open', 'shift', sid, null, req.body);
   const sh = await db.get('SELECT * FROM shifts WHERE id = ?', [sid]);
   await enqueue('shift', sid, await shiftDoc(await shiftSummary(sh), 'ใบเปิดรอบการขาย'), { dedupe: 'shift-open:' + sid });
@@ -235,8 +238,10 @@ r.get('/public/shift/:token', ah(async (req, res) => {
   if (!sh) throw notFound('ลิงก์รายงานรอบไม่ถูกต้อง');
   const s = await getSettings();
   res.set('Cache-Control', 'no-store');
-  res.json({ store: s.store.name || '', count_unit: s.sale.count_unit || 'ชาม', payment_names: Object.fromEntries(s.sale.payment_methods.map((m) => [m.id, m.name])), shift: await shiftSummary(sh) });
+  res.json({ store: s.store.name || '', count_unit: s.sale.count_unit || 'ชาม', payment_names: Object.fromEntries(s.sale.payment_methods.map((m) => [m.id, m.name])), shift: await publicShift(sh) });
 }));
+// the public report shows who worked, but not their staff codes (they are half of a sign-in)
+async function publicShift(sh) { const sum = await shiftSummary(sh); return { ...sum, crew: sum.crew.map((c) => ({ name: c.name, main: !!c.main })) }; }
 // link for the POS screen (QR shown when closing a shift)
 r.get('/shifts/:id/link', staffAuth('shift'), ah(async (req, res) => {
   const base = process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '';
@@ -282,7 +287,7 @@ export async function shiftSummary(sh) {
   const expected = sh.opening_cash + cash + cin - cout - Number(cashRefund.a);
   const staff = await db.get('SELECT name FROM staff WHERE id = ?', [sh.staff_id]);
   const term = await db.get('SELECT name FROM terminals WHERE id = ?', [sh.terminal_id]);
-  return { ...sh, summary: undefined, staff_name: staff && staff.name, terminal_name: term && term.name,
+  return { ...sh, summary: undefined, crew: J(sh.crew, []), staff_name: staff && staff.name, terminal_name: term && term.name,
     payments: pays.map((p) => ({ method: p.method, amount: Number(p.amount), count: Number(p.n) })),
     gross_sales: Number(bills.total), bills: Number(bills.n) - Number(voids.n), bowls: Number(bills.bowls), discount: Number(bills.discount),
     voids: { count: Number(voids.n), amount: Number(voids.amount), bowls: Number(voids.bowls) }, refunds: { count: Number(refunds.n), amount: Number(refunds.amount), bowls: Number(refunds.bowls) },

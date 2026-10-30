@@ -4,17 +4,34 @@ import { ah, id, now, bad, notFound, hashSecret, audit, conflict } from '../lib/
 import { staffAuth, verifyStaffPin, createSession, PERMS } from '../lib/auth.js';
 import { getSettings } from '../lib/util.js';
 import { staffToken, staffFromToken } from '../lib/billlink.js';
+import { joinShiftCrew } from '../lib/crew.js';
 
 const r = Router();
 
+const person = (s) => ({ id: s.id, code: s.code, name: s.name });
 r.post('/auth/login', ah(async (req, res) => {
   const { code, pin, terminal_id } = req.body || {};
   const s = await verifyStaffPin(code, pin);
+  // the rest of the crew who scanned in on this device (each with their own PIN)
+  const crew = [];
+  for (const c of (Array.isArray(req.body.crew) ? req.body.crew : []).slice(0, 12)) {
+    const m = await verifyStaffPin(c && c.code, c && c.pin);
+    if (m.id !== s.id && !crew.some((x) => x.id === m.id)) crew.push(person(m));
+  }
   const term = terminal_id ? await db.get('SELECT id FROM terminals WHERE id = ?', [terminal_id]) : null;
   const tok = await createSession('staff', s.id, term ? term.id : null);
+  if (crew.length) await db.run('UPDATE sessions SET crew = ? WHERE token = ?', [S(crew), tok]);
+  const open = term ? await db.get("SELECT id FROM shifts WHERE terminal_id = ? AND status = 'open'", [term.id]) : null;
+  if (open) await joinShiftCrew(open.id, [{ ...person(s), main: true }, ...crew]);
   const role = await db.get('SELECT * FROM roles WHERE id = ?', [s.role_id]);
-  await audit(s.id, 'login', 'staff', s.id, null, { terminal_id: term && term.id });
-  res.json({ token: tok, staff: { id: s.id, code: s.code, name: s.name, photo: s.photo, role_id: s.role_id, role_name: role.name, perms: J(role.perms, []) } });
+  await audit(s.id, 'login', 'staff', s.id, null, { terminal_id: term && term.id, crew: crew.map((x) => x.code) });
+  res.json({ token: tok, crew, staff: { id: s.id, code: s.code, name: s.name, photo: s.photo, role_id: s.role_id, role_name: role.name, perms: J(role.perms, []) } });
+}));
+// several staff signing in together: check one person's PIN (same lockout rules) without opening a session
+r.post('/auth/verify', ah(async (req, res) => {
+  const s = await verifyStaffPin((req.body || {}).code, (req.body || {}).pin);
+  const role = await db.get('SELECT name FROM roles WHERE id = ?', [s.role_id]);
+  res.json({ ...person(s), last_name: s.last_name || '', nickname: s.nickname || '', title: s.title || '', photo: s.photo || '', role_name: role ? role.name : '' });
 }));
 r.post('/auth/logout', staffAuth(), ah(async (req, res) => {
   await db.run('UPDATE sessions SET revoked = 1 WHERE token = ?', [req.staff.token]);

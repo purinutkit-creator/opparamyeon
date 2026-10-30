@@ -93,6 +93,8 @@ async function dashboard() {
   const names = Object.fromEntries(ctx.settings.sale.payment_methods.map((m) => [m.id, m.name]));
   names.online = 'ออนไลน์ (Gateway)';
   const draw = (d) => {
+    if (box.dataset.drawn) box.classList.add('calm'); // live refreshes swap numbers in place, without the entrance cascade
+    box.dataset.drawn = '1';
     box.replaceChildren(
       h('div', { class: 'cards' },
         kpi('ยอดขายสุทธิวันนี้', money(d.net_sales), `ยอดขาย ${baht(d.gross_sales)} − ยกเลิก/คืน ${baht(d.voids.amount + d.refunds.amount)}`, true),

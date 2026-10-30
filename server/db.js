@@ -113,6 +113,8 @@ const MIGRATIONS = [
   ['staff', 'last_name', "TEXT DEFAULT ''"],
   ['staff', 'nickname', "TEXT DEFAULT ''"],
   ['staff', 'title', "TEXT DEFAULT ''"],
+  ['sessions', 'crew', "TEXT DEFAULT '[]'"],
+  ['shifts', 'crew', "TEXT DEFAULT '[]'"],
 ];
 
 class SqliteDB {

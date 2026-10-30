@@ -229,13 +229,26 @@ export async function staffPage() {
       h('div', { class: 'grid2', style: { marginTop: '.6em' } }, Object.entries(rr.perms).map(([k, t]) => { const cb = h('input', { type: 'checkbox', checked: set.has(k) }); cb.onchange = () => (cb.checked ? set.add(k) : set.delete(k)); return h('label', { class: 'switch' }, cb, t); })),
       saveBtn('บันทึกสิทธิ์ ' + r.name, () => api.put('/roles/' + r.id, { name: r.name, perms: [...set] })));
   }));
+  // several staff per shift: on these days the POS asks everyone to scan in, then which one is the main sign-in
+  const crewCfg = { mode: 'off', days: [5, 6, 0], max: 6, ...((await api.get('/settings')).crew || {}) };
+  const crewMode = h('select', { class: 'input' }, [['off', 'ปิด — เข้าระบบทีละคนตามปกติ'], ['days', 'เฉพาะวันที่เลือก'], ['always', 'ทุกวัน']].map(([v, t]) => h('option', { value: v, selected: crewCfg.mode === v }, t)));
+  const DAYS = [[1, 'จ.'], [2, 'อ.'], [3, 'พ.'], [4, 'พฤ.'], [5, 'ศ.'], [6, 'ส.'], [0, 'อา.']];
+  const dayBox = DAYS.map(([d, t]) => { const cb = h('input', { type: 'checkbox', checked: crewCfg.days.includes(d) }); return [d, cb, h('label', { class: 'switch' }, cb, t)]; });
+  const crewMax = h('input', { class: 'input', type: 'number', min: 2, max: 12, value: crewCfg.max });
+  const daysRow = h('div', { class: 'row' }, dayBox.map((x) => x[2]));
+  const syncDays = () => { daysRow.style.display = crewMode.value === 'days' ? '' : 'none'; };
+  crewMode.onchange = syncDays; syncDays();
+  const crewCard = card(h('h3', {}, '👥 พนักงานหลายคนต่อรอบ'),
+    h('p', { class: 'small muted' }, 'วันที่ตั้งไว้ หน้าเข้าสู่ระบบ POS จะให้ทุกคนที่เข้างานสแกนบัตร + ใส่ PIN ทีละคน แล้วเลือกว่าใครเป็นคนหลัก (ชื่อที่ใช้เข้าระบบ) · ทุกคนจะถูกบันทึกไว้ในรอบการขายและรายงานปิดรอบ · วันอื่นกด "เข้างานหลายคนวันนี้" ที่หน้าเข้าสู่ระบบได้'),
+    h('div', { class: 'form-grid' }, h('label', { class: 'field' }, 'ใช้เมื่อ', crewMode), h('label', { class: 'field' }, 'สูงสุดกี่คนต่อเครื่อง', crewMax)), daysRow,
+    h('div', { style: { marginTop: '.6em' } }, saveBtn('บันทึก', () => api.put('/settings/crew', { value: { mode: crewMode.value, days: dayBox.filter((x) => x[1].checked).map((x) => x[0]), max: Math.max(2, Math.min(12, Number(crewMax.value) || 6)) } }))));
   return page('พนักงานและสิทธิ์', h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => open(null) }, '+ เพิ่มพนักงาน'),
       h('button', { class: 'btn', onclick: () => cardDialog(staff.filter((x) => x.active)) }, '🪪 บัตรพนักงานทั้งหมด')),
     card(table([{ t: '', f: (s) => h('div', { class: 'staff-photo sm' }, s.photo ? h('img', { src: s.photo, alt: '' }) : h('span', {}, (s.name || '?')[0])) },
       { t: 'รหัส', k: 'code' }, { t: 'ชื่อ', f: (s) => `${s.name} ${s.last_name || ''}${s.nickname ? ` (${s.nickname})` : ''}` }, { t: 'ตำแหน่ง', f: (s) => s.title || roleName(s) }, { t: 'สถานะ', f: (s) => h('span', { class: 'badge ' + (s.active ? 'ok' : 'bad') }, s.active ? 'ใช้งาน' : 'ปิด') },
       { t: 'ล็อกถึง', f: (s) => (s.locked_until && new Date(s.locked_until) > new Date() ? fmtTime(s.locked_until) : '') },
       { t: '', f: (s) => h('button', { class: 'btn sm', onclick: (e) => { e.stopPropagation(); cardDialog([s]); } }, '🪪 บัตร') }], staff, { onRow: open })),
-    h('h3', {}, 'สิทธิ์ตามบทบาท'), roleBox);
+    crewCard, h('h3', {}, 'สิทธิ์ตามบทบาท'), roleBox);
 }
 
 // ---------------- tables ----------------

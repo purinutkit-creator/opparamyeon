@@ -226,7 +226,7 @@ r.put('/fonts/:id', staffAuth('settings'), ah(async (req, res) => { await db.run
 r.delete('/fonts/:id', staffAuth('settings'), ah(async (req, res) => { await db.run('DELETE FROM fonts WHERE id = ?', [req.params.id]); res.json({ ok: true }); }));
 
 // ---------- settings ----------
-const PUBLIC_KEYS = ['store', 'display', 'fonts', 'queue', 'mobile', 'members', 'points', 'week_start', 'theme'];
+const PUBLIC_KEYS = ['store', 'display', 'fonts', 'queue', 'mobile', 'members', 'points', 'week_start', 'theme', 'crew'];
 export function publicSettings(s) {
   const out = Object.fromEntries(PUBLIC_KEYS.map((k) => [k, s[k]]));
   out.members = { ...s.members, otp_webhook_url: undefined };

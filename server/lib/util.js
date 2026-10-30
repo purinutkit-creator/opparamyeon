@@ -69,6 +69,8 @@ export const DEFAULT_SETTINGS = {
   // noodle cookers: bowls are queued on the machine that is free first (estimates shown on the POS)
   cookers: { enabled: true, count: 2, minutes_per_bowl: 4, split_by_bowl: true, machines: [{ name: 'เครื่องต้ม 1', printer_id: '' }, { name: 'เครื่องต้ม 2', printer_id: '' }] },
   week_start: 1,
+  // several staff sign in together on the POS (scan every card, then pick the main one): off / days (weekdays 0=Sun…6=Sat) / always
+  crew: { mode: 'off', days: [5, 6, 0], max: 6 },
 };
 
 // ---------- server-side secrets (payment gateway keys). Never returned to any browser. ----------

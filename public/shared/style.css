@@ -184,3 +184,57 @@ h1, h2, h3, .page-head h2, .modal-head h3 { font-family: var(--head-font); font-
 [data-shapes="off"] :is(.mhead, .mcard, .kpi, .side, .scan-cta, .login-hero .art, .success-card, .cart-head, .member-box, .lc-member, header.h)::before,
 [data-shapes="off"] :is(.mhead, .mcard, .kpi, .side, .scan-cta, .login-hero .art, .success-card, header.h)::after { display: none !important; }
 [data-shapes="off"] .cart-empty img, [data-shapes="off"] .hero .bowl { animation: none !important; }
+
+/* ===== Motion (every screen) — transform/opacity only, so it stays smooth on low-end tablets ===== */
+:root { --ease-out: cubic-bezier(.22, 1, .36, 1); --ease-spring: cubic-bezier(.34, 1.4, .64, 1); --ease-io: cubic-bezier(.65, 0, .35, 1); }
+/* moving between pages of the app (POS ⇄ shop management, sign in/out) cross-fades instead of flashing white */
+@view-transition { navigation: auto; }
+::view-transition-old(root) { animation: m-out .32s var(--ease-io) both; }
+::view-transition-new(root) { animation: m-in .5s var(--ease-out) both; }
+@keyframes m-out { to { opacity: 0; transform: scale(.985); } }
+@keyframes m-in { from { opacity: 0; transform: scale(1.01); } }
+/* dialogs: backdrop fades, the card springs up; closing sinks it back */
+.modal-back { backdrop-filter: none; background: rgb(20 10 6 / .5); animation: m-fade .28s ease-out both; }
+.modal { animation: m-modal .5s var(--ease-spring) both; will-change: transform; }
+.modal-back.closing { animation: m-fade-out .24s ease-in forwards; pointer-events: none; }
+.modal-back.closing .modal { animation: m-modal-out .24s var(--ease-io) forwards; }
+@keyframes m-fade { from { opacity: 0; } }
+@keyframes m-fade-out { to { opacity: 0; } }
+@keyframes m-modal { from { opacity: 0; transform: translateY(28px) scale(.94); } }
+@keyframes m-modal-out { to { opacity: 0; transform: translateY(16px) scale(.96); } }
+.modal-body > * { animation: m-rise .45s var(--ease-out) both; }
+.modal-body > :nth-child(2) { animation-delay: .04s; } .modal-body > :nth-child(3) { animation-delay: .08s; } .modal-body > :nth-child(n+4) { animation-delay: .12s; }
+@keyframes m-rise { from { opacity: 0; transform: translateY(10px); } }
+/* toasts drop in with a spring and fold away */
+.toast { animation: m-toast .5s var(--ease-spring) both; transition: none; }
+.toast.out { animation: m-toast-out .4s var(--ease-io) forwards; }
+@keyframes m-toast { from { opacity: 0; transform: translateY(-22px) scale(.9); } }
+@keyframes m-toast-out { 60% { opacity: 0; transform: translateY(-14px) scale(.96); max-height: 120px; } to { opacity: 0; transform: translateY(-14px) scale(.96); max-height: 0; padding-top: 0; padding-bottom: 0; margin-top: -8px; } }
+/* pop-up menus grow from where they open */
+.menu-pop { transform-origin: top right; animation: m-pop .32s var(--ease-spring) both; }
+@keyframes m-pop { from { opacity: 0; transform: translateY(-6px) scale(.9); } }
+/* buttons, chips and tabs: soft spring on press, smooth colour changes */
+.btn, .chip, .tab, .seg button, .icon-btn, .side a { transition: background-color .25s var(--ease-out), color .25s, border-color .25s, box-shadow .25s var(--ease-out), transform .25s var(--ease-spring); }
+.btn:active:not(:disabled), .chip:active, .tab:active, .seg button:active, .icon-btn:active { transform: scale(.95); transition-duration: .08s; }
+.card { transition: box-shadow .3s var(--ease-out), transform .3s var(--ease-out); }
+.input, select, textarea { transition: border-color .2s, box-shadow .25s var(--ease-out), background-color .2s; }
+/* page content rises in when it is shown (shop management pages, member site sections) */
+#content > *, .page-in { animation: m-page .55s var(--ease-out) both; }
+@keyframes m-page { from { opacity: 0; transform: translateY(14px); } }
+/* table rows and list cards cascade in */
+tbody tr { animation: m-row .45s var(--ease-out) both; }
+tbody tr:nth-child(2) { animation-delay: .02s; } tbody tr:nth-child(3) { animation-delay: .04s; } tbody tr:nth-child(4) { animation-delay: .06s; }
+tbody tr:nth-child(5) { animation-delay: .08s; } tbody tr:nth-child(6) { animation-delay: .1s; } tbody tr:nth-child(7) { animation-delay: .12s; }
+tbody tr:nth-child(8) { animation-delay: .14s; } tbody tr:nth-child(n+9) { animation-delay: .16s; }
+@keyframes m-row { from { opacity: 0; transform: translateY(8px); } }
+.kpi, .grid > .card, .cards > * { animation: m-rise .5s var(--ease-out) both; }
+details > :not(summary) { animation: m-rise .35s var(--ease-out); }
+.skeleton { transition: opacity .3s; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
+  @view-transition { navigation: none; }
+}
+/* panels that refresh themselves (dashboard, live view) cascade in only the first time */
+.calm tbody tr, .calm .kpi, .calm .cards > *, .calm .grid > .card { animation: none; }
+.menu-pop.closing { animation: m-pop-out .18s var(--ease-io) forwards; pointer-events: none; }
+@keyframes m-pop-out { to { opacity: 0; transform: translateY(-4px) scale(.94); } }

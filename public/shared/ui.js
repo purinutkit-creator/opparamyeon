@@ -1,4 +1,5 @@
 // Tiny DOM helpers (no framework): h(), toast, modal, confirm/prompt, keypad.
+import { leave } from './motion.js';
 
 // Conditional children (cond ? node : null) are used everywhere; skip null/undefined/false instead of rendering "null".
 for (const m of ['replaceChildren', 'append']) {
@@ -28,12 +29,18 @@ export function toast(msg, type = 'info', ms = 3200) {
   if (!toastBox) { toastBox = h('div', { class: 'toasts', role: 'status', 'aria-live': 'polite' }); document.body.append(toastBox); }
   const t = h('div', { class: 'toast ' + type }, msg);
   toastBox.append(t);
-  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 300); }, ms);
+  setTimeout(() => leave(t, 'out', () => t.remove(), 420), ms);
 }
 export const errToast = (e) => toast(e && e.message ? e.message : String(e), 'error', 5000);
 
 export function modal(title, body, { actions = [], wide = false, onClose = null, closable = true, autofocus = true } = {}) {
-  const close = () => { back.remove(); document.removeEventListener('keydown', onKey); onClose && onClose(); };
+  let closed = false;
+  const close = () => {
+    if (closed) return; closed = true;
+    document.removeEventListener('keydown', onKey);
+    leave(back, 'closing', () => back.remove(), 240); // the dialog sinks and the backdrop fades; onClose runs at once
+    onClose && onClose();
+  };
   const onKey = (e) => { if (e.key === 'Escape' && closable) close(); };
   const footer = h('div', { class: 'modal-actions' }, actions.map((a) => h('button', { class: 'btn ' + (a.class || ''), onclick: async (e) => {
     if (a.busy) return;
