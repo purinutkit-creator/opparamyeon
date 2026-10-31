@@ -62,7 +62,8 @@ class MainActivity : AppCompatActivity() {
         web.loadUrl(start)
         hideSystemBars()
         // the second screen can be plugged in / come up after the app started
-        (getSystemService(Context.DISPLAY_SERVICE) as DisplayManager).registerListener(object : DisplayManager.DisplayListener {
+        val displays = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        displays.registerListener(object : DisplayManager.DisplayListener {
             override fun onDisplayAdded(id: Int) { reopenCustomer() }
             override fun onDisplayRemoved(id: Int) { if (customer?.display?.displayId == id) { customer?.dismiss(); customer = null } }
             override fun onDisplayChanged(id: Int) {}
