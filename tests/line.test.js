@@ -6,11 +6,13 @@ import { startServer, key, line } from './helpers.js';
 import { db } from '../server/db.js';
 
 // a stand-in for api.line.me: records what the POS sends
-const sent = []; let mock;
+const sent = []; let mock; const images = new Map(); // message id → image bytes the mock LINE hands out
 let S, owner;
 before(async () => {
   mock = http.createServer((req, res) => { let b = ''; req.on('data', (c) => { b += c; }); req.on('end', () => {
     sent.push({ path: req.url, auth: req.headers.authorization, body: b && req.headers['content-type'] === 'application/json' ? JSON.parse(b) : b.length });
+    const img = /^\/v2\/bot\/message\/([^/]+)\/content$/.exec(req.url);
+    if (img) { res.setHeader('content-type', 'image/png'); return res.end(images.get(img[1])); }
     res.setHeader('content-type', 'application/json');
     res.end(req.url === '/v2/bot/richmenu' ? '{"richMenuId":"rm-1"}' : req.url.startsWith('/v2/bot/profile') ? '{"displayName":"เจ้าของร้าน"}' : req.url === '/v2/bot/info' ? (req.headers.authorization === 'Bearer ' + 'T'.repeat(160) ? '{"displayName":"Oppa Ramyeon","basicId":"@oppa"}' : (res.statusCode = 401, '{}')) : '{}');
   }); });
@@ -89,4 +91,70 @@ test('LINE: ตั้งค่า เชื่อมแชตด้วยรห�
   r = await S.call('POST', '/api/line/richmenu', { image: png }, { token: owner });
   assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.id, 'rm-1');
   assert.ok(sent.some((x) => x.path === '/v2/bot/richmenu/rm-1/content') && sent.some((x) => x.path === '/v2/bot/user/all/richmenu/rm-1'));
+});
+
+// pictures for the tests: a barcode (EAN-13 drawn as bars) and a "product photo" (coloured blocks)
+async function barcodePng(code) {
+  const { ean13 } = await import('../public/shared/core.js');
+  const { PNG } = await import('pngjs');
+  const runs = ean13(code); // bar / space widths, starting with a bar
+  const mods = runs.flatMap((n, i) => Array(n).fill(i % 2 ? 0 : 1));
+  const scale = 4, quiet = 40, w = mods.length * scale + quiet * 2, hgt = 220;
+  const png = new PNG({ width: w, height: hgt });
+  for (let y = 0; y < hgt; y++) for (let x = 0; x < w; x++) {
+    const m = Math.floor((x - quiet) / scale), black = x >= quiet && m < mods.length && mods[m] === 1 && y > 20 && y < 200;
+    const i = (y * w + x) * 4; png.data[i] = png.data[i + 1] = png.data[i + 2] = black ? 0 : 255; png.data[i + 3] = 255;
+  }
+  return PNG.sync.write(png);
+}
+async function blocksPng(seed) {
+  const { PNG } = await import('pngjs');
+  const png = new PNG({ width: 240, height: 240 });
+  for (let y = 0; y < 240; y++) for (let x = 0; x < 240; x++) {
+    const i = (y * 240 + x) * 4, cell = (Math.floor(x / 60) + Math.floor(y / 60) * 4 + seed) % 5;
+    png.data[i] = [230, 30, 250, 20, 120][cell]; png.data[i + 1] = [40, 200, 220, 90, 20][cell]; png.data[i + 2] = [30, 60, 40, 220, 160][cell]; png.data[i + 3] = 255;
+  }
+  return PNG.sync.write(png);
+}
+
+test('LINE: เช็กสต็อกด้วยรูปบาร์โค้ด รูปสินค้า หรือพิมพ์เลขบาร์โค้ด/ชื่อ', async () => {
+  const { isEan13 } = await import('../public/shared/core.js');
+  let cat = (await S.call('GET', '/api/catalog', undefined, { token: owner })).body.products;
+  if (!cat.some((p) => p.barcodes.some(isEan13))) { // seed codes may not carry a valid check digit: give one product a real EAN-13
+    const { ean13Check } = await import('../public/shared/core.js');
+    await db.run('INSERT INTO barcodes(code, product_id) VALUES(?,?)', ['200000000001' + ean13Check('200000000001'), cat[0].id]);
+    cat = (await S.call('GET', '/api/catalog', undefined, { token: owner })).body.products;
+  }
+  const withBc = cat.find((p) => p.barcodes.some(isEan13));
+  const bc = withBc.barcodes.find(isEan13);
+  const say = async (text, rt) => { await hook([{ type: 'message', replyToken: rt, source: { type: 'user', userId: 'Uowner' }, message: { type: 'text', text } }]); await wait(150); return lastTo('/v2/bot/message/reply').body; };
+  // typed barcode → that product's card
+  let r = await say(bc, 'rt-t1');
+  assert.equal(r.replyToken, 'rt-t1'); assert.match(r.messages[0].altText, new RegExp(withBc.name.slice(0, 6)));
+  // typed part of a name → the matching products
+  r = await say(withBc.name.slice(0, 3), 'rt-t2');
+  assert.ok(JSON.stringify(r.messages[0]).includes(withBc.name));
+  // unknown → how to check
+  r = await say('zzzไม่มีแน่ๆ', 'rt-t3'); assert.match(r.messages[0].text, /ส่งรูปบาร์โค้ด/);
+  // photo of the barcode
+  images.set('m-bc', await barcodePng(bc));
+  await hook([{ type: 'message', replyToken: 'rt-i1', source: { type: 'user', userId: 'Uowner' }, message: { type: 'image', id: 'm-bc' } }]); await wait(1500);
+  r = lastTo('/v2/bot/message/reply').body;
+  assert.equal(r.replyToken, 'rt-i1'); assert.match(JSON.stringify(r.messages[0]), new RegExp('บาร์โค้ด ' + bc));
+  // product photo (no barcode, no AI key) → the product with the most similar picture
+  const pic = await blocksPng(1);
+  const fd = new FormData(); fd.append('file', new Blob([pic], { type: 'image/png' }), 'p.png'); fd.append('kind', 'image');
+  const up = (await S.call('POST', '/api/files', fd, { token: owner })).body;
+  const target = cat.find((p) => p.id !== withBc.id);
+  await S.call('PUT', '/api/products/' + target.id, { ...target, image: up.url }, { token: owner });
+  images.set('m-photo', pic);
+  await hook([{ type: 'message', replyToken: 'rt-i2', source: { type: 'user', userId: 'Uowner' }, message: { type: 'image', id: 'm-photo' } }]); await wait(1500);
+  r = lastTo('/v2/bot/message/reply').body;
+  assert.equal(r.replyToken, 'rt-i2');
+  const carousel = r.messages[1].contents.contents;
+  assert.ok(JSON.stringify(carousel[0]).includes(target.name), 'รูปเหมือนกันที่สุดอยู่ลำดับแรก');
+  assert.ok(JSON.stringify(carousel[0]).includes(`a=show&t=product&i=${target.id}`));
+  // "ใช่ตัวนี้" → full stock card
+  await hook([{ type: 'postback', replyToken: 'rt-i3', source: { type: 'user', userId: 'Uowner' }, postback: { data: `a=show&t=product&i=${target.id}` } }]); await wait(150);
+  assert.match(lastTo('/v2/bot/message/reply').body.messages[0].altText, new RegExp(target.name.slice(0, 6)));
 });

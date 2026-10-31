@@ -4,7 +4,8 @@ import { db } from '../db.js';
 import { ah, now, bad, notFound, audit, setSecret, setSetting } from '../lib/util.js';
 import { staffAuth } from '../lib/auth.js';
 import { adjustStock } from '../lib/stock.js';
-import { lineSecret, lineToken, verifyLineSignature, lineReply, lineCfg, lowItems, itemOf, openList, addToList, suggestQty, lowStockMessage, listMessage, tryLink, isRecipient, newLinkCode, setupRichMenu, lineToAll } from '../lib/line.js';
+import { decodeImage, readBarcode, similarProducts, aiMatch } from '../lib/imgmatch.js';
+import { lineContent, lineLoading, findProducts, stockCard, candidatesMessage, lineSecret, lineToken, verifyLineSignature, lineReply, lineCfg, lowItems, itemOf, openList, addToList, suggestQty, lowStockMessage, listMessage, tryLink, isRecipient, newLinkCode, setupRichMenu, lineToAll } from '../lib/line.js';
 
 const num = (v) => Math.round(Number(v || 0) * 100) / 100;
 export const lineWebhook = Router();
@@ -23,14 +24,37 @@ async function handle(ev) {
     if (linked) return lineReply(rt, { type: 'text', text: `✅ เชื่อมต่อแล้ว (${linked}) — จะได้รับแจ้งเตือนสินค้าใกล้หมดและรายการที่ต้องซื้อตอนปิดรอบ\nกดเมนูด้านล่าง หรือพิมพ์ "สต็อก" / "ซื้อ"` });
     if (!(await isRecipient(src))) return;
     const t = ev.message.text.trim();
+    // a barcode number / product code / name → that product's stock
+    const found = /^\d{4,}$/.test(t) || !/^(สต็อก|stock|ใกล้หมด|ซื้อ|list|รายการ)/i.test(t) ? await findProducts(t) : [];
+    if (found.length === 1) return lineReply(rt, stockCard(found[0], `ค้นจาก "${t}"`));
+    if (found.length > 1) return lineReply(rt, candidatesMessage(found, `ค้น "${t}"`));
     if (/สต็อก|stock|ใกล้หมด/i.test(t)) return lineReply(rt, lowStockMessage(await lowItems()));
     if (/ซื้อ|list|รายการ/i.test(t)) return lineReply(rt, listMessage(await openList(), await lowItems()));
-    return;
+    return lineReply(rt, { type: 'text', text: `ไม่พบสินค้า "${t}"\n\nเช็กสต็อกได้โดย:\n📷 ส่งรูปบาร์โค้ด หรือรูปสินค้า\n🔢 พิมพ์เลขบาร์โค้ด / รหัสสินค้า\n🔤 พิมพ์ชื่อสินค้า\n📦 พิมพ์ "สต็อก" ดูของใกล้หมด · "ซื้อ" ดูรายการที่ต้องซื้อ` });
+  }
+  // a photo: barcode in it → that product; otherwise AI (if the shop set a key) or the closest product pictures
+  if (ev.type === 'message' && ev.message && ev.message.type === 'image') {
+    if (!(await isRecipient(src))) return;
+    if (src.userId && !src.groupId) lineLoading(src.userId);
+    const { buf, mime } = await lineContent(ev.message.id);
+    const img = decodeImage(buf, mime);
+    const code = img ? readBarcode(img) : null;
+    if (code) {
+      const f = await findProducts(code);
+      if (f.length) return lineReply(rt, stockCard(f[0], `บาร์โค้ด ${code}`));
+      return lineReply(rt, { type: 'text', text: `อ่านบาร์โค้ดได้: ${code}\nแต่ยังไม่มีสินค้านี้ในร้าน — เพิ่มได้ที่ จัดการร้าน → ผู้ช่วยเพิ่มสินค้า` });
+    }
+    const ai = await aiMatch(buf, mime).catch(() => null);
+    if (ai && ai.product && ai.confidence >= 0.6) return lineReply(rt, stockCard(await itemOf('product', ai.product.id), `🤖 จากรูป · มั่นใจ ${Math.round(ai.confidence * 100)}%`));
+    const near = img ? (await similarProducts(img, 3)).filter((c) => c.score >= 0.55) : [];
+    if (near.length) return lineReply(rt, [{ type: 'text', text: 'ไม่เห็นบาร์โค้ดในรูป — สินค้าที่หน้าตาคล้ายที่สุด 👇 กด "ใช่ตัวนี้" เพื่อดูสต็อก' }, candidatesMessage(await Promise.all(near.map(async (c) => ({ ...(await itemOf('product', c.id)), score: c.score }))), 'คล้ายกับ')]);
+    return lineReply(rt, { type: 'text', text: 'ไม่พบสินค้าที่ตรงกับรูปนี้ 🙏\n\nลองใหม่:\n📷 ถ่ายบาร์โค้ดให้ชัด เต็มเฟรม ไม่เบลอ\n🔢 หรือพิมพ์เลขบาร์โค้ด / ชื่อสินค้า' });
   }
   if (ev.type !== 'postback' || !(await isRecipient(src))) return;
   const p = new URLSearchParams(ev.postback.data || '');
   const a = p.get('a'), who = 'line:' + (src.userId || src.groupId || '');
   if (a === 'low') return lineReply(rt, lowStockMessage(await lowItems()));
+  if (a === 'show') { const x = await itemOf(p.get('t'), p.get('i')); return x ? lineReply(rt, stockCard(x)) : null; }
   if (a === 'list') return lineReply(rt, listMessage(await openList(), await lowItems()));
   if (a === 'add') { // how much to add: quick buttons
     const x = await itemOf(p.get('t'), p.get('i')); if (!x) return;
@@ -39,7 +63,7 @@ async function handle(ev) {
   }
   if (a === 'addq') {
     const q = Number(p.get('q')); if (!(q > 0 && q <= 9999)) return;
-    const x = await adjustStock({ type: p.get('t'), id: p.get('i'), qty: q, mode: 'add', note: 'เติมผ่าน LINE', actor: who });
+    const x = await adjustStock({ type: p.get('t'), id: p.get('i'), qty: q, mode: 'add', note: 'เติมผ่าน LINE', track: true, actor: who });
     return lineReply(rt, { type: 'text', text: `✅ เติมสต็อกแล้ว\n${x.name}  +${q}\n\nตอนนี้มี ${num(x.stock)} ${x.unit || ''}` });
   }
   if (a === 'buy') {

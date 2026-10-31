@@ -23,6 +23,13 @@ async function call(path, body, { method = 'POST', data = false, raw = null, typ
   try { return txt ? JSON.parse(txt) : {}; } catch { return {}; }
 }
 export const lineReply = (replyToken, messages) => call('/v2/bot/message/reply', { replyToken, messages: [].concat(messages).slice(0, 5) });
+// a photo the chat sent (binary) · the "…" typing animation while a photo is being looked at (1:1 chats only)
+export async function lineContent(messageId) {
+  const r = await fetch(`${DATA_API()}/v2/bot/message/${encodeURIComponent(messageId)}/content`, { headers: { Authorization: 'Bearer ' + await token() } });
+  if (!r.ok) throw new Error('LINE content ' + r.status);
+  return { buf: Buffer.from(await r.arrayBuffer()), mime: r.headers.get('content-type') || '' };
+}
+export const lineLoading = (chatId) => call('/v2/bot/chat/loading/start', { chatId, loadingSeconds: 20 }).catch(() => {});
 export const linePush = (to, messages) => call('/v2/bot/message/push', { to, messages: [].concat(messages).slice(0, 5) });
 // to everyone linked (owner / manager / the shop group); failures are logged, never thrown into a sale
 export async function lineToAll(messages) {
@@ -50,8 +57,19 @@ export async function lowItems() {
 }
 export async function itemOf(type, itemId) {
   const t = type === 'ingredient' ? 'ingredients' : 'products';
-  const x = await db.get(`SELECT id, name, unit, stock, low_stock${t === 'products' ? ', image' : ''} FROM ${t} WHERE id = ?`, [itemId]);
-  return x ? { ...x, type: type === 'ingredient' ? 'ingredient' : 'product' } : null;
+  const x = await db.get(`SELECT id, name, unit, stock, low_stock${t === 'products' ? ', image, code, track_stock' : ''} FROM ${t} WHERE id = ?`, [itemId]);
+  return x ? { ...x, type: type === 'ingredient' ? 'ingredient' : 'product', track_stock: t === 'ingredients' ? 1 : x.track_stock } : null;
+}
+// a typed barcode / product code / name → products (exact code first, then names that contain it)
+export async function findProducts(q) {
+  const s = String(q || '').trim();
+  if (!s) return [];
+  const b = await db.get('SELECT product_id FROM barcodes WHERE code = ?', [s]);
+  const exact = await db.get('SELECT id FROM products WHERE active = 1 AND (id = ? OR code = ?)', [b ? b.product_id : '__', s]);
+  if (exact) return [await itemOf('product', exact.id)];
+  const like = await db.all("SELECT id FROM products WHERE active = 1 AND LOWER(name) LIKE ? ORDER BY name LIMIT 6", ['%' + s.toLowerCase() + '%']);
+  const ing = await db.all("SELECT id FROM ingredients WHERE LOWER(name) LIKE ? ORDER BY name LIMIT 3", ['%' + s.toLowerCase() + '%']);
+  return [...await Promise.all(like.map((x) => itemOf('product', x.id))), ...await Promise.all(ing.map((x) => itemOf('ingredient', x.id)))];
 }
 export const openList = () => db.all("SELECT * FROM shopping_list WHERE status = 'open' ORDER BY created_at");
 // add to the shopping list (one open line per item; adding again raises the quantity)
@@ -76,18 +94,20 @@ const bar = (stock, low) => { // how full: up to twice the low-stock level = ful
   return { type: 'box', layout: 'vertical', height: '10px', cornerRadius: '6px', backgroundColor: '#EEEEEE', margin: 'md',
     contents: [{ type: 'box', layout: 'vertical', width: pct + '%', height: '10px', cornerRadius: '6px', backgroundColor: Number(stock) <= 0 ? RED : ORANGE, contents: [] }] };
 };
-function itemBubble(x) {
-  const out = Number(x.stock) <= 0;
+function itemBubble(x, note = '') {
+  const counted = x.track_stock !== 0 && x.track_stock !== false;
+  const out = counted && Number(x.stock) <= 0, low = counted && Number(x.stock) <= Number(x.low_stock || 0);
   const img = abs(x.image);
+  const head = !counted ? ['📦 ยังไม่ได้นับสต็อก', GREY] : out ? ['⛔ หมดแล้ว', RED] : low ? ['⚠️ ใกล้หมด', ORANGE] : ['✅ มีของ', GREEN];
   return {
     type: 'bubble', size: 'mega',
-    header: { type: 'box', layout: 'vertical', paddingAll: '14px', backgroundColor: out ? RED : ORANGE,
-      contents: [txt(out ? '⛔ หมดแล้ว' : '⚠️ ใกล้หมด', { color: '#FFFFFF', weight: 'bold', size: 'lg' })] },
+    header: { type: 'box', layout: 'vertical', paddingAll: '14px', backgroundColor: head[1],
+      contents: [txt(head[0], { color: '#FFFFFF', weight: 'bold', size: 'lg' }), ...(note ? [txt(note, { color: '#FFFFFF', size: 'sm' })] : [])] },
     ...(img ? { hero: { type: 'image', url: img, size: 'full', aspectRatio: '20:11', aspectMode: 'cover' } } : {}),
     body: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '18px', contents: [
       txt(x.name, { weight: 'bold', size: 'xl' }),
       txt('เหลืออยู่', { size: 'sm', color: GREY, margin: 'lg' }),
-      txt(`${num(x.stock)} ${x.unit || ''}`, { size: '4xl', weight: 'bold', color: out ? RED : ORANGE }),
+      txt(counted ? `${num(x.stock)} ${x.unit || ''}` : '—', { size: '4xl', weight: 'bold', color: out ? RED : low ? ORANGE : counted ? GREEN : GREY }),
       bar(x.stock, x.low_stock),
       txt(`แจ้งเตือนเมื่อเหลือ ${num(x.low_stock)} ${x.unit || ''} หรือน้อยกว่า`, { size: 'sm', color: GREY, margin: 'md' })] },
     footer: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: '14px', contents: [
@@ -96,6 +116,16 @@ function itemBubble(x) {
   };
 }
 // first card of the carousel: every item and its number in one list
+export const stockCard = (x, note = '') => ({ type: 'flex', altText: `${x.name}: เหลือ ${num(x.stock)} ${x.unit || ''}`.slice(0, 380), contents: itemBubble(x, note) });
+// several possible matches: small cards, "this one?" opens the full stock card
+export function candidatesMessage(list, title) {
+  return { type: 'flex', altText: `${title}: ${list.map((c) => c.name).join(', ')}`.slice(0, 380), contents: { type: 'carousel', contents: list.slice(0, 10).map((c) => ({
+    type: 'bubble', size: 'kilo',
+    ...(abs(c.image) ? { hero: { type: 'image', url: abs(c.image), size: 'full', aspectRatio: '20:13', aspectMode: 'cover' } } : {}),
+    body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [txt(title, { size: 'xs', color: GREY }), txt(c.name, { weight: 'bold', size: 'lg' }),
+      ...(c.score !== undefined ? [txt(`คล้าย ${Math.round(c.score * 100)}%`, { size: 'sm', color: GREY })] : [])] },
+    footer: { type: 'box', layout: 'vertical', contents: [pb('✓ ใช่ตัวนี้', `a=show&t=${c.type || 'product'}&i=${c.id}`)] } })) } };
+}
 function summaryBubble(items) {
   return { type: 'bubble', size: 'mega',
     header: { type: 'box', layout: 'vertical', paddingAll: '14px', backgroundColor: BRAND,
