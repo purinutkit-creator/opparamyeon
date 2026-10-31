@@ -78,7 +78,35 @@ export function buildLabelJob(canvas, { cuts = [], cutMode = 'full', end = 'cut'
     parts.push(rasterFromCanvas(canvas, { y0: bounds[i], y1: bounds[i + 1], threshold }));
     if (i < bounds.length - 2 && cutMode !== 'none') parts.push(feedCut(cutMode));
   }
-  if (end === 'cut' && cutMode !== 'none') parts.push(feedCut(cutMode));
+  if (end === 'gap') parts.push(Uint8Array.from([GS, 0x0c]));
+  else if (end === 'cut' && cutMode !== 'none') parts.push(feedCut(cutMode));
   else if (end !== 'none' && endDots > 0) parts.push(feedDots(endDots));
+  return concat(parts);
+}
+
+// GS FF: on printers with a gap/black-mark sensor (label mode), feed until the start of the next label — nothing more
+export const feedToNextLabel = () => Uint8Array.from([GS, 0x0c]);
+
+// Label printers (Xprinter XP-365B/420B, Gprinter, TSC ... in TSPL): the printer knows the label size and the gap from
+// SIZE/GAP and its gap sensor, so each label comes out exactly and stops with the gap at the tear bar — no blank paper.
+// rowW/rowH: one row of labels in dots; rows: how many rows are stacked in the canvas (no space between them).
+export function buildTsplJob(canvas, { wMm, hMm, gapMm = 2, rowW, rowH, rows = 1, threshold = 160, flip = false, tear = true } = {}) {
+  const enc = (s) => new TextEncoder().encode(s);
+  const n = (v) => Math.round(Number(v) * 10) / 10;
+  const parts = [enc(`SIZE ${n(wMm)} mm,${n(hMm)} mm\r\nGAP ${n(gapMm)} mm,0 mm\r\nDIRECTION ${flip ? 0 : 1},0\r\nREFERENCE 0,0\r\nOFFSET 0 mm\r\nSET TEAR ${tear ? 'ON' : 'OFF'}\r\n`)];
+  const w = Math.min(rowW || canvas.width, canvas.width), bpr = Math.ceil(w / 8);
+  for (let r = 0; r < rows; r++) {
+    const y0 = r * rowH, h = Math.min(rowH, canvas.height - y0);
+    if (h <= 0) break;
+    const px = canvas.getContext('2d').getImageData(0, y0, w, h).data;
+    // TSPL bitmap: bit 1 = white, bit 0 = printed dot
+    const body = new Uint8Array(bpr * h).fill(0xff);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const lum = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+      if (px[i + 3] > 128 && lum < threshold) body[y * bpr + (x >> 3)] &= ~(0x80 >> (x & 7));
+    }
+    parts.push(enc(`CLS\r\nBITMAP 0,0,${bpr},${h},0,`), body, enc('\r\nPRINT 1,1\r\n'));
+  }
   return concat(parts);
 }

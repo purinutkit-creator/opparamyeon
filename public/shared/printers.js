@@ -6,7 +6,7 @@
 //  - Android native bridge: window.OppaBridge (when the POS runs inside the Android wrapper app)
 //  - Browser: system print dialog (A4/regular printers)
 import { store } from './api.js';
-import { buildJob, buildLabelJob, statusQuery, parseStatus, concat, init, feed, cut as cutCmd, beep as beepCmd, drawer as drawerCmd } from './escpos.js';
+import { buildJob, buildLabelJob, buildTsplJob, statusQuery, parseStatus, concat, init, feed, cut as cutCmd, beep as beepCmd, drawer as drawerCmd } from './escpos.js';
 import { renderDoc, testTemplate } from './render.js';
 import { docFontStack } from './fonts.js';
 import { playSound } from './sound.js';
@@ -195,7 +195,8 @@ export async function printDocument(printer, template, data, docType) {
     // a template set to "ไม่ตัด" prints as a continuous roll (e.g. short merchant slips): no cut, just a little space between slips
     const noCut = tpl.cut === 'none';
     // barcode labels: exactly the label size (no feed before, only the gap set between rows, end as set)
-    if (tpl.label_exact) bytes = buildLabelJob(r.canvas, { cuts: r.cuts, cutMode: printer.cut_mode || 'full', end: tpl.label_end || 'cut', endDots: Math.round((Number(tpl.label_end_mm) || 0) * 8), backDots: Math.round((Number(tpl.label_back_mm) || 0) * 8), threshold: o.density || 160 });
+    if (tpl.label_exact && tpl.label_tspl) { const L = tpl.label_tspl; bytes = buildTsplJob(r.canvas, { wMm: L.w_mm, hMm: L.h_mm, gapMm: L.gap_mm, rowW: L.row_w, rowH: L.row_h, rows: L.rows, flip: L.flip, threshold: o.density || 160 }); }
+    else if (tpl.label_exact) bytes = buildLabelJob(r.canvas, { cuts: r.cuts, cutMode: printer.cut_mode || 'full', end: tpl.label_end || 'cut', endDots: Math.round((Number(tpl.label_end_mm) || 0) * 8), backDots: Math.round((Number(tpl.label_back_mm) || 0) * 8), threshold: o.density || 160 });
     else bytes = buildJob(r.canvas, { cuts: noCut ? [] : r.cuts, feedBefore: noCut ? 0 : printer.feed_before ?? 3, feedAfter: noCut ? Number(tpl.feed_after ?? 1) : printer.feed_after ?? 1, cutMode: noCut ? 'none' : printer.cut_mode || 'full',
       buzzer: buzz, beepCount: printer.beep_count || 4, beepDuration: o.beep_duration || 2, threshold: o.density || 160, topFeed: o.top_feed || 0 });
   }

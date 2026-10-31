@@ -11,6 +11,8 @@ export const LABEL_DEFAULTS = {
   barcode_height_mm: 12, bar_width: 2, type: 'auto', border: false, price_prefix: '', price_suffix: ' ฿', cut_each: false, feed_mm: 2, printer_id: '',
   // after the last label: 'cut' = feed to the cutter and cut (printers with a cutter), 'feed' = end_feed_mm to tear off, 'none'
   end: 'none', end_feed_mm: 12, back_mm: 0,
+  // printer language: 'escpos' (receipt printers) or 'tspl' (label printers with a gap sensor — paper comes out exactly per label)
+  lang: 'escpos', flip: false,
 };
 export const LABEL_PRESETS = [['50x30', 'สติกเกอร์ 50 × 30 มม.'], ['40x30', 'สติกเกอร์ 40 × 30 มม.'], ['50x25', 'สติกเกอร์ 50 × 25 มม.'], ['60x40', 'สติกเกอร์ 60 × 40 มม.'],
   ['32x25', 'สติกเกอร์เล็ก 32 × 25 มม.'], ['48x30', 'กระดาษใบเสร็จ 58 มม. (48 × 30)'], ['72x40', 'กระดาษใบเสร็จ 80 มม. (72 × 40)']];

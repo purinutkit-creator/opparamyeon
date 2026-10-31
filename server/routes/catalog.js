@@ -242,12 +242,15 @@ r.post('/print/labels', staffAuth('manage_menu'), ah(async (req, res) => {
   const cols = labelRowDots(cfg).cols;
   const elements = [];
   // exactly the label size: rows + the gap set (or a cut) between them, nothing before the first or after the last
+  const tspl = cfg.lang === 'tspl';
   for (let i = 0; i < list.length; i += cols) {
-    if (i) elements.push(cfg.cut_each ? { type: 'cut', space: 0 } : { type: 'space', height: Math.round((Number(cfg.feed_mm) || 0) * 8) });
+    // TSPL: the printer itself skips the gap between labels (its gap sensor), so rows are stacked with nothing between them
+    if (i && !tspl) elements.push(cfg.cut_each ? { type: 'cut', space: 0 } : { type: 'space', height: Math.round((Number(cfg.feed_mm) || 0) * 8) });
     elements.push({ type: 'label', cfg, items: list.slice(i, i + cols), font: cfg.font });
   }
   const template = { paper: Number(printer.paper) || 80, margin: 0, section_gap: 0, font: cfg.font, size: 20, copies: 1, cut: 'full', elements,
-    label_exact: true, label_end: ['cut', 'feed', 'none'].includes(cfg.end) ? cfg.end : 'none', label_end_mm: Math.max(0, Math.min(50, Number(cfg.end_feed_mm) || 0)), label_back_mm: Math.max(0, Math.min(30, Number(cfg.back_mm) || 0)) };
+    label_exact: true, label_end: ['cut', 'feed', 'gap', 'none'].includes(cfg.end) ? cfg.end : 'none', label_end_mm: Math.max(0, Math.min(50, Number(cfg.end_feed_mm) || 0)), label_back_mm: Math.max(0, Math.min(30, Number(cfg.back_mm) || 0)),
+    label_tspl: tspl ? { w_mm: labelRowDots(cfg).w / 8, h_mm: Number(cfg.height_mm) || 30, gap_mm: Math.max(0, Math.min(20, Number(cfg.feed_mm) || 0)), row_w: labelRowDots(cfg).w, row_h: labelRowDots(cfg).h, rows: Math.ceil(list.length / cols), flip: !!cfg.flip } : null };
   await audit(req.staff.id, 'print_labels', 'printer', printer.id, null, { count: list.length, local: !!req.body.local });
   // printed right here by the shop website when the printer is connected to this computer; otherwise queued for the device that has it
   if (req.body.local) return res.json({ template, data: { store_name: store }, count: list.length, printer: publicPrinter(printer) });

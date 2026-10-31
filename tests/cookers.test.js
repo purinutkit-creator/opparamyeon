@@ -386,6 +386,18 @@ test('พิมพ์บาร์โค้ด: พิมพ์จากหน้
   assert.deepEqual(pl.template.elements.map((e) => e.type + (e.type === 'cut' ? ':' + e.space : '')), ['label', 'cut:0', 'label']);
 });
 
+test('พิมพ์บาร์โค้ดด้วยเครื่องพิมพ์สติกเกอร์ (TSPL): ไม่เว้นระยะเอง ให้เครื่องใช้เซนเซอร์ช่องว่าง ส่งขนาดฉลาก/ช่องว่างไปให้เครื่อง', async () => {
+  const pr = (await S.call('POST', '/api/printers', { name: 'สติกเกอร์', conn: 'usb', paper: 80, roles: ['receipt'] }, { token: owner })).body;
+  const prods = (await S.call('GET', '/api/catalog', undefined, { token: owner })).body.products.slice(0, 1);
+  const r = await S.call('POST', '/api/print/labels', { printer_id: pr.id, items: [{ product_id: prods[0].id, qty: 5 }], cfg: { lang: 'tspl', width_mm: 32, height_mm: 25, cols: 2, gap_mm: 2, feed_mm: 3, flip: true }, local: true }, { token: owner });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const t = r.body.template;
+  assert.deepEqual(t.elements.map((e) => e.type), ['label', 'label', 'label'], '5 ดวง 2 คอลัมน์ = 3 แถว ติดกัน');
+  assert.deepEqual(t.label_tspl, { w_mm: 66, h_mm: 25, gap_mm: 3, row_w: 528, row_h: 200, rows: 3, flip: true });
+  const e = await S.call('POST', '/api/print/labels', { printer_id: pr.id, items: [{ product_id: prods[0].id, qty: 1 }], cfg: { width_mm: 40, height_mm: 30 }, local: true }, { token: owner });
+  assert.equal(e.body.template.label_tspl, null, 'ค่าเริ่ม: เครื่องพิมพ์ใบเสร็จ (ESC/POS) เหมือนเดิม');
+});
+
 test('สต็อก: เติมสต็อกแล้วสินค้าที่เคยกด "หมด" เองกลับมาขายได้ · พิมพ์รายงานสต็อกแบบย่อ แถบดำเมื่อเหลือน้อยกว่า 5', async () => {
   const p = (await S.call('GET', '/api/stock', undefined, { token: owner })).body.products.find((x) => !x.track_stock);
   await S.call('POST', `/api/products/${p.id}/sold-out`, { sold_out: true }, { token: owner, terminal: 'pos1' });
