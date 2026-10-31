@@ -1,10 +1,10 @@
 // LINE stock management: the webhook (button presses, linking a chat) and the shop website's settings + shopping list.
 import express, { Router } from 'express';
 import { db } from '../db.js';
-import { ah, now, bad, notFound, audit, getSecret, setSecret, setSetting } from '../lib/util.js';
+import { ah, now, bad, notFound, audit, setSecret, setSetting } from '../lib/util.js';
 import { staffAuth } from '../lib/auth.js';
 import { adjustStock } from '../lib/stock.js';
-import { verifyLineSignature, lineReply, lineCfg, lowItems, itemOf, openList, addToList, suggestQty, lowStockMessage, listMessage, tryLink, isRecipient, newLinkCode, setupRichMenu, lineToAll } from '../lib/line.js';
+import { lineSecret, lineToken, verifyLineSignature, lineReply, lineCfg, lowItems, itemOf, openList, addToList, suggestQty, lowStockMessage, listMessage, tryLink, isRecipient, newLinkCode, setupRichMenu, lineToAll } from '../lib/line.js';
 
 const num = (v) => Math.round(Number(v || 0) * 100) / 100;
 export const lineWebhook = Router();
@@ -66,7 +66,7 @@ const r = Router();
 r.get('/line/settings', staffAuth('settings'), ah(async (req, res) => {
   const c = await lineCfg();
   const base = process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '';
-  const sec = await getSecret('line.channel_secret'), tok = await getSecret('line.channel_token');
+  const sec = await lineSecret(), tok = await lineToken();
   const hint = (v) => (v ? '…' + v.slice(-4) : '');
   res.json({ enabled: c.enabled, notify_low: c.notify_low, notify_close: c.notify_close, recipients: c.recipients || [], webhook_url: base + '/api/line/webhook',
     has_secret: !!sec, has_token: !!tok, secret_hint: hint(sec), token_hint: hint(tok), bot: c.bot || null });

@@ -9,7 +9,10 @@ const DATA_API = () => process.env.LINE_DATA_API_BASE || process.env.LINE_API_BA
 const BASE = () => process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '';
 export const LINE_DEFAULTS = { enabled: false, notify_low: true, notify_close: true, recipients: [] };
 export async function lineCfg() { return { ...LINE_DEFAULTS, ...((await getSettings()).line || {}) }; }
-const token = () => getSecret('line.channel_token');
+// keys typed in the shop website win; otherwise the server's environment (LINE_CHANNEL_SECRET / LINE_CHANNEL_ACCESS_TOKEN on Render)
+export const lineSecret = async () => (await getSecret('line.channel_secret')) || process.env.LINE_CHANNEL_SECRET || null;
+export const lineToken = async () => (await getSecret('line.channel_token')) || process.env.LINE_CHANNEL_ACCESS_TOKEN || null;
+const token = lineToken;
 
 async function call(path, body, { method = 'POST', data = false, raw = null, type = 'application/json' } = {}) {
   const t = await token();
@@ -30,7 +33,7 @@ export async function lineToAll(messages) {
   return n;
 }
 export async function verifyLineSignature(raw, sig) {
-  const secret = await getSecret('line.channel_secret');
+  const secret = await lineSecret();
   if (!secret || !sig) return false;
   const want = Buffer.from(crypto.createHmac('sha256', secret).update(raw).digest('base64'));
   const got = Buffer.from(String(sig));
