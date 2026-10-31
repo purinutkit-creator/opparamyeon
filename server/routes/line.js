@@ -66,16 +66,30 @@ const r = Router();
 r.get('/line/settings', staffAuth('settings'), ah(async (req, res) => {
   const c = await lineCfg();
   const base = process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '';
+  const sec = await getSecret('line.channel_secret'), tok = await getSecret('line.channel_token');
+  const hint = (v) => (v ? '…' + v.slice(-4) : '');
   res.json({ enabled: c.enabled, notify_low: c.notify_low, notify_close: c.notify_close, recipients: c.recipients || [], webhook_url: base + '/api/line/webhook',
-    has_secret: !!(await getSecret('line.channel_secret')), has_token: !!(await getSecret('line.channel_token')) });
+    has_secret: !!sec, has_token: !!tok, secret_hint: hint(sec), token_hint: hint(tok), bot: c.bot || null });
 }));
 r.put('/line/settings', staffAuth('settings'), ah(async (req, res) => {
   const b = req.body || {};
-  if (b.channel_secret) await setSecret('line.channel_secret', String(b.channel_secret).trim());
-  if (b.channel_token) await setSecret('line.channel_token', String(b.channel_token).trim());
+  const secret = String(b.channel_secret || '').trim(), tok = String(b.channel_token || '').trim();
+  // easy mix-ups: the 10-digit Channel ID, or the token in the secret box
+  if (secret && !/^[0-9a-f]{32}$/i.test(secret)) throw bad(/^\d{8,12}$/.test(secret) ? 'นี่คือ Channel ID — ช่องนี้ต้องใส่ Channel secret (ตัวอักษร/ตัวเลข 32 ตัว อยู่ในแท็บ Basic settings)' : 'Channel secret ต้องเป็นตัวอักษร a-f และตัวเลข 32 ตัว (แท็บ Basic settings)');
+  if (tok && tok.length < 100) throw bad('Channel access token สั้นเกินไป — กด Issue ที่แท็บ Messaging API แล้วคัดลอกมาทั้งหมด (ยาวประมาณ 170 ตัว)');
+  let bot = null;
+  if (tok) { // check the token with LINE before keeping it
+    const r2 = await fetch((process.env.LINE_API_BASE || 'https://api.line.me') + '/v2/bot/info', { headers: { Authorization: 'Bearer ' + tok } }).catch(() => null);
+    if (!r2) throw bad('ติดต่อ LINE ไม่ได้ตอนนี้ — ลองกดบันทึกอีกครั้ง');
+    if (!r2.ok) throw bad('LINE ไม่รับ Channel access token นี้ — ตรวจว่าคัดลอกมาครบ และเป็น token ของ Channel ที่ถูกต้อง');
+    const j = await r2.json().catch(() => ({}));
+    bot = { name: j.displayName || '', basic_id: j.basicId || '', picture: j.pictureUrl || '' };
+    await setSecret('line.channel_token', tok);
+  }
+  if (secret) await setSecret('line.channel_secret', secret);
   const c = await lineCfg();
   const recipients = Array.isArray(b.recipients) ? (c.recipients || []).filter((x) => b.recipients.includes(x.id)) : c.recipients;
-  await setSetting('line', { ...c, enabled: !!b.enabled, notify_low: !!b.notify_low, notify_close: !!b.notify_close, recipients });
+  await setSetting('line', { ...c, enabled: !!b.enabled, notify_low: !!b.notify_low, notify_close: !!b.notify_close, recipients, ...(bot ? { bot } : {}) });
   await audit(req.staff.id, 'settings', 'settings', 'line', null, { enabled: !!b.enabled, secret_changed: !!b.channel_secret, token_changed: !!b.channel_token });
   res.json({ ok: true });
 }));

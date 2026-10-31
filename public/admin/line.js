@@ -39,8 +39,24 @@ export async function linePage() {
     h('button', { class: 'icon-btn', title: 'เลิกส่งให้แชตนี้', onclick: () => { recipients = recipients.filter((x) => x.id !== r.id); drawRec(); } }, '✕'))))
     : h('p', { class: 'small muted' }, 'ยังไม่ได้เชื่อมแชต'));
   drawRec();
-  const save = () => api.put('/line/settings', { enabled: en.checked, notify_low: low.checked, notify_close: close.checked, channel_secret: secret.value, channel_token: tokenIn.value, recipients: recipients.map((r) => r.id) })
-    .then(() => { secret.value = ''; tokenIn.value = ''; });
+  // what is saved on the server: shown right under the key boxes (the keys themselves never come back)
+  const keyStatus = h('div', { class: 'line-keys' });
+  const drawKeys = (x) => {
+    secret.placeholder = x.has_secret ? `✓ บันทึกแล้ว (${x.secret_hint}) — ใส่ใหม่เฉพาะถ้าจะเปลี่ยน` : 'Channel secret (32 ตัว)';
+    tokenIn.placeholder = x.has_token ? `✓ บันทึกแล้ว (${x.token_hint}) — ใส่ใหม่เฉพาะถ้าจะเปลี่ยน` : 'Channel access token (long-lived)';
+    keyStatus.replaceChildren(
+      h('span', { class: 'badge ' + (x.has_secret ? 'ok' : 'bad') }, x.has_secret ? `✓ Channel secret บันทึกแล้ว ${x.secret_hint}` : '✗ ยังไม่มี Channel secret'),
+      h('span', { class: 'badge ' + (x.has_token ? 'ok' : 'bad') }, x.has_token ? `✓ Access token บันทึกแล้ว ${x.token_hint}` : '✗ ยังไม่มี Access token'),
+      x.bot && x.bot.name ? h('span', { class: 'badge info' }, `💬 เชื่อมกับ OA: ${x.bot.name} ${x.bot.basic_id || ''}`) : null);
+  };
+  drawKeys(s);
+  const save = async () => {
+    await api.put('/line/settings', { enabled: en.checked, notify_low: low.checked, notify_close: close.checked, channel_secret: secret.value, channel_token: tokenIn.value, recipients: recipients.map((r) => r.id) });
+    const typed = secret.value || tokenIn.value;
+    secret.value = ''; tokenIn.value = '';
+    const now = await api.get('/line/settings'); drawKeys(now);
+    if (typed) toast('✓ บันทึกคีย์ LINE แล้ว' + (now.bot && now.bot.name ? ` — OA: ${now.bot.name}` : ''), 'ok', 5000);
+  };
   // one-time code: send it to the LINE OA (1:1 chat, or a group the OA was invited to)
   const codeBox = h('div', { class: 'line-code' });
   const linkCode = async () => {
@@ -71,7 +87,9 @@ export async function linePage() {
       h('div', { class: 'form-grid' }, h('label', { class: 'field' }, 'Channel secret', secret), h('label', { class: 'field' }, 'Channel access token', tokenIn)),
       h('label', { class: 'field' }, 'Webhook URL', h('div', { class: 'row' }, h('input', { class: 'input', readonly: true, value: s.webhook_url, style: { flex: 1 } }),
         h('button', { class: 'btn', onclick: () => navigator.clipboard.writeText(s.webhook_url).then(() => toast('คัดลอกแล้ว', 'ok')) }, 'คัดลอก'))),
-      h('p', { class: 'small muted' }, 'คีย์ทั้งสองเก็บไว้ที่เซิร์ฟเวอร์เท่านั้น ไม่แสดงกลับในเบราว์เซอร์')),
+      keyStatus,
+      h('div', { style: { marginTop: '.6em' } }, saveBtn('💾 บันทึกคีย์', save)),
+      h('p', { class: 'small muted' }, 'คีย์ทั้งสองเก็บไว้ที่เซิร์ฟเวอร์เท่านั้น ไม่แสดงกลับในเบราว์เซอร์ (แสดงแค่ 4 ตัวท้ายให้รู้ว่าบันทึกแล้ว) · ระบบตรวจ token กับ LINE ก่อนบันทึก')),
     card(h('h3', {}, '2. เชื่อมแชตที่จะรับแจ้งเตือน'), recBox, h('button', { class: 'btn primary', onclick: linkCode }, '🔗 สร้างรหัสเชื่อมต่อ'), codeBox),
     card(h('h3', {}, '3. แจ้งเตือน'), h('div', { class: 'line-opts' }, enL, lowL, closeL),
       h('div', { class: 'row', style: { marginTop: '.8em' } }, saveBtn('บันทึก', save), h('button', { class: 'btn', onclick: () => save().then(() => api.post('/line/test', {})).then((r) => toast(`ส่งทดสอบแล้ว ${r.sent} แชต`, 'ok')).catch(errToast) }, '🔔 ส่งทดสอบ'))),

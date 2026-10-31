@@ -12,7 +12,7 @@ before(async () => {
   mock = http.createServer((req, res) => { let b = ''; req.on('data', (c) => { b += c; }); req.on('end', () => {
     sent.push({ path: req.url, auth: req.headers.authorization, body: b && req.headers['content-type'] === 'application/json' ? JSON.parse(b) : b.length });
     res.setHeader('content-type', 'application/json');
-    res.end(req.url === '/v2/bot/richmenu' ? '{"richMenuId":"rm-1"}' : req.url.startsWith('/v2/bot/profile') ? '{"displayName":"เจ้าของร้าน"}' : '{}');
+    res.end(req.url === '/v2/bot/richmenu' ? '{"richMenuId":"rm-1"}' : req.url.startsWith('/v2/bot/profile') ? '{"displayName":"เจ้าของร้าน"}' : req.url === '/v2/bot/info' ? (req.headers.authorization === 'Bearer ' + 'T'.repeat(160) ? '{"displayName":"Oppa Ramyeon","basicId":"@oppa"}' : (res.statusCode = 401, '{}')) : '{}');
   }); });
   await new Promise((r) => mock.listen(0, '127.0.0.1', r));
   process.env.LINE_API_BASE = `http://127.0.0.1:${mock.address().port}`;
@@ -22,16 +22,22 @@ before(async () => {
   await S.call('POST', '/api/shifts/open', { opening_cash: 0 }, { token: owner, terminal: 'pos1' });
 });
 after(async () => { await S.close(); mock.close(); delete process.env.LINE_API_BASE; });
-const SECRET = 'test-channel-secret';
+const SECRET = 'a1b2c3d4e5f60718293a4b5c6d7e8f90'; const TOKEN = 'T'.repeat(160);
 const hook = (events) => { const raw = JSON.stringify({ events }); return fetch(S.base + '/api/line/webhook', { method: 'POST', headers: { 'content-type': 'application/json', 'x-line-signature': crypto.createHmac('sha256', SECRET).update(raw).digest('base64') }, body: raw }); };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const lastTo = (path) => [...sent].reverse().find((x) => x.path === path);
 
 test('LINE: ตั้งค่า เชื่อมแชตด้วยรหัส แจ้งเตือนของใกล้หมดพร้อมปุ่ม เติมสต็อก/ใส่รายการซื้อ และสรุปตอนปิดรอบ', async () => {
-  let r = await S.call('PUT', '/api/line/settings', { enabled: true, notify_low: true, notify_close: true, channel_secret: SECRET, channel_token: 'tok-123' }, { token: owner });
-  assert.equal(r.status, 200);
+  // common mix-ups are caught before saving
+  let r = await S.call('PUT', '/api/line/settings', { enabled: true, channel_secret: '2001234567' }, { token: owner });
+  assert.equal(r.status, 400); assert.match(r.body.error, /Channel ID/);
+  r = await S.call('PUT', '/api/line/settings', { enabled: true, channel_token: 'W'.repeat(160) }, { token: owner });
+  assert.equal(r.status, 400, 'LINE ไม่รับ token'); assert.match(r.body.error, /ไม่รับ/);
+  r = await S.call('PUT', '/api/line/settings', { enabled: true, notify_low: true, notify_close: true, channel_secret: SECRET, channel_token: TOKEN }, { token: owner });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
   const st = (await S.call('GET', '/api/line/settings', undefined, { token: owner })).body;
-  assert.equal(st.has_secret, true); assert.equal(st.has_token, true); assert.equal(JSON.stringify(st).includes('tok-123'), false, 'ไม่ส่งคีย์กลับ');
+  assert.equal(st.has_secret, true); assert.equal(st.has_token, true); assert.equal(JSON.stringify(st).includes(TOKEN), false, 'ไม่ส่งคีย์กลับ');
+  assert.equal(st.secret_hint, '…8f90'); assert.deepEqual([st.bot.name, st.bot.basic_id], ['Oppa Ramyeon', '@oppa']);
   assert.equal((await S.call('GET', '/api/settings/public')).body.line, undefined);
   // bad signature is refused
   assert.equal((await fetch(S.base + '/api/line/webhook', { method: 'POST', headers: { 'x-line-signature': 'x' }, body: '{"events":[]}' })).status, 401);
@@ -39,7 +45,7 @@ test('LINE: ตั้งค่า เชื่อมแชตด้วยรห�
   const { code } = (await S.call('POST', '/api/line/link-code', {}, { token: owner })).body;
   await hook([{ type: 'message', replyToken: 'rt1', source: { type: 'user', userId: 'Uowner' }, message: { type: 'text', text: 'เชื่อมต่อ ' + code } }]); await wait(100);
   assert.equal(lastTo('/v2/bot/message/reply').body.replyToken, 'rt1');
-  assert.equal(lastTo('/v2/bot/message/reply').auth, 'Bearer tok-123');
+  assert.equal(lastTo('/v2/bot/message/reply').auth, 'Bearer ' + TOKEN);
   assert.deepEqual((await S.call('GET', '/api/line/settings', undefined, { token: owner })).body.recipients.map((x) => [x.id, x.name]), [['Uowner', 'เจ้าของร้าน']]);
   // someone else (not linked) can't press buttons
   const p = (await S.call('GET', '/api/stock', undefined, { token: owner })).body.products.find((x) => !x.track_stock);
