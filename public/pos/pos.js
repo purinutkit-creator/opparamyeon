@@ -1533,7 +1533,7 @@ function setupScanner() {
     const t = e.target;
     const inField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
     if (inField) return; // typing in a form (the search box handles its own codes)
-    if (document.querySelector('.modal-back:not(.closing)')) return;
+    if (st.locked || document.querySelector('.modal-back:not(.closing)')) return;
     const now = performance.now();
     if (now - last > 300) { buf = ''; fast = true; }
     else if (buf && now - last > 60) fast = false; // human typing speed
@@ -1547,19 +1547,69 @@ function setupScanner() {
 }
 
 // ---------------- auto lock ----------------
+// ---------------- screen lock when nobody touches the POS (จัดการร้าน → ล็อกหน้าจอ) ----------------
+let lockTimer = null, warnEl = null;
+const lockCfg = () => ({ enabled: true, seconds: 300, warn: 10, action: 'lock', keep_with_bill: false, ...((st.settings && st.settings.lock) || {}) });
+const dropWarn = () => { if (warnEl) { const w = warnEl; warnEl = null; leave(w, 'out', () => w.remove(), 260); } };
 function setupAutoLock() {
-  const mins = Number(st.settings.sale.auto_lock_minutes) || 0;
-  ['pointerdown', 'keydown'].forEach((ev) => document.addEventListener(ev, () => { st.lastActivity = Date.now(); }, true));
-  if (mins > 0) setInterval(() => { if (!st.locked && Date.now() - st.lastActivity > mins * 60000) lockNow(); }, 15000);
+  st.lastActivity = Date.now();
+  ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => document.addEventListener(ev, () => { st.lastActivity = Date.now(); dropWarn(); }, { capture: true, passive: true }));
+  clearInterval(lockTimer);
+  lockTimer = setInterval(checkIdle, 1000); // settings changes apply on the next tick (they arrive over the socket)
+}
+function checkIdle() {
+  const c = lockCfg();
+  if (!c.enabled || st.locked || document.querySelector('.leave-print') || (c.keep_with_bill && st.cart && st.cart.lines.length)) { if (!st.locked) st.lastActivity = Date.now(); return dropWarn(); } // off / on hold: the idle time starts again afterwards
+  const left = Math.ceil(c.seconds - (Date.now() - st.lastActivity) / 1000);
+  if (left <= 0) { dropWarn(); return c.action === 'logout' ? logout() : lockNow(); }
+  if (c.warn && left <= c.warn) {
+    if (!warnEl) {
+      warnEl = h('div', { class: 'idle-warn' }, h('div', { class: 'card' }, h('b', { class: 'iw-num' }),
+        h('div', {}, h('strong', {}, c.action === 'logout' ? 'จะออกจากระบบ' : 'จะล็อกหน้าจอ'), h('small', {}, 'ไม่มีการใช้งาน · แตะหน้าจอเพื่อใช้งานต่อ'))));
+      document.body.append(warnEl);
+    }
+    warnEl.querySelector('.iw-num').textContent = left;
+  }
 }
 function lockNow() {
+  if (st.locked) return;
   st.locked = true;
-  const pin = h('input', { class: 'input pin', type: 'password', inputmode: 'numeric', placeholder: 'PIN' });
-  const go = async () => { try { const r = await api.post('/auth/unlock', { pin: pin.value }); if (r.ok) { el.remove(); st.locked = false; st.lastActivity = Date.now(); } } catch (e) { errToast(e); pin.value = ''; } };
-  pin.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
-  const el = h('div', { class: 'lock' }, h('div', { class: 'card', style: { width: 'min(380px, 92vw)' } }, h('h3', {}, '🔒 หน้าจอถูกล็อก'), h('p', { class: 'muted' }, st.staff.name), pin, h('div', { style: { marginTop: '.6em' } }, keypad(pin, { onEnter: go })),
-    h('button', { class: 'btn ghost block', style: { marginTop: '.5em' }, onclick: logout }, 'สลับผู้ใช้')));
-  document.body.append(el); pin.focus();
+  let pin = '';
+  const dots = h('div', { class: 'pin-dots' });
+  const draw = () => dots.replaceChildren(...Array.from({ length: Math.max(4, Math.min(6, pin.length + (pin.length < 6 ? 1 : 0))) }, (_, i) => h('i', { class: i < pin.length ? 'on' : '' })));
+  draw();
+  const time = h('b', { class: 'lk-time' }), date = h('span', { class: 'lk-date' });
+  const tick = () => {
+    const d = new Date();
+    time.textContent = d.toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    date.textContent = d.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  };
+  tick(); const ct = setInterval(tick, 1000);
+  const unlock = () => {
+    clearInterval(ct); document.removeEventListener('keydown', onKey, true);
+    st.locked = false; st.lastActivity = Date.now();
+    leave(el, 'out', () => el.remove(), 420);
+  };
+  const go = async () => {
+    if (!pin) return toast('ใส่ PIN', 'warn');
+    try { const r = await api.post('/auth/unlock', { pin }); if (!r.ok) throw new Error('PIN ไม่ถูกต้อง'); unlock(); }
+    catch (e) { errToast(e); pin = ''; draw(); dots.classList.remove('shake'); void dots.offsetWidth; dots.classList.add('shake'); }
+  };
+  const press = (k) => { if (k === '⌫') pin = pin.slice(0, -1); else if (k === 'C') pin = ''; else if (pin.length < 6) pin += k; draw(); if (pin.length === 6) go(); };
+  const onKey = (e) => {
+    if (!document.body.contains(el)) return document.removeEventListener('keydown', onKey, true);
+    e.stopPropagation();
+    if (/^\d$/.test(e.key)) { e.preventDefault(); press(e.key); } else if (e.key === 'Backspace') { e.preventDefault(); press('⌫'); } else if (e.key === 'Enter') { e.preventDefault(); go(); }
+  };
+  document.addEventListener('keydown', onKey, true);
+  const pic = st.staff.photo ? h('img', { src: st.staff.photo, alt: '' }) : (String(st.staff.name || '?').replace(/^[เแโใไ]/, '')[0] || '?');
+  const el = h('div', { class: 'lock lock2' },
+    h('div', { class: 'lk-left' }, time, date, h('div', { class: 'lk-who' }, h('span', { class: 'lk-ph' }, pic), h('b', {}, st.staff.name), h('small', {}, st.terminal.name))),
+    h('div', { class: 'card lk-card' }, h('h2', {}, '🔒 หน้าจอถูกล็อก'), h('p', { class: 'muted' }, 'ไม่มีการใช้งาน · ใส่ PIN ของ ' + st.staff.name + ' เพื่อใช้งานต่อ'),
+      dots, h('div', { class: 'bigpad' }, ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'].map((k, i) => h('button', { type: 'button', class: 'key' + (k === 'C' || k === '⌫' ? ' fn' : ''), style: `--i:${i}`, onclick: () => press(k) }, k))),
+      h('button', { class: 'btn primary big block', onclick: go }, 'ปลดล็อก'),
+      h('button', { class: 'btn ghost block', style: { marginTop: '.5em' }, onclick: logout }, '🔄 สลับผู้ใช้ / สแกนบัตรคนอื่น')));
+  document.body.append(el);
 }
 async function logout() { await api.post('/auth/logout').catch(() => {}); store.del('staff_token'); location.reload(); }
 

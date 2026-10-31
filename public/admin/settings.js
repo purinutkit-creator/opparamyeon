@@ -15,7 +15,6 @@ export async function settingsPage() {
   const sale = form([{ k: 'tax_rate', label: 'VAT %', type: 'number' }, { k: 'tax_inclusive', label: 'ราคารวม VAT แล้ว', type: 'bool' }, { k: 'packaging_fee', label: 'ค่าบรรจุภัณฑ์กลับบ้าน (บาท)', type: 'money' },
     { k: 'packaging_mode', label: 'คิดค่าบรรจุภัณฑ์', type: 'select', options: [['per_bowl', 'ต่อชามกลับบ้าน'], ['per_order', 'ต่อออเดอร์ที่มีกลับบ้าน']] },
     { k: 'kitchen_send', label: 'ส่งครัว', type: 'select', options: [['after_payment', 'อัตโนมัติหลังรับชำระ'], ['manual', 'พนักงานกดส่งครัวก่อนชำระได้ (ที่ยังไม่ส่งจะส่งตอนชำระ)']] },
-    { k: 'auto_lock_minutes', label: 'ล็อกหน้าจออัตโนมัติ (นาที, 0=ปิด)', type: 'number' },
     { k: 'count_unit', label: 'ชื่อหน่วยที่นับ (แทนคำว่า "ชาม")', placeholder: 'ชาม / จาน / ที่ / แก้ว', hint: 'ใช้ในหน้าขาย ใบครัว ใบเสร็จ จอลูกค้า และรายงาน' }], s.sale);
   const pm = s.sale.payment_methods.map((m) => ({ ...m }));
   const pmBox = h('div', {}, pm.map((m) => { const cb = h('input', { type: 'checkbox', checked: m.enabled }); const n = h('input', { class: 'input', value: m.name, style: { maxWidth: '220px' } }); cb.onchange = () => (m.enabled = cb.checked); n.oninput = () => (m.name = n.value);
@@ -478,4 +477,34 @@ export async function auditPage() {
   const rows = await api.get('/audit');
   return page('ประวัติการแก้ไขสำคัญ', card(table([{ t: 'เวลา', f: (a) => fmtTime(a.created_at) }, { t: 'ผู้ทำ', f: (a) => a.actor_name || a.actor }, { t: 'การกระทำ', k: 'action' }, { t: 'ข้อมูล', f: (a) => `${a.entity} ${a.entity_id || ''}` },
     { t: 'ก่อน', f: (a) => h('code', { class: 'small' }, a.before_val ? JSON.stringify(a.before_val).slice(0, 160) : '') }, { t: 'หลัง', f: (a) => h('code', { class: 'small' }, a.after_val ? JSON.stringify(a.after_val).slice(0, 160) : '') }, { t: 'เหตุผล', k: 'reason' }], rows)));
+}
+
+// ---------------- screen lock when the POS is left untouched ----------------
+export async function lockPage() {
+  const L = { enabled: true, seconds: 300, warn: 10, action: 'lock', keep_with_bill: false, ...((await api.get('/settings')).lock || {}) };
+  const on = h('input', { type: 'checkbox', checked: !!L.enabled });
+  const PRESETS = [[30, '30 วินาที'], [60, '1 นาที'], [120, '2 นาที'], [180, '3 นาที'], [300, '5 นาที'], [600, '10 นาที'], [900, '15 นาที'], [1800, '30 นาที'], [3600, '1 ชั่วโมง']];
+  let secs = L.seconds;
+  const num = h('input', { class: 'input', type: 'number', min: 1 });
+  const unit = h('select', { class: 'input' }, h('option', { value: 1 }, 'วินาที'), h('option', { value: 60 }, 'นาที'));
+  const chips = h('div', { class: 'row' });
+  const setSecs = (v) => { secs = v; const m = v % 60 === 0; unit.value = m ? 60 : 1; num.value = m ? v / 60 : v; drawChips(); };
+  const drawChips = () => chips.replaceChildren(...PRESETS.map(([v, t]) => h('button', { type: 'button', class: 'chip' + (secs === v ? ' on' : ''), onclick: () => setSecs(v) }, t)));
+  const fromInputs = () => { secs = Math.max(15, Math.round((Number(num.value) || 0) * Number(unit.value))); drawChips(); };
+  num.oninput = fromInputs; unit.onchange = fromInputs;
+  setSecs(secs);
+  const warn = h('select', { class: 'input' }, [[0, 'ไม่เตือน'], [5, '5 วินาที'], [10, '10 วินาที'], [15, '15 วินาที'], [30, '30 วินาที']].map(([v, t]) => h('option', { value: v, selected: Number(L.warn) === v }, t)));
+  const action = h('select', { class: 'input' }, [['lock', '🔒 ล็อกหน้าจอ — ใส่ PIN คนเดิมเพื่อใช้งานต่อ (หรือสลับผู้ใช้)'], ['logout', '🚪 ออกจากระบบ — กลับหน้าสแกนบัตรพนักงาน']].map(([v, t]) => h('option', { value: v, selected: L.action === v }, t)));
+  const keep = h('input', { type: 'checkbox', checked: !!L.keep_with_bill });
+  const body = h('div', {}, h('div', { class: 'form-grid' }, h('label', { class: 'field' }, 'ไม่มีการใช้งานนานเท่าไหร่', h('div', { style: 'display:grid;grid-template-columns:1fr 130px;gap:8px' }, num, unit)), h('label', { class: 'field' }, 'เตือนนับถอยหลังก่อน', warn)),
+    h('div', { style: { margin: '.4em 0 .8em' } }, chips),
+    h('label', { class: 'field' }, 'เมื่อครบเวลา', action),
+    h('label', { class: 'switch' }, keep, 'ไม่ล็อกระหว่างมีรายการในบิล (กำลังคีย์ขาย)'));
+  const sync = () => { body.style.opacity = on.checked ? 1 : 0.45; body.style.pointerEvents = on.checked ? '' : 'none'; };
+  on.onchange = sync; sync();
+  return page('ล็อกหน้าจอ (Inactive)', card(h('h3', {}, '🔒 ล็อกหน้าจอเมื่อไม่มีการใช้งาน'),
+    h('p', { class: 'small muted' }, 'ถ้าไม่มีใครแตะหน้าจอ POS หรือกดปุ่มเลยตามเวลาที่ตั้ง ระบบจะล็อกหน้าจอ (หรือออกจากระบบ) ให้เอง · ก่อนล็อกมีนับถอยหลังให้แตะเพื่อใช้งานต่อ · มีผลกับทุกเครื่องขายทันทีที่บันทึก'),
+    h('label', { class: 'switch', style: { margin: '.4em 0 1em', fontWeight: 800 } }, on, 'เปิดใช้การล็อกหน้าจออัตโนมัติ (ปิด = ไม่ล็อกเลย)'),
+    body,
+    h('div', { style: { marginTop: '1em' } }, saveBtn('บันทึก', () => saveKey('lock', { enabled: on.checked, seconds: secs, warn: Number(warn.value), action: action.value, keep_with_bill: keep.checked })))));
 }

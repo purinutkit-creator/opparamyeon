@@ -83,6 +83,15 @@ export async function seed({ demo = process.env.SEED_DEMO !== 'false' } = {}) {
     }
     await db.run("INSERT INTO settings(key, value) VALUES('seed_v13', 'true') ON CONFLICT(key) DO NOTHING");
   }
+  // v1.30: the screen lock gets its own settings; carry over the old "auto lock (minutes, 0 = off)" of the sale settings
+  if (!(await db.get("SELECT key FROM settings WHERE key = 'seed_v130'"))) {
+    const sale = J((await db.get("SELECT value FROM settings WHERE key = 'sale'") || {}).value, null);
+    if (sale && sale.auto_lock_minutes !== undefined && !(await db.get("SELECT key FROM settings WHERE key = 'lock'"))) {
+      const m = Number(sale.auto_lock_minutes) || 0;
+      await db.run('INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO NOTHING', ['lock', S({ enabled: m > 0, seconds: Math.max(30, m * 60 || 300), warn: 10, action: 'lock', keep_with_bill: false })]);
+    }
+    await db.run("INSERT INTO settings(key, value) VALUES('seed_v130', 'true') ON CONFLICT(key) DO NOTHING");
+  }
   if (!(await db.get('SELECT id FROM terminals LIMIT 1'))) await db.run('INSERT INTO terminals(id, name, created_at) VALUES(?,?,?)', ['pos1', 'เครื่องขาย 1', now()]);
   if (!(await db.get('SELECT id FROM tiers LIMIT 1'))) {
     const tiers = [['member', 'Member', '#64748b', 0, 0, 1, 0], ['silver', 'Silver', '#94a3b8', 150000, 5, 1.2, 0], ['gold', 'Gold', '#eab308', 500000, 15, 1.5, 5], ['vip', 'VIP', '#dc2626', 1500000, 40, 2, 10]];

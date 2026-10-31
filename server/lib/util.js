@@ -73,6 +73,9 @@ export const DEFAULT_SETTINGS = {
   // noodle cookers: bowls are queued on the machine that is free first (estimates shown on the POS)
   cookers: { enabled: true, count: 2, minutes_per_bowl: 4, split_by_bowl: true, machines: [{ name: 'เครื่องต้ม 1', printer_id: '' }, { name: 'เครื่องต้ม 2', printer_id: '' }] },
   week_start: 1,
+  // POS screen lock when nobody touches it: after `seconds` (with a `warn`-second countdown first) → 'lock' (PIN to unlock) or 'logout';
+  // keep_with_bill: don't lock while a bill is being keyed
+  lock: { enabled: true, seconds: 300, warn: 10, action: 'lock', keep_with_bill: false },
   // staff roster set by the owner: how many people scan in at opening per weekday (0=Sun…6=Sat; 2+ = everyone scans, then the main one is picked),
   // and special days: { 'YYYY-MM-DD': { count: null|n, late: [staff ids joining later], leave: [staff ids on leave] } }
   // clock-in slip: print 'always' (each time someone clocks in) / 'off', on printer_id ('' = the receipt printer)

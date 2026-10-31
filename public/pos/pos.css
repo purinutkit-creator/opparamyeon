@@ -645,3 +645,22 @@ html[data-vt] .shift-crew .av, html[data-vt] .cp .av { animation: none; }
 .mc-warn b { font-size: 1.05em; } .mc-warn small { color: #92400e; }
 .spinner.sm { width: 28px; height: 28px; border-width: 4px; margin: 0 auto; }
 .leave-print.held .lp-ring { animation-play-state: paused; }
+
+/* ---- idle: warning countdown + lock screen (v1.30) ---- */
+.idle-warn { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 1500; animation: m-toast .5s var(--ease-spring) both; pointer-events: none; }
+.idle-warn .card { display: flex; align-items: center; gap: 14px; padding: .8em 1.3em; border-radius: 22px; background: #111; color: #fff; box-shadow: 0 16px 40px rgb(0 0 0 / .35); }
+.idle-warn .iw-num { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; background: var(--brand); font-family: var(--head-font); font-size: 1.6em; animation: dotpop .9s ease-in-out infinite; }
+.idle-warn small { display: block; opacity: .75; }
+.idle-warn.out { animation: m-toast-out .3s var(--ease-io) forwards; }
+.lock.lock2 { display: grid; grid-template-columns: 1.1fr 1fr; place-items: stretch; padding: 0; background: var(--grad); backdrop-filter: none; z-index: 950; animation: m-fade .45s ease-out both; }
+.lock2.out { animation: m-fade-out .4s ease-in forwards; }
+.lk-left { position: relative; color: #fff; padding: 6vh 5vw; display: flex; flex-direction: column; text-shadow: 0 4px 18px rgb(0 0 0 / .2); }
+.lk-time { font-family: var(--head-font); font-size: clamp(54px, 8vw, 110px); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; animation: rise .7s var(--ease-out) both; }
+.lk-date { font-size: clamp(16px, 2vw, 26px); font-weight: 700; opacity: .92; margin-top: .3em; }
+.lk-who { margin: auto 0 0; display: grid; justify-items: start; gap: .3em; animation: rise .7s var(--ease-out) .15s both; }
+.lk-who b { font-family: var(--head-font); font-size: clamp(26px, 3.4vw, 44px); } .lk-who small { opacity: .85; font-weight: 700; }
+.lk-ph { width: 120px; height: 120px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; background: rgb(255 255 255 / .2); font-family: var(--head-font); font-size: 3em; box-shadow: 0 0 0 5px rgb(255 255 255 / .8); }
+.lk-ph img { width: 100%; height: 100%; object-fit: cover; }
+.lk-card { align-self: center; justify-self: center; width: min(460px, calc(100% - 32px)); padding: 1.6em; animation: slidein-r2 .7s var(--ease-out) both; }
+.lk-card .bigpad .key { animation: keyin2 .55s var(--ease-spring) both; animation-delay: calc(.2s + var(--i, 0) * 30ms); }
+@media (max-width: 860px) { .lock.lock2 { grid-template-columns: 1fr; } .lk-left { padding: 3vh 6vw; } .lk-who { display: none; } }

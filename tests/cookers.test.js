@@ -327,3 +327,15 @@ test('ใบสรุปร้านค้าตอนปิดรอบ: รว
   await S.call('PUT', '/api/settings/print', { value: P }, { token: owner });
   await S.call('POST', '/api/shifts/open', { opening_cash: 0 }, { token: owner, terminal: 'pos1' });
 });
+
+test('ล็อกหน้าจอ Inactive: ตั้งเวลา/เตือน/ล็อกหรือออกจากระบบ ส่งถึง POS และกันค่าผิด', async () => {
+  let r = await S.call('PUT', '/api/settings/lock', { value: { enabled: true, seconds: 5, warn: 999, action: 'xx', keep_with_bill: 1 } }, { token: owner });
+  assert.equal(r.status, 200);
+  const pub = (await S.call('GET', '/api/settings/public')).body.lock;
+  assert.deepEqual(pub, { enabled: true, seconds: 15, warn: 60, action: 'lock', keep_with_bill: true }, 'อย่างน้อย 15 วินาที เตือนไม่เกิน 60');
+  await S.call('PUT', '/api/settings/lock', { value: { enabled: false, seconds: 600, warn: 10, action: 'logout' } }, { token: owner });
+  const p2 = (await S.call('GET', '/api/settings/public')).body.lock;
+  assert.equal(p2.enabled, false); assert.equal(p2.action, 'logout'); assert.equal(p2.seconds, 600);
+  // PIN check on the lock screen
+  assert.equal((await S.call('POST', '/api/auth/unlock', { pin: '1234' }, { token: owner })).body.ok, true);
+});

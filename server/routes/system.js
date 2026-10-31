@@ -237,7 +237,7 @@ r.put('/fonts/:id', staffAuth('settings'), ah(async (req, res) => { await db.run
 r.delete('/fonts/:id', staffAuth('settings'), ah(async (req, res) => { await db.run('DELETE FROM fonts WHERE id = ?', [req.params.id]); res.json({ ok: true }); }));
 
 // ---------- settings ----------
-const PUBLIC_KEYS = ['store', 'display', 'fonts', 'queue', 'mobile', 'members', 'points', 'week_start', 'theme'];
+const PUBLIC_KEYS = ['store', 'display', 'fonts', 'queue', 'mobile', 'members', 'points', 'week_start', 'theme', 'lock'];
 export function publicSettings(s) {
   const out = Object.fromEntries(PUBLIC_KEYS.map((k) => [k, s[k]]));
   out.members = { ...s.members, otp_webhook_url: undefined };
@@ -262,6 +262,10 @@ r.put('/settings/:key', staffAuth('settings'), ah(async (req, res) => {
   const before = (await getSettings())[key];
   const v = req.body.value;
   if (key === 'payment' && v && v.providers) for (const p of Object.values(v.providers)) { delete p.api_key; delete p.secret; } // secrets live in env vars only
+  if (key === 'lock' && v) { // screen lock: 15 s … 8 h, warning 0–60 s, lock (PIN) or sign out
+    v.enabled = !!v.enabled; v.seconds = Math.max(15, Math.min(8 * 3600, Math.round(Number(v.seconds) || 300)));
+    v.warn = Math.max(0, Math.min(60, Math.round(Number(v.warn ?? 10)))); v.action = v.action === 'logout' ? 'logout' : 'lock'; v.keep_with_bill = !!v.keep_with_bill;
+  }
   if (key === 'crew' && v) { // roster: whole numbers, staff ids as text, special days from 60 days back
     const keep = new Date(Date.now() - 60 * 864e5).toISOString().slice(0, 10), ids = (x) => (Array.isArray(x) ? x.map(String).slice(0, 50) : []);
     v.weekly = Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [d, Math.max(1, Math.min(12, Math.round(Number((v.weekly || {})[d]) || 1)))]));
