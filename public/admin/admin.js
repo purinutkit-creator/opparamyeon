@@ -8,6 +8,7 @@ import { api, ctx, can, page, card, kpi, money, table, barChart } from './common
 import { menuPage, stockPage, staffPage, tablesPage } from './menu.js';
 import { membersPage, memberDetail, resetsPage, tiersPage, rewardsPage } from './members.js';
 import { settingsPage, displayPage, fontsPage, printersPage, devicesPage, auditPage, paymentsPage, lockPage } from './settings.js';
+import { linePage } from './line.js';
 import { designerPage } from './designer.js';
 import { livePage } from './live.js';
 import { labelsPage } from './labels.js';
@@ -21,7 +22,7 @@ const ROUTES = [
   ['ภาพรวม', [['dashboard', '📊 ยอดขายวันนี้', 'view_sales'], ['live', '🔴 Live View หน้าร้าน', 'view_sales'], ['bills', '🧾 ประวัติบิล', 'view_sales'], ['reports', '📈 รายงาน', 'view_sales']]],
   ['ร้าน', [['menu', '🍜 เมนูและสินค้า', 'manage_menu'], ['assistant', '✨ ผู้ช่วยเพิ่มสินค้า', 'manage_menu'], ['labels', '🏷️ พิมพ์บาร์โค้ดสินค้า', 'manage_menu'], ['stock', '📦 สต็อก', 'manage_stock'], ['tables', '🪑 โต๊ะ', 'manage_tables'], ['staff', '👥 พนักงานและสิทธิ์', 'manage_staff']]],
   ['สมาชิก', [['members', '⭐ สมาชิก', 'manage_members'], ['resets', '🔑 คำขอรีเซ็ตรหัส', 'member_reset'], ['tiers', '👑 Tier Member', 'settings'], ['rewards', '🎁 ของรางวัล', 'manage_members']]],
-  ['ตั้งค่า', [['settings', '⚙️ ตั้งค่าร้าน', 'settings'], ['lock', '🔒 ล็อกหน้าจอ (Inactive)', 'settings'], ['theme', '🎨 ธีมและรูปแบบ', 'settings'], ['payments', '💳 การรับชำระเงิน', 'settings'], ['designer', '🖨️ ออกแบบเอกสาร', 'settings'], ['fonts', '🔤 ฟอนต์', 'settings'],
+  ['ตั้งค่า', [['settings', '⚙️ ตั้งค่าร้าน', 'settings'], ['lock', '🔒 ล็อกหน้าจอ (Inactive)', 'settings'], ['line', '💬 LINE แจ้งเตือนสต็อก', 'settings'], ['theme', '🎨 ธีมและรูปแบบ', 'settings'], ['payments', '💳 การรับชำระเงิน', 'settings'], ['designer', '🖨️ ออกแบบเอกสาร', 'settings'], ['fonts', '🔤 ฟอนต์', 'settings'],
     ['display', '📺 จอลูกค้า', 'settings'], ['printers', '🖨️ เครื่องพิมพ์', 'manage_printers'], ['devices', '💻 เครื่องขาย/อุปกรณ์', 'settings'], ['audit', '📜 ประวัติการแก้ไข', 'settings']]],
 ];
 
@@ -79,7 +80,7 @@ async function route() {
       location.hash = '#/bills'; setTimeout(() => billDetail(found.id), 300); return;
     }
     const pages = { dashboard, live: () => livePage(sock), labels: labelsPage, theme: themePage, assistant: assistantPage, bills: billsPage, reports: reportsPage, menu: menuPage, stock: stockPage, tables: tablesPage, staff: staffPage, members: arg ? () => memberDetail(arg) : membersPage,
-      resets: resetsPage, tiers: tiersPage, rewards: rewardsPage, settings: settingsPage, lock: lockPage, payments: paymentsPage, designer: designerPage, fonts: fontsPage, display: displayPage,
+      resets: resetsPage, tiers: tiersPage, rewards: rewardsPage, settings: settingsPage, lock: lockPage, line: linePage, payments: paymentsPage, designer: designerPage, fonts: fontsPage, display: displayPage,
       printers: printersPage, devices: devicesPage, audit: auditPage };
     const fn = pages[r] || dashboard;
     set(await fn(set));

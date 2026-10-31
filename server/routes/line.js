@@ -1,0 +1,114 @@
+// LINE stock management: the webhook (button presses, linking a chat) and the shop website's settings + shopping list.
+import express, { Router } from 'express';
+import { db } from '../db.js';
+import { ah, now, bad, notFound, audit, getSecret, setSecret, setSetting } from '../lib/util.js';
+import { staffAuth } from '../lib/auth.js';
+import { adjustStock } from '../lib/stock.js';
+import { verifyLineSignature, lineReply, lineCfg, lowItems, itemOf, openList, addToList, suggestQty, lowStockMessage, listMessage, tryLink, isRecipient, newLinkCode, setupRichMenu, lineToAll } from '../lib/line.js';
+
+const num = (v) => Math.round(Number(v || 0) * 100) / 100;
+export const lineWebhook = Router();
+lineWebhook.post('/line/webhook', express.raw({ type: '*/*', limit: '1mb' }), ah(async (req, res) => {
+  const raw = req.body instanceof Buffer ? req.body : Buffer.from('');
+  if (!(await verifyLineSignature(raw, req.headers['x-line-signature']))) return res.status(401).json({ error: 'bad signature' });
+  let body; try { body = JSON.parse(raw.toString('utf8')); } catch { return res.status(400).end(); }
+  res.json({ ok: true }); // LINE wants a quick 200; replies go out with the reply token
+  for (const ev of body.events || []) await handle(ev).catch((e) => console.warn('[line webhook]', e.message));
+}));
+
+async function handle(ev) {
+  const src = ev.source || {}, rt = ev.replyToken;
+  if (ev.type === 'message' && ev.message && ev.message.type === 'text') {
+    const linked = await tryLink(ev.message.text, src);
+    if (linked) return lineReply(rt, { type: 'text', text: `✅ เชื่อมต่อแล้ว (${linked}) — จะได้รับแจ้งเตือนสินค้าใกล้หมดและรายการที่ต้องซื้อตอนปิดรอบ\nกดเมนูด้านล่าง หรือพิมพ์ "สต็อก" / "ซื้อ"` });
+    if (!(await isRecipient(src))) return;
+    const t = ev.message.text.trim();
+    if (/สต็อก|stock|ใกล้หมด/i.test(t)) return lineReply(rt, lowStockMessage(await lowItems()));
+    if (/ซื้อ|list|รายการ/i.test(t)) return lineReply(rt, listMessage(await openList(), await lowItems()));
+    return;
+  }
+  if (ev.type !== 'postback' || !(await isRecipient(src))) return;
+  const p = new URLSearchParams(ev.postback.data || '');
+  const a = p.get('a'), who = 'line:' + (src.userId || src.groupId || '');
+  if (a === 'low') return lineReply(rt, lowStockMessage(await lowItems()));
+  if (a === 'list') return lineReply(rt, listMessage(await openList(), await lowItems()));
+  if (a === 'add') { // how much to add: quick buttons
+    const x = await itemOf(p.get('t'), p.get('i')); if (!x) return;
+    return lineReply(rt, { type: 'text', text: `➕ เพิ่มสต็อก ${x.name} (คงเหลือ ${num(x.stock)} ${x.unit || ''}) — เลือกจำนวน`,
+      quickReply: { items: [1, 6, 12, 24, 48, suggestQty(x)].filter((v, i, arr) => arr.indexOf(v) === i).map((q) => ({ type: 'action', action: { type: 'postback', label: `+${q}`, data: `a=addq&t=${x.type}&i=${x.id}&q=${q}`, displayText: `เพิ่ม ${x.name} +${q}` } })) } });
+  }
+  if (a === 'addq') {
+    const q = Number(p.get('q')); if (!(q > 0 && q <= 9999)) return;
+    const x = await adjustStock({ type: p.get('t'), id: p.get('i'), qty: q, mode: 'add', note: 'เติมผ่าน LINE', actor: who });
+    return lineReply(rt, { type: 'text', text: `✅ เติม ${x.name} +${q} แล้ว — คงเหลือ ${num(x.stock)} ${x.unit || ''}` });
+  }
+  if (a === 'buy') {
+    const x = await itemOf(p.get('t'), p.get('i')); if (!x) return;
+    await addToList({ type: x.type, itemId: x.id, name: x.name, qty: suggestQty(x), unit: x.unit || '', by: who });
+    return lineReply(rt, [{ type: 'text', text: `🛒 ใส่ ${x.name} ×${suggestQty(x)} ในรายการที่ต้องซื้อแล้ว` }, listMessage(await openList(), await lowItems())]);
+  }
+  if (a === 'buyall') {
+    const list = await openList();
+    for (const x of await lowItems()) if (!list.some((l) => l.item_type === x.type && l.item_id === x.id)) await addToList({ type: x.type, itemId: x.id, name: x.name, qty: suggestQty(x), unit: x.unit || '', by: who });
+    return lineReply(rt, listMessage(await openList(), await lowItems()));
+  }
+  if (a === 'bought') { // bought: off the list, and offer to put it into stock
+    const l = await db.get("SELECT * FROM shopping_list WHERE id = ? AND status = 'open'", [p.get('l')]); if (!l) return lineReply(rt, { type: 'text', text: 'รายการนี้ซื้อแล้ว' });
+    await db.run("UPDATE shopping_list SET status = 'bought', done_at = ? WHERE id = ?", [now(), l.id]);
+    return lineReply(rt, { type: 'text', text: `✓ ซื้อ ${l.name} แล้ว${l.item_id ? ' — เติมเข้าสต็อกเลยไหม?' : ''}`,
+      ...(l.item_id ? { quickReply: { items: [{ type: 'action', action: { type: 'postback', label: `เติม +${num(l.qty)}`, data: `a=addq&t=${l.item_type}&i=${l.item_id}&q=${num(l.qty)}`, displayText: `เติม ${l.name} +${num(l.qty)}` } },
+        { type: 'action', action: { type: 'postback', label: 'ยังไม่เติม', data: 'a=list', displayText: 'ดูรายการที่ต้องซื้อ' } }] } } : {}) });
+  }
+}
+
+const r = Router();
+// settings page: secrets are write-only (never returned), recipients linked with a one-time code
+r.get('/line/settings', staffAuth('settings'), ah(async (req, res) => {
+  const c = await lineCfg();
+  const base = process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '';
+  res.json({ enabled: c.enabled, notify_low: c.notify_low, notify_close: c.notify_close, recipients: c.recipients || [], webhook_url: base + '/api/line/webhook',
+    has_secret: !!(await getSecret('line.channel_secret')), has_token: !!(await getSecret('line.channel_token')) });
+}));
+r.put('/line/settings', staffAuth('settings'), ah(async (req, res) => {
+  const b = req.body || {};
+  if (b.channel_secret) await setSecret('line.channel_secret', String(b.channel_secret).trim());
+  if (b.channel_token) await setSecret('line.channel_token', String(b.channel_token).trim());
+  const c = await lineCfg();
+  const recipients = Array.isArray(b.recipients) ? (c.recipients || []).filter((x) => b.recipients.includes(x.id)) : c.recipients;
+  await setSetting('line', { ...c, enabled: !!b.enabled, notify_low: !!b.notify_low, notify_close: !!b.notify_close, recipients });
+  await audit(req.staff.id, 'settings', 'settings', 'line', null, { enabled: !!b.enabled, secret_changed: !!b.channel_secret, token_changed: !!b.channel_token });
+  res.json({ ok: true });
+}));
+r.post('/line/link-code', staffAuth('settings'), ah(async (req, res) => res.json({ code: await newLinkCode() })));
+r.post('/line/test', staffAuth('settings'), ah(async (req, res) => {
+  const n = await lineToAll([{ type: 'text', text: '🔔 ทดสอบจากระบบ POS — ข้อความนี้แปลว่าการแจ้งเตือนสต็อกทาง LINE ใช้งานได้' }, lowStockMessage(await lowItems())]);
+  if (!n) throw bad('ส่งไม่ได้ — ตรวจ token, เปิดใช้งาน และเชื่อมต่อแชตอย่างน้อย 1 แชต');
+  res.json({ sent: n });
+}));
+r.post('/line/richmenu', staffAuth('settings'), ah(async (req, res) => {
+  const m = /^data:(image\/(?:png|jpeg));base64,([A-Za-z0-9+/=]+)$/.exec(String((req.body || {}).image || ''));
+  if (!m) throw bad('รูปริชเมนูไม่ถูกต้อง');
+  const buf = Buffer.from(m[2], 'base64');
+  if (buf.length > 1024 * 1024) throw bad('รูปริชเมนูต้องไม่เกิน 1MB');
+  res.json({ id: await setupRichMenu(buf, m[1]) });
+}));
+// shopping list (also on the stock page)
+r.get('/shopping', staffAuth(), ah(async (req, res) => res.json({ open: await openList(), bought: await db.all("SELECT * FROM shopping_list WHERE status = 'bought' ORDER BY done_at DESC LIMIT 30"), low: await lowItems() })));
+r.post('/shopping', staffAuth('manage_stock'), ah(async (req, res) => {
+  const b = req.body || {};
+  let name = String(b.name || '').trim(), unit = b.unit || '';
+  if (b.item_id) { const x = await itemOf(b.item_type, b.item_id); if (!x) throw notFound(); name = x.name; unit = x.unit || ''; }
+  if (!name) throw bad('ใส่ชื่อของที่ต้องซื้อ');
+  res.json({ id: await addToList({ type: b.item_id ? b.item_type : 'other', itemId: b.item_id || null, name, qty: Number(b.qty) || 1, unit, note: b.note || '', by: req.staff.id }) });
+}));
+r.put('/shopping/:id', staffAuth('manage_stock'), ah(async (req, res) => {
+  const l = await db.get('SELECT * FROM shopping_list WHERE id = ?', [req.params.id]); if (!l) throw notFound();
+  const b = req.body || {};
+  if (b.qty !== undefined) await db.run('UPDATE shopping_list SET qty = ? WHERE id = ?', [Math.max(0, Number(b.qty) || 0), l.id]);
+  if (b.status === 'bought' || b.status === 'open') await db.run('UPDATE shopping_list SET status = ?, done_at = ? WHERE id = ?', [b.status, b.status === 'bought' ? now() : null, l.id]);
+  // bought + restock: the quantity goes into stock
+  if (b.restock && l.item_id) await adjustStock({ type: l.item_type, id: l.item_id, qty: Number(b.qty ?? l.qty), mode: 'add', note: 'ซื้อตามรายการ', actor: req.staff.id });
+  res.json({ ok: true });
+}));
+r.delete('/shopping/:id', staffAuth('manage_stock'), ah(async (req, res) => { await db.run('DELETE FROM shopping_list WHERE id = ?', [req.params.id]); res.json({ ok: true }); }));
+export default r;

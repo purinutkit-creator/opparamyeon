@@ -81,8 +81,9 @@ export async function labelsPage() {
     h('h4', {}, '🖨 การพิมพ์ด้วยเครื่องพิมพ์ใบเสร็จ'),
     h('div', { class: 'form-grid' }, chk('cut_each', 'ตัดกระดาษทุกแถว'), num('feed_mm', 'ระยะห่างระหว่างแถว (มม.) — 0 = ติดกันพอดี', 0.5),
       sel('end', 'จบงานพิมพ์', [['cut', 'ป้อนถึงมีดแล้วตัด (เครื่องที่มีมีดตัด)'], ['feed', 'ป้อนกระดาษเพื่อฉีก ตามระยะด้านขวา'], ['none', 'ไม่ป้อนเพิ่ม (พอดีฉลากตัวสุดท้าย)']]),
-      num('end_feed_mm', 'ระยะป้อนตอนจบ (มม.) ถ้าเลือก "ป้อนเพื่อฉีก"', 1)),
-    h('p', { class: 'small muted' }, 'กระดาษที่ออกมาเท่ากับขนาดฉลากที่ตั้งพอดี ไม่ป้อนกระดาษเปล่าก่อน/หลังแต่ละแถว (มีแค่ระยะห่างระหว่างแถวที่ตั้ง)'));
+      num('end_feed_mm', 'ระยะป้อนตอนจบ (มม.) ถ้าเลือก "ป้อนเพื่อฉีก"', 1),
+      num('back_mm', 'ถอยกระดาษก่อนพิมพ์ (มม.) — มีกระดาษเปล่าด้านบนเยอะ ให้ใส่ประมาณระยะที่เกิน', 1)),
+    h('p', { class: 'small muted' }, 'กระดาษที่ออกมาเท่ากับขนาดฉลากที่ตั้งพอดี ไม่ป้อนกระดาษเปล่าก่อน/หลังแต่ละแถว (มีแค่ระยะห่างระหว่างแถวที่ตั้ง) · กระดาษเปล่าด้านบนที่เหลือมักมาจากระยะระหว่างหัวพิมพ์กับมีดตัดหลังการตัดครั้งก่อน — เลือกจบงานแบบ "ไม่ป้อนเพิ่ม" หรือใส่ "ถอยกระดาษก่อนพิมพ์" (เครื่องที่ถอยกระดาษได้) แล้วกด "🧪 พิมพ์ทดสอบ 1 ดวง" เพื่อปรับ'));
 
   // ---- preview ----
   const canvasBox = h('div', { class: 'lbl-canvas' });
@@ -140,11 +141,12 @@ export async function labelsPage() {
     inputs.width_mm.value = cfg.width_mm; preview(); checkFit();
     toast(`ตั้งความกว้างฉลากเป็น ${cfg.width_mm} มม. ให้พอดีกระดาษ`, 'ok');
   };
-  const printShop = async (e) => {
-    if (!total()) return toast('เลือกสินค้าและจำนวนก่อน', 'warn');
+  const printShop = async (e, test = false) => {
+    if (!test && !total()) return toast('เลือกสินค้าและจำนวนก่อน', 'warn');
     e.target.disabled = true;
     try {
-      const items = [...qty].map(([product_id, n]) => ({ product_id, qty: n }));
+      // test: one label of the first chosen product (or the first product) to check where the paper starts and ends
+      const items = test ? [{ product_id: [...qty.keys()][0] || catalog.products[0].id, qty: 1 }] : [...qty].map(([product_id, n]) => ({ product_id, qty: n }));
       if (isLinkedHere(printerSel.value)) { // connected to this computer: print right now
         const r = await api.post('/print/labels', { printer_id: printerSel.value, items, cfg, local: true });
         toast(`กำลังพิมพ์ ${r.count} ดวง…`, 'info', 2000);
@@ -188,7 +190,8 @@ export async function labelsPage() {
       h('div', { class: 'lbl-side' }, card(h('h3', {}, '3. ตัวอย่างและพิมพ์'), canvasBox, sizeNote, warnBox,
         h('div', { class: 'lbl-out' },
           h('h4', {}, '🖨 เครื่องพิมพ์ใบเสร็จในระบบ (58/80 มม.)'),
-          active.length ? [printerSel, linkBox, h('div', { class: 'row', style: { marginTop: '.5em' } }, h('button', { class: 'btn', style: { flex: 1 }, onclick: fitPaper, title: 'ปรับความกว้างฉลากให้เต็มกระดาษของเครื่องที่เลือก' }, '↔ พอดีกระดาษ'), h('button', { class: 'btn primary', style: { flex: 1 }, onclick: printShop }, '🖨 พิมพ์ด้วยเครื่องนี้')), fitNote,
+          active.length ? [printerSel, linkBox, h('div', { class: 'row', style: { marginTop: '.5em' } }, h('button', { class: 'btn', style: { flex: 1 }, onclick: fitPaper, title: 'ปรับความกว้างฉลากให้เต็มกระดาษของเครื่องที่เลือก' }, '↔ พอดีกระดาษ'), h('button', { class: 'btn primary', style: { flex: 1 }, onclick: printShop }, '🖨 พิมพ์ด้วยเครื่องนี้')),
+            h('button', { class: 'btn block', style: { marginTop: '.4em' }, onclick: (e) => printShop(e, true) }, '🧪 พิมพ์ทดสอบ 1 ดวง (ปรับระยะกระดาษ)'), fitNote,
             h('p', { class: 'small muted' }, 'ใช้เครื่องพิมพ์ใบเสร็จเครื่องเดียวกับที่พิมพ์ใบเสร็จได้เลย ฉลากพิมพ์ต่อกันเป็นแถว (ตั้ง "ตัดกระดาษทุกแถว" ได้ในส่วนตั้งค่า) · ระบบจำเครื่องพิมพ์ที่เลือกไว้ใช้ครั้งหน้า')]
             : h('div', {}, h('p', { class: 'small muted' }, 'ยังไม่มีเครื่องพิมพ์ใบเสร็จในระบบ — เพิ่มเครื่องพิมพ์ก่อน แล้วกลับมาที่หน้านี้'), h('a', { class: 'btn', href: '#/printers' }, '➕ เพิ่มเครื่องพิมพ์')),
           h('h4', {}, '🏷️ เครื่องพิมพ์สติกเกอร์ / PDF'), h('button', { class: 'btn primary block', onclick: printBrowser }, 'พิมพ์ผ่านเบราว์เซอร์ / บันทึกเป็น PDF'),

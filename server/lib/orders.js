@@ -1,6 +1,7 @@
 import { db, J, S } from '../db.js';
 import { id, now, getSettings, businessDateOf, nextCounter, bad, conflict, notFound, forbidden, emit, audit, token, addMinutes } from './util.js';
 import { can } from './auth.js';
+import { notifyLow } from './line.js';
 import { computeTotals, orderDineType, splitTickets, countBowls, dineLabel, isAddon, renamedLine, markOf } from '../../public/shared/core.js';
 import { enqueue, orderDocData, fmtDate } from './print.js';
 import { awardOrder, reverseForRefund } from './members.js';
@@ -337,10 +338,12 @@ async function moveStock(type, itemId, qty, reason, ref, staffId) {
     const r = await db.get('UPDATE products SET stock = stock + ? WHERE id = ? AND track_stock = 1 RETURNING stock, low_stock, name', [qty, itemId]);
     if (!r) return;
     if (r.stock <= r.low_stock) emit('admin', 'stock:low', { id: itemId, name: r.name, stock: r.stock, low_stock: r.low_stock });
+    if (r.stock <= r.low_stock && r.stock - qty > r.low_stock) notifyLow('product', itemId); // just went low → LINE
     emit('shop', 'stock:changed', { id: itemId, type: 'product', stock: r.stock, low_stock: r.low_stock }); // POS: "เหลือ N" / "หมด" right away
   } else {
     const r = await db.get('UPDATE ingredients SET stock = stock + ? WHERE id = ? RETURNING stock, low_stock, name', [qty, itemId]);
     if (r && r.stock <= r.low_stock) emit('admin', 'stock:low', { id: itemId, name: r.name, stock: r.stock, low_stock: r.low_stock });
+    if (r && r.stock <= r.low_stock && r.stock - qty > r.low_stock) notifyLow('ingredient', itemId);
   }
   await db.run('INSERT INTO stock_moves(id, item_type, item_id, qty, reason, ref, staff_id, created_at) VALUES(?,?,?,?,?,?,?,?)', [id(), type, itemId, qty, reason, ref, staffId, now()]);
 }

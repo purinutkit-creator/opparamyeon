@@ -215,6 +215,7 @@ export async function stockPage() {
       h('div', { class: 'st-after' }, 'หลังบันทึก: ', after),
       h('label', { class: 'field' }, 'หมายเหตุ', note),
       h('label', { class: 'field' }, '🔔 แจ้งเตือนว่าใกล้หมดเมื่อเหลือไม่เกิน', low)), { autofocus: false, actions: [
+      { label: '🛒 ใส่รายการที่ต้องซื้อ', onClick: () => toList(type, item) },
       { label: 'บันทึก', onClick: () => save(false) },
       { label: '✓ บันทึก แล้วสแกนต่อ', class: 'primary', onClick: () => save(true) }] });
     setTimeout(() => qty.focus(), 80);
@@ -236,6 +237,19 @@ export async function stockPage() {
   setTimeout(() => box.focus(), 300);
 
   const lows = [...prods.filter((p) => p.track_stock && isLow(p)).map((p) => ['product', p]), ...ings.filter(isLow).map((x) => ['ingredient', x])];
+  // ---- shopping list (also on LINE): what to buy; bought → into stock ----
+  const shop = await api.get('/shopping').catch(() => ({ open: [] }));
+  const toList = async (t, x) => { await api.post('/shopping', { item_type: t, item_id: x.id, qty: Math.max(1, Math.ceil(Number(x.low_stock || 0) * 2 - Number(x.stock || 0))) }); toast(`🛒 ใส่ ${x.name} ในรายการที่ต้องซื้อแล้ว`, 'ok'); reload(); };
+  const other = h('input', { class: 'input', placeholder: 'เพิ่มของอื่น เช่น ถุงหิ้ว, น้ำแข็ง' });
+  const listCard = card(h('h3', {}, `🛒 รายการที่ต้องซื้อ (${shop.open.length})`),
+    h('div', { class: 'shop-list' }, shop.open.length ? shop.open.map((l) => {
+      const q = h('input', { class: 'input', type: 'number', min: 0, step: 'any', value: num(l.qty) });
+      return h('div', { class: 'sl-row' }, h('span', {}, l.name, h('small', { class: 'muted' }, l.unit ? ' ' + l.unit : '')), q,
+        h('button', { class: 'btn sm primary', onclick: async () => { await api.put('/shopping/' + l.id, { status: 'bought', qty: Number(q.value), restock: !!l.item_id }); toast(l.item_id ? `✓ ซื้อแล้ว · เติมสต็อก +${q.value}` : '✓ ซื้อแล้ว', 'ok'); reload(); } }, l.item_id ? '✓ ซื้อแล้ว + เติมสต็อก' : '✓ ซื้อแล้ว'),
+        h('button', { class: 'btn sm ghost', title: 'เอาออก', onclick: async () => { await api.del('/shopping/' + l.id); reload(); } }, '✕'));
+    }) : h('p', { class: 'small muted' }, 'ยังไม่มีของที่ต้องซื้อ — กด 🛒 ที่สินค้าใกล้หมด หรือกดในการแจ้งเตือนทาง LINE')),
+    h('div', { class: 'sl-add' }, other, h('button', { class: 'btn', onclick: async () => { if (!other.value.trim()) return; await api.post('/shopping', { name: other.value.trim() }); reload(); } }, '+ เพิ่ม'),
+      lows.length ? h('button', { class: 'btn', onclick: async () => { for (const [t, x] of lows) if (!shop.open.some((l) => l.item_id === x.id)) await api.post('/shopping', { item_type: t, item_id: x.id, qty: Math.max(1, Math.ceil(Number(x.low_stock || 0) * 2 - Number(x.stock || 0))) }); reload(); } }, `🛒 ใส่ของใกล้หมดทั้งหมด (${lows.length})`) : null));
   const alert = lows.length
     ? h('div', { class: 'st-alert' }, h('b', {}, `⚠️ สินค้า/วัตถุดิบเหลือน้อย ${lows.length} รายการ`),
       h('div', { class: 'st-alert-list' }, lows.map(([t, x]) => h('button', { class: 'st-low' + (Number(x.stock) <= 0 ? ' out' : ''), onclick: () => adjust(t, x) }, h('span', {}, x.name), h('b', {}, Number(x.stock) <= 0 ? 'หมด' : `เหลือ ${num(x.stock)}`), h('small', {}, `แจ้งเตือนที่ ≤ ${num(x.low_stock)}`)))))
@@ -256,7 +270,7 @@ export async function stockPage() {
     } }] });
   };
   return page('สต็อก',
-    alert,
+    alert, listCard,
     card(h('div', { class: 'st-scan' }, h('span', { class: 'st-scan-ico' }, '🔎'), box, h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: cam }, '📷 สแกนด้วยกล้อง'), h('button', { class: 'btn', onclick: printReport }, '🖨 พิมพ์รายงานสต็อก'))),
       h('p', { class: 'small muted', style: { margin: '.5em 0 0' } }, 'ยิงบาร์โค้ดด้วยเครื่องยิง (ภาษาไทยก็อ่านได้) หรือเปิดกล้องสแกน → เพิ่มสต็อก/นับจริง ใส่หมายเหตุหรือไม่ใส่ก็ได้ · ตั้งได้ว่าเหลือเท่าไหร่ถึงเรียกว่าใกล้หมด · สินค้าเหลือ 0 จะขึ้น "หมด" ที่ POS ทันที')),
     card(h('h3', {}, 'สินค้าที่นับสต็อก'), table([{ t: '', f: (x) => (x.image ? h('img', { class: 'st-thumb', src: x.image, alt: '' }) : '') }, { t: 'รหัส', k: 'code' }, { t: 'ชื่อ', k: 'name' },

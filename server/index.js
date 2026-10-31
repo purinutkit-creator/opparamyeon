@@ -16,6 +16,7 @@ import system, { serveFile, qrSvg } from './routes/system.js';
 import display, { displayFromToken, closePrompts } from './routes/display.js';
 import mobile from './routes/mobile.js';
 import payments, { webhookRouter } from './routes/payments.js';
+import lineR, { lineWebhook } from './routes/line.js';
 import members from './routes/members.js';
 import customer, { expireCoupons } from './routes/customer.js';
 import reports from './routes/reports.js';
@@ -38,6 +39,7 @@ export async function createApp(opts = {}) {
   });
   // webhooks need the raw body for signature checks
   app.use('/api', webhookRouter);
+  app.use('/api', lineWebhook);
   app.use(express.json({ limit: '8mb' }));
   app.get('/healthz', async (req, res) => { await db.get('SELECT 1 AS ok'); res.json({ ok: true, version: VERSION, db: db.kind, time: now() }); });
   // persistent = data survives restarts/updates. On Render without DATABASE_URL the SQLite file lives on a temporary disk.
@@ -51,7 +53,7 @@ export async function createApp(opts = {}) {
   });
   app.get('/files/:id', (req, res, next) => serveFile(req, res).catch(next));
   app.get('/api/qr.svg', (req, res, next) => qrSvg(req, res).catch(next));
-  for (const r of [staff, catalogR, orders, system, display, mobile, payments, members, customer, reports, importer]) app.use('/api', r);
+  for (const r of [staff, catalogR, orders, system, display, mobile, payments, members, customer, reports, importer, lineR]) app.use('/api', r);
   app.use('/api', (req, res) => res.status(404).json({ error: 'ไม่พบ API นี้' }));
   // face check for the clock-in selfie (MediaPipe, served from this app so it needs no outside CDN)
   app.use('/vendor/mediapipe', express.static(path.join(__dirname, '..', 'node_modules', '@mediapipe', 'tasks-vision'), { maxAge: '30d' }));

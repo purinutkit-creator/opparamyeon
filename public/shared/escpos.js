@@ -67,8 +67,12 @@ export const feedCut = (mode = 'full') => (mode === 'none' ? new Uint8Array() : 
 
 // Barcode labels: exactly the labels and the gaps set, nothing before them; rows split at "cut" points are cut at the cutter.
 // end: 'cut' (feed to the cutter + cut, if the printer has one), 'feed' (endDots of paper to tear off), 'none'
-export function buildLabelJob(canvas, { cuts = [], cutMode = 'full', end = 'cut', endDots = 0, threshold = 160 } = {}) {
+// backDots: pull the paper back before printing (ESC 3 + ESC e reverse feed, 1 mm steps) so the first label starts
+// right at the edge left by the last cut/tear — printers without reverse feed just ignore it
+export function buildLabelJob(canvas, { cuts = [], cutMode = 'full', end = 'cut', endDots = 0, threshold = 160, backDots = 0 } = {}) {
   const parts = [init()];
+  const back = Math.min(255, Math.round(backDots / 8));
+  if (back > 0) parts.push(Uint8Array.from([ESC, 0x33, 8]), Uint8Array.from([ESC, 0x65, back]), Uint8Array.from([ESC, 0x32]));
   const bounds = [0, ...cuts.filter((y) => y > 0 && y < canvas.height), canvas.height];
   for (let i = 0; i < bounds.length - 1; i++) {
     parts.push(rasterFromCanvas(canvas, { y0: bounds[i], y1: bounds[i + 1], threshold }));

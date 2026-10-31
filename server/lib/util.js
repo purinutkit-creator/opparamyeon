@@ -76,6 +76,8 @@ export const DEFAULT_SETTINGS = {
   // POS screen lock when nobody touches it: after `seconds` (with a `warn`-second countdown first) → 'lock' (PIN to unlock) or 'logout';
   // keep_with_bill: don't lock while a bill is being keyed
   lock: { enabled: true, seconds: 300, warn: 10, action: 'lock', keep_with_bill: false },
+  // LINE OA stock alerts (channel secret/token are in the secrets table); recipients = linked chats
+  line: { enabled: false, notify_low: true, notify_close: true, recipients: [] },
   // staff roster set by the owner: how many people scan in at opening per weekday (0=Sun…6=Sat; 2+ = everyone scans, then the main one is picked),
   // and special days: { 'YYYY-MM-DD': { count: null|n, late: [staff ids joining later], leave: [staff ids on leave] } }
   // clock-in slip: print 'always' (each time someone clocks in) / 'off', on printer_id ('' = the receipt printer)

@@ -7,6 +7,7 @@ import { enqueue, orderDocData, reprint, retry, feedMerchantRoll } from '../lib/
 import { cookerStatus, finishTicket, finishOrder, voidOrderJobs } from '../lib/cookers.js';
 import { billFromToken, shiftToken, shiftFromToken } from '../lib/billlink.js';
 import { joinShiftCrew, verifyOnDuty, clockIn, printAttendance, selfieOf, needSelfie } from '../lib/crew.js';
+import { notifyShiftClose } from '../lib/line.js';
 import { MERCHANT_CLOSE } from '../lib/templates.js';
 import { baht } from '../../public/shared/core.js';
 
@@ -250,6 +251,7 @@ r.post('/shifts/close', staffAuth('shift'), ah(async (req, res) => {
   await enqueue('shift', sh.id, await shiftDoc(closed, 'ใบสรุปปิดรอบการขาย'), { dedupe: 'shift-close:' + sh.id });
   // the compact merchant roll: feed it out (and cut, if set and possible) so the day's slips can be torn off
   const roll = s.print && s.print.merchant_style === 'compact' ? await feedMerchantRoll() : [];
+  notifyShiftClose(closed).catch((e) => console.warn('[line]', e.message)); // LINE: what is running low / what to buy
   res.json({ ...closed, roll, merchant_close: await merchantCloseInfo() });
 }));
 // ---- merchant summary of the whole shift, printed at close (the POS confirms the paper first, then waits until it's done) ----

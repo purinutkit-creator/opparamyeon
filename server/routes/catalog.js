@@ -3,6 +3,7 @@ import { db, J, S } from '../db.js';
 import { ah, id, now, bad, notFound, conflict, audit, emit, getSettings, setSetting, getSecret, setSecret, rateLimit } from '../lib/util.js';
 import { enqueue, publicPrinter } from '../lib/print.js';
 import { STOCK_REPORT } from '../lib/templates.js';
+import { adjustStock } from '../lib/stock.js';
 import { lookupBarcode, suggestCategory, fetchImage } from '../lib/productlookup.js';
 import { aiKeys, identifyWithClaude, findImages, basicNames, mineNames, nameVariants, AiError, AI_MODEL } from '../lib/productai.js';
 import { saveFile } from './system.js';
@@ -163,32 +164,10 @@ crud('tables', 'dining_tables', ['name', 'zone', 'seats', 'sort', 'active', 'sta
 // ---------- stock ----------
 // add / count stock (the note is optional); also: the low-stock level, and start counting a product that wasn't tracked yet
 r.post('/stock/adjust', staffAuth('manage_stock'), ah(async (req, res) => {
-  const { item_type, item_id, qty, mode, note, low_stock, track } = req.body || {};
-  const reason = String(req.body.reason || note || '').trim().slice(0, 200) || (mode === 'set' ? 'นับสต็อก' : Number(qty) >= 0 ? 'รับเข้า' : 'ปรับลด');
-  const table = item_type === 'ingredient' ? 'ingredients' : 'products';
-  const n = Number(qty);
-  if (qty !== undefined && qty !== '' && !Number.isFinite(n)) throw bad('จำนวนไม่ถูกต้อง');
-  let after;
-  await db.tx(async () => {
-    const cur = await db.get(`SELECT * FROM ${table} WHERE id = ?`, [item_id]);
-    if (!cur) throw notFound();
-    if (table === 'products' && track && !cur.track_stock) await db.run('UPDATE products SET track_stock = 1 WHERE id = ?', [item_id]);
-    if (low_stock !== undefined && low_stock !== '' && Number.isFinite(Number(low_stock))) await db.run(`UPDATE ${table} SET low_stock = ? WHERE id = ?`, [Math.max(0, Number(low_stock)), item_id]);
-    if (qty !== undefined && qty !== '') {
-      const delta = mode === 'set' ? n - cur.stock : n;
-      if (delta) {
-        await db.run(`UPDATE ${table} SET stock = stock + ? WHERE id = ?`, [delta, item_id]);
-        await db.run('INSERT INTO stock_moves(id, item_type, item_id, qty, reason, ref, staff_id, created_at) VALUES(?,?,?,?,?,?,?,?)', [id(), item_type, item_id, delta, reason, mode === 'set' ? 'set' : 'add', req.staff.id, now()]);
-        await audit(req.staff.id, 'stock_adjust', item_type, item_id, { stock: cur.stock }, { stock: cur.stock + delta }, reason);
-      }
-    }
-    // stock is back: a product someone had marked "หมด" by hand goes back on sale
-    if (table === 'products') await db.run('UPDATE products SET sold_out = 0 WHERE id = ? AND sold_out = 1 AND track_stock = 1 AND stock > 0', [item_id]);
-    after = await db.get(`SELECT id, name, stock, low_stock FROM ${table} WHERE id = ?`, [item_id]);
-  });
+  const b = req.body || {};
+  const item = await adjustStock({ type: b.item_type, id: b.item_id, qty: b.qty, mode: b.mode, note: b.reason || b.note, low_stock: b.low_stock, track: b.track, actor: req.staff.id });
   changed();
-  emit('shop', 'stock:changed', { id: item_id, type: item_type, stock: after.stock, low_stock: after.low_stock });
-  res.json({ ok: true, item: after });
+  res.json({ ok: true, item });
 }));
 r.get('/stock', staffAuth(), ah(async (req, res) => {
   // every active product (scanning one that isn't counted yet can start counting it); barcodes for the scanner
@@ -265,7 +244,7 @@ r.post('/print/labels', staffAuth('manage_menu'), ah(async (req, res) => {
     elements.push({ type: 'label', cfg, items: list.slice(i, i + cols), font: cfg.font });
   }
   const template = { paper: Number(printer.paper) || 80, margin: 0, section_gap: 0, font: cfg.font, size: 20, copies: 1, cut: 'full', elements,
-    label_exact: true, label_end: ['cut', 'feed', 'none'].includes(cfg.end) ? cfg.end : 'cut', label_end_mm: Math.max(0, Math.min(50, Number(cfg.end_feed_mm) || 0)) };
+    label_exact: true, label_end: ['cut', 'feed', 'none'].includes(cfg.end) ? cfg.end : 'none', label_end_mm: Math.max(0, Math.min(50, Number(cfg.end_feed_mm) || 0)), label_back_mm: Math.max(0, Math.min(30, Number(cfg.back_mm) || 0)) };
   await audit(req.staff.id, 'print_labels', 'printer', printer.id, null, { count: list.length, local: !!req.body.local });
   // printed right here by the shop website when the printer is connected to this computer; otherwise queued for the device that has it
   if (req.body.local) return res.json({ template, data: { store_name: store }, count: list.length, printer: publicPrinter(printer) });

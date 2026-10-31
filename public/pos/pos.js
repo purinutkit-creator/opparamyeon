@@ -401,7 +401,7 @@ async function pickTerminal(terms) {
 async function connect() {
   st.sock = await socket({ kind: 'staff', token: store.get('staff_token'), terminal_id: st.terminal.id });
   const s = st.sock;
-  s.on('connect', () => { setNet(true); pushDisplay(); refreshBadges(); loadCookers(); });
+  s.on('connect', () => { setNet(true); pushDisplay(); refreshBadges(); loadCookers(); checkVersion(); });
   s.on('disconnect', () => setNet(false));
   s.on('catalog:changed', async () => { st.catalog = await api.get('/catalog'); renderMenu(); });
   // stock went down (a sale) or up (stock page): "เหลือ N" / "หมด" on the menu right away
@@ -597,6 +597,17 @@ function joinDialog() {
     return false;
   };
 }
+// a newer version on the server: reload once nothing is being keyed — this device also prints, so it must run the latest code
+async function checkVersion() {
+  try {
+    const v = (await fetch('/api/settings/public', { cache: 'no-store' }).then((r) => r.json())).version;
+    if (!v || v === VERSION) return;
+    if (st.cart.lines.length || st.locked || document.querySelector('.modal-back, .leave-print')) return; // try again later
+    toast(`กำลังอัปเดตเป็นเวอร์ชัน ${v}…`, 'info', 2000);
+    setTimeout(() => location.reload(), 1500);
+  } catch { /* offline */ }
+}
+setInterval(checkVersion, 3 * 60e3);
 // ⟳ in the top bar: menu, stock, shift, settings and badges fetched again (the bill being keyed stays as it is)
 async function refreshAll(e) {
   const b = e && e.currentTarget; if (b) { b.classList.add('spin'); b.disabled = true; }
