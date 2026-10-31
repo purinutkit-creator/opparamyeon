@@ -6,7 +6,7 @@
 //  - Android native bridge: window.OppaBridge (when the POS runs inside the Android wrapper app)
 //  - Browser: system print dialog (A4/regular printers)
 import { store } from './api.js';
-import { buildJob, statusQuery, parseStatus, concat, init, feed, cut as cutCmd, beep as beepCmd, drawer as drawerCmd } from './escpos.js';
+import { buildJob, buildLabelJob, statusQuery, parseStatus, concat, init, feed, cut as cutCmd, beep as beepCmd, drawer as drawerCmd } from './escpos.js';
 import { renderDoc, testTemplate } from './render.js';
 import { docFontStack } from './fonts.js';
 import { playSound } from './sound.js';
@@ -188,13 +188,15 @@ export async function printDocument(printer, template, data, docType) {
   else {
     // force_paper: the document picks its width itself (e.g. the shift summary chosen as 58 or 80 mm)
     const tpl = docType === 'test' ? testTemplate(printer.paper, template && template.font) : { ...template, paper: template && template.force_paper ? template.paper : printer.paper || template.paper };
-    if (printer.margin) tpl.margin = printer.margin;
+    if (printer.margin && !tpl.label_exact) tpl.margin = printer.margin;
     if (o.width_dots && !tpl.force_paper) tpl.width_dots = o.width_dots;
     const r = await renderDoc(tpl, data, { scale: o.scale, noLogo: o.print_logo === false, reprintMark: o.reprint_mark, font: docType === 'test' ? null : await docFontStack(docType) });
     if (t.kind === 'browser') { await browserPrint(r.canvas); return { status: 'sent', note: 'ส่งไปยังหน้าต่างพิมพ์ของเบราว์เซอร์' }; }
     // a template set to "ไม่ตัด" prints as a continuous roll (e.g. short merchant slips): no cut, just a little space between slips
     const noCut = tpl.cut === 'none';
-    bytes = buildJob(r.canvas, { cuts: noCut ? [] : r.cuts, feedBefore: noCut ? 0 : printer.feed_before ?? 3, feedAfter: noCut ? Number(tpl.feed_after ?? 1) : printer.feed_after ?? 1, cutMode: noCut ? 'none' : printer.cut_mode || 'full',
+    // barcode labels: exactly the label size (no feed before, only the gap set between rows, end as set)
+    if (tpl.label_exact) bytes = buildLabelJob(r.canvas, { cuts: r.cuts, cutMode: printer.cut_mode || 'full', end: tpl.label_end || 'cut', endDots: Math.round((Number(tpl.label_end_mm) || 0) * 8), threshold: o.density || 160 });
+    else bytes = buildJob(r.canvas, { cuts: noCut ? [] : r.cuts, feedBefore: noCut ? 0 : printer.feed_before ?? 3, feedAfter: noCut ? Number(tpl.feed_after ?? 1) : printer.feed_after ?? 1, cutMode: noCut ? 'none' : printer.cut_mode || 'full',
       buzzer: buzz, beepCount: printer.beep_count || 4, beepDuration: o.beep_duration || 2, threshold: o.density || 160, topFeed: o.top_feed || 0 });
   }
   if (t.kind === 'browser') return { status: 'sent' };

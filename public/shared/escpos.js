@@ -59,3 +59,22 @@ export function buildJob(canvas, { cuts = [], feedBefore = 3, feedAfter = 1, cut
   if (buzzer) parts.push(beep(beepCount, beepDuration));
   return concat(parts);
 }
+
+// ESC J n: feed exactly n dots (8 dots = 1 mm at 203 dpi); longer feeds are sent in pieces
+export const feedDots = (dots) => { const out = []; let n = Math.max(0, Math.round(dots)); while (n > 0) { const k = Math.min(255, n); out.push(Uint8Array.from([ESC, 0x4a, k])); n -= k; } return concat(out); };
+// GS V 65/66 0: feed just to the cutter, then cut (no extra blank paper)
+export const feedCut = (mode = 'full') => (mode === 'none' ? new Uint8Array() : Uint8Array.from([GS, 0x56, mode === 'partial' ? 0x42 : 0x41, 0]));
+
+// Barcode labels: exactly the labels and the gaps set, nothing before them; rows split at "cut" points are cut at the cutter.
+// end: 'cut' (feed to the cutter + cut, if the printer has one), 'feed' (endDots of paper to tear off), 'none'
+export function buildLabelJob(canvas, { cuts = [], cutMode = 'full', end = 'cut', endDots = 0, threshold = 160 } = {}) {
+  const parts = [init()];
+  const bounds = [0, ...cuts.filter((y) => y > 0 && y < canvas.height), canvas.height];
+  for (let i = 0; i < bounds.length - 1; i++) {
+    parts.push(rasterFromCanvas(canvas, { y0: bounds[i], y1: bounds[i + 1], threshold }));
+    if (i < bounds.length - 2 && cutMode !== 'none') parts.push(feedCut(cutMode));
+  }
+  if (end === 'cut' && cutMode !== 'none') parts.push(feedCut(cutMode));
+  else if (end !== 'none' && endDots > 0) parts.push(feedDots(endDots));
+  return concat(parts);
+}

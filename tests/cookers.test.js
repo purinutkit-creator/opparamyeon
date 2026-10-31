@@ -365,3 +365,23 @@ test('สต็อก: สแกนแล้วเพิ่ม/นับจร�
   await S.call('POST', '/api/stock/adjust', { item_type: 'product', item_id: p.id, qty: 5 }, { token: owner });
   assert.equal((await S.call('GET', '/api/catalog', undefined, { token: owner })).body.products.find((x) => x.id === p.id).sold_out, false, 'เติมแล้วขายได้');
 });
+
+test('พิมพ์บาร์โค้ด: พิมพ์จากหน้าจัดการได้เลย (เครื่องที่เชื่อมไว้) และกระดาษพอดีขนาดฉลาก ไม่ป้อนเกิน', async () => {
+  const pr = (await S.call('POST', '/api/printers', { name: 'ฉลาก 58', conn: 'usb', paper: 58, roles: ['receipt'] }, { token: owner })).body;
+  const prods = (await S.call('GET', '/api/catalog', undefined, { token: owner })).body.products.slice(0, 2);
+  const before = Number((await db.get("SELECT COUNT(*) AS n FROM print_jobs WHERE doc_type = 'label'")).n);
+  const cfg = { width_mm: 40, height_mm: 30, cols: 1, feed_mm: 2, cut_each: false, end: 'feed', end_feed_mm: 8 };
+  const r = await S.call('POST', '/api/print/labels', { printer_id: pr.id, items: [{ product_id: prods[0].id, qty: 2 }, { product_id: prods[1].id, qty: 1 }], cfg, local: true }, { token: owner });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(Number((await db.get("SELECT COUNT(*) AS n FROM print_jobs WHERE doc_type = 'label'")).n), before, 'พิมพ์ในหน้านี้ ไม่เข้าคิว');
+  const t = r.body.template;
+  assert.equal(t.label_exact, true); assert.equal(t.margin, 0); assert.equal(t.label_end, 'feed'); assert.equal(t.label_end_mm, 8);
+  assert.deepEqual(t.elements.map((e) => e.type), ['label', 'space', 'label', 'space', 'label'], 'ระยะห่างเฉพาะระหว่างแถว ไม่มีก่อน/หลัง');
+  assert.equal(t.elements[1].height, 16, '2 มม. = 16 จุด');
+  assert.equal(r.body.printer.id, pr.id);
+  // cut each row: cut marks take no extra paper; without "local" the job is queued as before
+  const q = await S.call('POST', '/api/print/labels', { printer_id: pr.id, items: [{ product_id: prods[0].id, qty: 2 }], cfg: { ...cfg, cut_each: true, end: 'cut' } }, { token: owner });
+  assert.equal(q.status, 200);
+  const pl = JSON.parse((await db.get("SELECT payload FROM print_jobs WHERE doc_type = 'label' ORDER BY seq DESC LIMIT 1")).payload);
+  assert.deepEqual(pl.template.elements.map((e) => e.type + (e.type === 'cut' ? ':' + e.space : '')), ['label', 'cut:0', 'label']);
+});

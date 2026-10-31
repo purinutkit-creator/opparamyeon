@@ -5,6 +5,7 @@ import { baht, isEan13 } from '/shared/core.js';
 import { fontCatalog, loadFont } from '/shared/fonts.js';
 import { LABEL_PRESETS, labelCfg, labelRowDots, renderLabelRow } from '/shared/labels.js';
 import { api, ctx, page, card } from './common.js';
+import { pairPrinter, isLinkedHere, printDocument, support } from '/shared/printers.js';
 
 const bestBarcode = (codes) => codes.find(isEan13) || codes[0] || '';
 
@@ -78,7 +79,10 @@ export async function labelsPage() {
     h('div', { class: 'form-grid' }, sel('type', 'ชนิด', [['auto', 'อัตโนมัติ (EAN-13 ถ้าเป็นเลข 13 หลักที่ถูกต้อง ไม่งั้น Code128)'], ['code128', 'Code128 (ตัวอักษร+ตัวเลข)'], ['ean13', 'EAN-13 (ตัวเลข 13 หลัก)']]),
       num('barcode_height_mm', 'ความสูงแท่ง (มม.)', 1, 4), sel('bar_width', 'ความหนาแท่ง', [[1, 'บาง'], [2, 'ปกติ'], [3, 'หนา'], [4, 'หนามาก']])),
     h('h4', {}, '🖨 การพิมพ์ด้วยเครื่องพิมพ์ใบเสร็จ'),
-    h('div', { class: 'form-grid' }, chk('cut_each', 'ตัดกระดาษทุกแถว'), num('feed_mm', 'ระยะห่างระหว่างแถว (มม.)', 0.5)));
+    h('div', { class: 'form-grid' }, chk('cut_each', 'ตัดกระดาษทุกแถว'), num('feed_mm', 'ระยะห่างระหว่างแถว (มม.) — 0 = ติดกันพอดี', 0.5),
+      sel('end', 'จบงานพิมพ์', [['cut', 'ป้อนถึงมีดแล้วตัด (เครื่องที่มีมีดตัด)'], ['feed', 'ป้อนกระดาษเพื่อฉีก ตามระยะด้านขวา'], ['none', 'ไม่ป้อนเพิ่ม (พอดีฉลากตัวสุดท้าย)']]),
+      num('end_feed_mm', 'ระยะป้อนตอนจบ (มม.) ถ้าเลือก "ป้อนเพื่อฉีก"', 1)),
+    h('p', { class: 'small muted' }, 'กระดาษที่ออกมาเท่ากับขนาดฉลากที่ตั้งพอดี ไม่ป้อนกระดาษเปล่าก่อน/หลังแต่ละแถว (มีแค่ระยะห่างระหว่างแถวที่ตั้ง)'));
 
   // ---- preview ----
   const canvasBox = h('div', { class: 'lbl-canvas' });
@@ -114,7 +118,21 @@ export async function labelsPage() {
     fitNote.replaceChildren(need > mm ? h('span', { class: 'badge warn', style: { whiteSpace: 'normal' } }, `⚠️ ฉลากกว้าง ${need} มม. เกินพื้นที่พิมพ์ ${mm} มม. ของเครื่องนี้ — กด "พอดีกระดาษ"`)
       : h('span', { class: 'muted' }, `✓ พอดีกระดาษ (ใช้ ${need} จาก ${mm} มม.)`));
   };
-  printerSel.addEventListener('change', () => { cfg.printer_id = printerSel.value; checkFit(); });
+  // connect the printer to this computer → print right here (no POS needed)
+  const linkBox = h('div', { class: 'lbl-link' });
+  const drawLink = () => {
+    const p = active.find((x) => x.id === printerSel.value);
+    if (!p) return linkBox.replaceChildren();
+    if (isLinkedHere(p.id)) return linkBox.replaceChildren(h('span', { class: 'badge ok' }, '🔌 เชื่อมกับเครื่องนี้แล้ว — กดพิมพ์แล้วออกที่เครื่องพิมพ์ทันที'));
+    const sp = support();
+    const can = { usb: sp.usb, serial: sp.serial, bluetooth: sp.bluetooth || sp.bridge, lan: true, agent_usb: true, browser: true }[p.conn] !== false;
+    linkBox.replaceChildren(h('button', { class: 'btn', type: 'button', disabled: !can, onclick: async () => {
+      try { const r = await pairPrinter(p); toast('เชื่อมต่อแล้ว: ' + r.name, 'ok'); drawLink(); } catch (e) { errToast(e); }
+    } }, '🔌 เชื่อมเครื่องพิมพ์กับเครื่องนี้'), h('small', { class: 'muted' }, can ? ' เชื่อมครั้งเดียว ครั้งต่อไปพิมพ์ได้เลย (ถ้าไม่เชื่อม งานจะไปพิมพ์ที่อุปกรณ์ที่เชื่อมเครื่องพิมพ์ไว้ เช่น POS)'
+      : ' เบราว์เซอร์นี้เชื่อมแบบ ' + p.conn + ' ไม่ได้ — ใช้ Chrome/Edge บนคอมพิวเตอร์ หรือส่งไปพิมพ์ที่ POS'));
+  };
+  printerSel.addEventListener('change', () => { cfg.printer_id = printerSel.value; checkFit(); drawLink(); });
+  drawLink();
   const fitPaper = () => {
     const mm = printableMm(); if (!mm) return;
     const { cols } = labelRowDots(cfg);
@@ -126,9 +144,17 @@ export async function labelsPage() {
     if (!total()) return toast('เลือกสินค้าและจำนวนก่อน', 'warn');
     e.target.disabled = true;
     try {
-      const r = await api.post('/print/labels', { printer_id: printerSel.value, items: [...qty].map(([product_id, n]) => ({ product_id, qty: n })), cfg });
-      // jobs print on the device the printer is linked to (POS / Print Agent / Android app), like receipts
-      toast(`ส่งพิมพ์ ${r.count} ดวงแล้ว — ฉลากจะออกที่เครื่องพิมพ์ทันทีที่อุปกรณ์ที่เชื่อมเครื่องพิมพ์ (เช่น หน้า POS) เปิดอยู่`, 'ok', 6000);
+      const items = [...qty].map(([product_id, n]) => ({ product_id, qty: n }));
+      if (isLinkedHere(printerSel.value)) { // connected to this computer: print right now
+        const r = await api.post('/print/labels', { printer_id: printerSel.value, items, cfg, local: true });
+        toast(`กำลังพิมพ์ ${r.count} ดวง…`, 'info', 2000);
+        const res = await printDocument(r.printer, r.template, r.data, 'label');
+        toast(`🖨 พิมพ์ ${r.count} ดวงแล้ว` + (res.note ? ' · ' + res.note : ''), 'ok', 5000);
+      } else {
+        const r = await api.post('/print/labels', { printer_id: printerSel.value, items, cfg });
+        // jobs print on the device the printer is linked to (POS / Print Agent / Android app), like receipts
+        toast(`ส่งพิมพ์ ${r.count} ดวงแล้ว — จะออกเมื่ออุปกรณ์ที่เชื่อมเครื่องพิมพ์ (เช่น POS) เปิดอยู่ · กด "🔌 เชื่อมเครื่องพิมพ์กับเครื่องนี้" เพื่อพิมพ์จากหน้านี้ได้เลย`, 'ok', 7000);
+      }
       if (!cfg.printer_id || cfg.printer_id !== printerSel.value) { cfg.printer_id = printerSel.value; api.put('/labels/config', { value: { printer_id: cfg.printer_id } }).catch(() => {}); }
     }
     catch (er) { errToast(er); } finally { e.target.disabled = false; }
@@ -162,7 +188,7 @@ export async function labelsPage() {
       h('div', { class: 'lbl-side' }, card(h('h3', {}, '3. ตัวอย่างและพิมพ์'), canvasBox, sizeNote, warnBox,
         h('div', { class: 'lbl-out' },
           h('h4', {}, '🖨 เครื่องพิมพ์ใบเสร็จในระบบ (58/80 มม.)'),
-          active.length ? [printerSel, h('div', { class: 'row', style: { marginTop: '.5em' } }, h('button', { class: 'btn', style: { flex: 1 }, onclick: fitPaper, title: 'ปรับความกว้างฉลากให้เต็มกระดาษของเครื่องที่เลือก' }, '↔ พอดีกระดาษ'), h('button', { class: 'btn primary', style: { flex: 1 }, onclick: printShop }, '🖨 พิมพ์ด้วยเครื่องนี้')), fitNote,
+          active.length ? [printerSel, linkBox, h('div', { class: 'row', style: { marginTop: '.5em' } }, h('button', { class: 'btn', style: { flex: 1 }, onclick: fitPaper, title: 'ปรับความกว้างฉลากให้เต็มกระดาษของเครื่องที่เลือก' }, '↔ พอดีกระดาษ'), h('button', { class: 'btn primary', style: { flex: 1 }, onclick: printShop }, '🖨 พิมพ์ด้วยเครื่องนี้')), fitNote,
             h('p', { class: 'small muted' }, 'ใช้เครื่องพิมพ์ใบเสร็จเครื่องเดียวกับที่พิมพ์ใบเสร็จได้เลย ฉลากพิมพ์ต่อกันเป็นแถว (ตั้ง "ตัดกระดาษทุกแถว" ได้ในส่วนตั้งค่า) · ระบบจำเครื่องพิมพ์ที่เลือกไว้ใช้ครั้งหน้า')]
             : h('div', {}, h('p', { class: 'small muted' }, 'ยังไม่มีเครื่องพิมพ์ใบเสร็จในระบบ — เพิ่มเครื่องพิมพ์ก่อน แล้วกลับมาที่หน้านี้'), h('a', { class: 'btn', href: '#/printers' }, '➕ เพิ่มเครื่องพิมพ์')),
           h('h4', {}, '🏷️ เครื่องพิมพ์สติกเกอร์ / PDF'), h('button', { class: 'btn primary block', onclick: printBrowser }, 'พิมพ์ผ่านเบราว์เซอร์ / บันทึกเป็น PDF'),

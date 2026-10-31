@@ -361,7 +361,7 @@ export async function renderDoc(tpl, data, opts = {}) {
           y += rowH;
           break;
         }
-        case 'cut': if (draw && opts.cutMarks) { ctx.strokeStyle = '#999'; ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.moveTo(0, y + 6); ctx.lineTo(width, y + 6); ctx.stroke(); ctx.setLineDash([]); } (opts.cuts || []).push(y); y += 12; break;
+        case 'cut': if (draw && opts.cutMarks) { ctx.strokeStyle = '#999'; ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.moveTo(0, y + 6); ctx.lineTo(width, y + 6); ctx.stroke(); ctx.setLineDash([]); } (opts.cuts || []).push(y); y += e.space ?? 12; break; // labels cut with no extra space
         default: break;
       }
       if (boxed) {

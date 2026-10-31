@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db, J, S } from '../db.js';
 import { ah, id, now, bad, notFound, conflict, audit, emit, getSettings, setSetting, getSecret, setSecret, rateLimit } from '../lib/util.js';
-import { enqueue } from '../lib/print.js';
+import { enqueue, publicPrinter } from '../lib/print.js';
 import { lookupBarcode, suggestCategory, fetchImage } from '../lib/productlookup.js';
 import { aiKeys, identifyWithClaude, findImages, basicNames, mineNames, nameVariants, AiError, AI_MODEL } from '../lib/productai.js';
 import { saveFile } from './system.js';
@@ -229,13 +229,17 @@ r.post('/print/labels', staffAuth('manage_menu'), ah(async (req, res) => {
   if (list.length > 500) throw bad('พิมพ์ได้ครั้งละไม่เกิน 500 ดวง');
   const cols = labelRowDots(cfg).cols;
   const elements = [];
+  // exactly the label size: rows + the gap set (or a cut) between them, nothing before the first or after the last
   for (let i = 0; i < list.length; i += cols) {
+    if (i) elements.push(cfg.cut_each ? { type: 'cut', space: 0 } : { type: 'space', height: Math.round((Number(cfg.feed_mm) || 0) * 8) });
     elements.push({ type: 'label', cfg, items: list.slice(i, i + cols), font: cfg.font });
-    elements.push(cfg.cut_each ? { type: 'cut' } : { type: 'space', height: Math.round((Number(cfg.feed_mm) || 0) * 8) });
   }
-  const template = { paper: Number(printer.paper) || 80, margin: 0, section_gap: 0, font: cfg.font, size: 20, copies: 1, feed_after: 3, cut: 'full', elements };
+  const template = { paper: Number(printer.paper) || 80, margin: 0, section_gap: 0, font: cfg.font, size: 20, copies: 1, cut: 'full', elements,
+    label_exact: true, label_end: ['cut', 'feed', 'none'].includes(cfg.end) ? cfg.end : 'cut', label_end_mm: Math.max(0, Math.min(50, Number(cfg.end_feed_mm) || 0)) };
+  await audit(req.staff.id, 'print_labels', 'printer', printer.id, null, { count: list.length, local: !!req.body.local });
+  // printed right here by the shop website when the printer is connected to this computer; otherwise queued for the device that has it
+  if (req.body.local) return res.json({ template, data: { store_name: store }, count: list.length, printer: publicPrinter(printer) });
   const jobs = await enqueue('label', 'labels-' + Date.now(), { store_name: store }, { printerId: printer.id, template });
-  await audit(req.staff.id, 'print_labels', 'printer', printer.id, null, { count: list.length });
   res.json({ jobs, count: list.length });
 }));
 // Give products without a barcode an in-store EAN-13 (prefix 20 = for use inside the shop)
