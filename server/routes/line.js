@@ -34,18 +34,18 @@ async function handle(ev) {
   if (a === 'list') return lineReply(rt, listMessage(await openList(), await lowItems()));
   if (a === 'add') { // how much to add: quick buttons
     const x = await itemOf(p.get('t'), p.get('i')); if (!x) return;
-    return lineReply(rt, { type: 'text', text: `➕ เพิ่มสต็อก ${x.name} (คงเหลือ ${num(x.stock)} ${x.unit || ''}) — เลือกจำนวน`,
+    return lineReply(rt, { type: 'text', text: `➕ เติมสต็อก: ${x.name}\nตอนนี้เหลือ ${num(x.stock)} ${x.unit || ''}\n\n👇 กดเลือกจำนวนที่จะเติมด้านล่าง`,
       quickReply: { items: [1, 6, 12, 24, 48, suggestQty(x)].filter((v, i, arr) => arr.indexOf(v) === i).map((q) => ({ type: 'action', action: { type: 'postback', label: `+${q}`, data: `a=addq&t=${x.type}&i=${x.id}&q=${q}`, displayText: `เพิ่ม ${x.name} +${q}` } })) } });
   }
   if (a === 'addq') {
     const q = Number(p.get('q')); if (!(q > 0 && q <= 9999)) return;
     const x = await adjustStock({ type: p.get('t'), id: p.get('i'), qty: q, mode: 'add', note: 'เติมผ่าน LINE', actor: who });
-    return lineReply(rt, { type: 'text', text: `✅ เติม ${x.name} +${q} แล้ว — คงเหลือ ${num(x.stock)} ${x.unit || ''}` });
+    return lineReply(rt, { type: 'text', text: `✅ เติมสต็อกแล้ว\n${x.name}  +${q}\n\nตอนนี้มี ${num(x.stock)} ${x.unit || ''}` });
   }
   if (a === 'buy') {
     const x = await itemOf(p.get('t'), p.get('i')); if (!x) return;
     await addToList({ type: x.type, itemId: x.id, name: x.name, qty: suggestQty(x), unit: x.unit || '', by: who });
-    return lineReply(rt, [{ type: 'text', text: `🛒 ใส่ ${x.name} ×${suggestQty(x)} ในรายการที่ต้องซื้อแล้ว` }, listMessage(await openList(), await lowItems())]);
+    return lineReply(rt, [{ type: 'text', text: `🛒 ใส่รายการที่ต้องซื้อแล้ว\n${x.name}  ×${suggestQty(x)} ${x.unit || ''}` }, listMessage(await openList(), await lowItems())]);
   }
   if (a === 'buyall') {
     const list = await openList();
@@ -55,7 +55,7 @@ async function handle(ev) {
   if (a === 'bought') { // bought: off the list, and offer to put it into stock
     const l = await db.get("SELECT * FROM shopping_list WHERE id = ? AND status = 'open'", [p.get('l')]); if (!l) return lineReply(rt, { type: 'text', text: 'รายการนี้ซื้อแล้ว' });
     await db.run("UPDATE shopping_list SET status = 'bought', done_at = ? WHERE id = ?", [now(), l.id]);
-    return lineReply(rt, { type: 'text', text: `✓ ซื้อ ${l.name} แล้ว${l.item_id ? ' — เติมเข้าสต็อกเลยไหม?' : ''}`,
+    return lineReply(rt, { type: 'text', text: `✓ ซื้อแล้ว: ${l.name} ${num(l.qty)} ${l.unit || ''}${l.item_id ? '\n\n👇 เติมเข้าสต็อกเลยไหม?' : ''}`,
       ...(l.item_id ? { quickReply: { items: [{ type: 'action', action: { type: 'postback', label: `เติม +${num(l.qty)}`, data: `a=addq&t=${l.item_type}&i=${l.item_id}&q=${num(l.qty)}`, displayText: `เติม ${l.name} +${num(l.qty)}` } },
         { type: 'action', action: { type: 'postback', label: 'ยังไม่เติม', data: 'a=list', displayText: 'ดูรายการที่ต้องซื้อ' } }] } } : {}) });
   }

@@ -59,9 +59,11 @@ test('LINE: ตั้งค่า เชื่อมแชตด้วยรห�
   await wait(300);
   const push = lastTo('/v2/bot/message/push');
   assert.ok(push, 'ส่งแจ้งเตือนของใกล้หมด'); assert.equal(push.body.to, 'Uowner');
-  const card = push.body.messages[0].contents.contents[0];
+  const fx = push.body.messages[0].contents;
+  const card = fx.type === 'carousel' ? fx.contents.find((b) => JSON.stringify(b).includes('a=add')) : fx;
   assert.equal(push.body.messages[0].type, 'flex');
   assert.ok(JSON.stringify(card).includes(p.name));
+  assert.ok(card.body.contents.every((c) => c.type !== 'text' || c.wrap), 'ข้อความทุกบรรทัดตัดขึ้นบรรทัดใหม่ ไม่ถูกตัดเป็น …');
   assert.deepEqual(card.footer.contents.map((b) => b.action.data.split('&')[0]), ['a=add', 'a=buy']);
   // ➕ → quick replies → +12 adds stock
   await hook([{ type: 'postback', replyToken: 'rt2', source: { type: 'user', userId: 'Uowner' }, postback: { data: `a=add&t=product&i=${p.id}` } }]); await wait(100);

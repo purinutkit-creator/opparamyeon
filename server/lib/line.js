@@ -67,41 +67,74 @@ export const suggestQty = (x) => Math.max(1, Math.ceil(Number(x.low_stock || 0) 
 
 // ---------- messages (Flex) ----------
 const BRAND = '#E23A1F';
-const pb = (label, data, style = 'primary', color = BRAND) => ({ type: 'button', style, color: style === 'primary' ? color : undefined, height: 'sm', action: { type: 'postback', label: label.slice(0, 20), data, displayText: label } });
+const pb = (label, data, style = 'primary', color = BRAND) => ({ type: 'button', style, ...(style === 'primary' ? { color } : {}), height: 'md', action: { type: 'postback', label: label.slice(0, 20), data, displayText: label } });
+// Cards are laid out top-to-bottom (nothing side by side), so names and numbers are never cut off on a phone.
+const RED = '#C81E1E', ORANGE = '#D97706', GREEN = '#15803D', GREY = '#6B7280';
+const txt = (text, o = {}) => ({ type: 'text', text: String(text), wrap: true, ...o });
+const bar = (stock, low) => { // how full: up to twice the low-stock level = full
+  const full = Math.max(1, Number(low || 0) * 2), pct = Math.max(3, Math.min(100, Math.round(Number(stock) / full * 100)));
+  return { type: 'box', layout: 'vertical', height: '10px', cornerRadius: '6px', backgroundColor: '#EEEEEE', margin: 'md',
+    contents: [{ type: 'box', layout: 'vertical', width: pct + '%', height: '10px', cornerRadius: '6px', backgroundColor: Number(stock) <= 0 ? RED : ORANGE, contents: [] }] };
+};
 function itemBubble(x) {
   const out = Number(x.stock) <= 0;
   const img = abs(x.image);
   return {
-    type: 'bubble', size: 'kilo',
-    ...(img ? { hero: { type: 'image', url: img, size: 'full', aspectRatio: '20:13', aspectMode: 'cover' } } : {}),
-    body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
-      { type: 'text', text: out ? '⛔ หมดแล้ว' : '⚠️ ใกล้หมด', size: 'xs', weight: 'bold', color: out ? '#B91C1C' : '#B45309' },
-      { type: 'text', text: x.name, weight: 'bold', size: 'lg', wrap: true },
-      { type: 'box', layout: 'baseline', contents: [{ type: 'text', text: 'คงเหลือ', size: 'sm', color: '#888888', flex: 0 },
-        { type: 'text', text: `${num(x.stock)} ${x.unit || ''}`, size: 'xl', weight: 'bold', color: out ? '#B91C1C' : BRAND, align: 'end' }] },
-      { type: 'text', text: `แจ้งเตือนเมื่อเหลือ ≤ ${num(x.low_stock)}`, size: 'xs', color: '#999999' }] },
-    footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
-      pb('➕ เพิ่มสต็อก', `a=add&t=${x.type}&i=${x.id}`),
-      pb('🛒 ใส่รายการที่ต้องซื้อ', `a=buy&t=${x.type}&i=${x.id}`, 'secondary')] },
+    type: 'bubble', size: 'mega',
+    header: { type: 'box', layout: 'vertical', paddingAll: '14px', backgroundColor: out ? RED : ORANGE,
+      contents: [txt(out ? '⛔ หมดแล้ว' : '⚠️ ใกล้หมด', { color: '#FFFFFF', weight: 'bold', size: 'lg' })] },
+    ...(img ? { hero: { type: 'image', url: img, size: 'full', aspectRatio: '20:11', aspectMode: 'cover' } } : {}),
+    body: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '18px', contents: [
+      txt(x.name, { weight: 'bold', size: 'xl' }),
+      txt('เหลืออยู่', { size: 'sm', color: GREY, margin: 'lg' }),
+      txt(`${num(x.stock)} ${x.unit || ''}`, { size: '4xl', weight: 'bold', color: out ? RED : ORANGE }),
+      bar(x.stock, x.low_stock),
+      txt(`แจ้งเตือนเมื่อเหลือ ${num(x.low_stock)} ${x.unit || ''} หรือน้อยกว่า`, { size: 'sm', color: GREY, margin: 'md' })] },
+    footer: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: '14px', contents: [
+      pb('➕ เติมสต็อก', `a=add&t=${x.type}&i=${x.id}`),
+      pb('🛒 ต้องซื้อเพิ่ม', `a=buy&t=${x.type}&i=${x.id}`, 'secondary')] },
   };
 }
-export function lowStockMessage(items, title = 'สินค้าใกล้หมด') {
-  if (!items.length) return { type: 'text', text: '✅ ตอนนี้ไม่มีสินค้า/วัตถุดิบใกล้หมด' };
-  return { type: 'flex', altText: `${title}: ${items.slice(0, 3).map((x) => `${x.name} เหลือ ${num(x.stock)}`).join(', ')}`, contents: { type: 'carousel', contents: items.slice(0, 10).map(itemBubble) } };
+// first card of the carousel: every item and its number in one list
+function summaryBubble(items) {
+  return { type: 'bubble', size: 'mega',
+    header: { type: 'box', layout: 'vertical', paddingAll: '14px', backgroundColor: BRAND,
+      contents: [txt('📦 ของใกล้หมด', { color: '#FFFFFF', weight: 'bold', size: 'xl' }), txt(`${items.length} รายการ · เลื่อนดูทีละรายการ →`, { color: '#FFE4DC', size: 'sm' })] },
+    body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: '18px', contents: items.slice(0, 12).flatMap((x, i) => [
+      ...(i ? [{ type: 'separator' }] : []),
+      txt(x.name, { weight: 'bold', size: 'md' }),
+      txt(`${Number(x.stock) <= 0 ? '⛔ หมดแล้ว' : '⚠️ เหลือ'} ${Number(x.stock) <= 0 ? '' : num(x.stock) + ' ' + (x.unit || '')}`.trim(), { size: 'lg', weight: 'bold', color: Number(x.stock) <= 0 ? RED : ORANGE })]) },
+    footer: { type: 'box', layout: 'vertical', contents: [pb('🛒 ซื้อทั้งหมดนี้', 'a=buyall')] } };
 }
+export function lowStockMessage(items, title = 'สินค้าใกล้หมด') {
+  if (!items.length) return { type: 'text', text: '✅ ตอนนี้ไม่มีของใกล้หมด' };
+  const bubbles = items.length > 1 ? [summaryBubble(items), ...items.slice(0, 9).map(itemBubble)] : [itemBubble(items[0])];
+  return { type: 'flex', altText: (`${title}: ${items.slice(0, 3).map((x) => `${x.name} เหลือ ${num(x.stock)}`).join(', ')}${items.length > 3 ? ` และอีก ${items.length - 3} รายการ` : ''}`).slice(0, 380),
+    contents: bubbles.length > 1 ? { type: 'carousel', contents: bubbles } : bubbles[0] };
+}
+// shopping list: one block per item (name, how many to buy, how many are left), then its "bought" button
 export function listMessage(list, low = [], { title = '🛒 รายการที่ต้องซื้อ', sub = '' } = {}) {
   const notListed = low.filter((x) => !list.some((l) => l.item_type === x.type && l.item_id === x.id));
-  const rows = list.slice(0, 12).map((l) => ({ type: 'box', layout: 'horizontal', spacing: 'sm', alignItems: 'center', contents: [
-    { type: 'text', text: l.name, size: 'sm', wrap: true, flex: 5 },
-    { type: 'text', text: `${num(l.qty)} ${l.unit || ''}`, size: 'sm', weight: 'bold', align: 'end', flex: 2 },
-    { type: 'button', style: 'link', height: 'sm', flex: 2, action: { type: 'postback', label: 'ซื้อแล้ว', data: `a=bought&l=${l.id}`, displayText: `ซื้อ ${l.name} แล้ว` } }] }));
-  return { type: 'flex', altText: `${title} ${list.length} รายการ`, contents: { type: 'bubble', size: 'mega',
-    header: { type: 'box', layout: 'vertical', backgroundColor: BRAND, contents: [{ type: 'text', text: title, color: '#FFFFFF', weight: 'bold', size: 'lg' }, ...(sub ? [{ type: 'text', text: sub, color: '#FFE4DC', size: 'xs', wrap: true }] : [])] },
-    body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [
-      ...(rows.length ? rows : [{ type: 'text', text: 'ยังไม่มีของในรายการ', color: '#888888', size: 'sm' }]),
-      ...(notListed.length ? [{ type: 'separator' }, { type: 'text', text: `⚠️ ใกล้หมดแต่ยังไม่อยู่ในรายการ: ${notListed.slice(0, 6).map((x) => x.name).join(', ')}${notListed.length > 6 ? ' …' : ''}`, size: 'xs', color: '#B45309', wrap: true }] : [])] },
-    footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
-      ...(notListed.length ? [pb(`➕ ใส่ของใกล้หมดทั้งหมด (${notListed.length})`, 'a=buyall')] : []),
+  const left = (l) => low.find((x) => x.type === l.item_type && x.id === l.item_id);
+  const rows = list.slice(0, 10).flatMap((l, i) => {
+    const x = left(l);
+    return [
+      ...(i ? [{ type: 'separator', margin: 'lg' }] : []),
+      { type: 'box', layout: 'vertical', spacing: 'xs', margin: 'lg', contents: [
+        txt(`${i + 1}. ${l.name}`, { weight: 'bold', size: 'lg' }),
+        txt(`ซื้อ ${num(l.qty)} ${l.unit || ''}`.trim(), { size: 'xl', weight: 'bold', color: BRAND }),
+        ...(x ? [txt(`ตอนนี้เหลือ ${num(x.stock)} ${x.unit || ''}`.trim(), { size: 'sm', color: Number(x.stock) <= 0 ? RED : ORANGE })] : []),
+        { type: 'button', style: 'secondary', height: 'sm', margin: 'sm', action: { type: 'postback', label: '✓ ซื้อแล้ว', data: `a=bought&l=${l.id}`, displayText: `ซื้อ ${l.name} แล้ว` } }] }];
+  });
+  return { type: 'flex', altText: `${title}: ${list.length} รายการ${list.length ? ' — ' + list.slice(0, 3).map((l) => `${l.name} ${num(l.qty)}`).join(', ') : ''}`, contents: { type: 'bubble', size: 'mega',
+    header: { type: 'box', layout: 'vertical', paddingAll: '16px', backgroundColor: BRAND, contents: [txt(title, { color: '#FFFFFF', weight: 'bold', size: 'xl' }), txt(sub || `${list.length} รายการ`, { color: '#FFE4DC', size: 'sm' })] },
+    body: { type: 'box', layout: 'vertical', paddingAll: '18px', contents: [
+      ...(rows.length ? rows : [txt('ยังไม่มีของที่ต้องซื้อ 👍', { color: GREY, size: 'md' })]),
+      ...(list.length > 10 ? [txt(`และอีก ${list.length - 10} รายการ — ดูทั้งหมดที่หน้าสต็อก`, { size: 'sm', color: GREY, margin: 'lg' })] : []),
+      ...(notListed.length ? [{ type: 'separator', margin: 'xl' }, txt('⚠️ ใกล้หมดแต่ยังไม่ได้ใส่รายการ', { size: 'md', weight: 'bold', color: ORANGE, margin: 'lg' }),
+        ...notListed.slice(0, 6).map((x) => txt(`• ${x.name} — เหลือ ${num(x.stock)} ${x.unit || ''}`.trim(), { size: 'sm', margin: 'sm' }))] : [])] },
+    footer: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: '14px', contents: [
+      ...(notListed.length ? [pb(`➕ ใส่ทั้งหมด (${notListed.length})`, 'a=buyall')] : []),
       pb('📦 ดูของใกล้หมด', 'a=low', 'secondary')] } } };
 }
 
