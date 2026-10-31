@@ -116,7 +116,8 @@ function renderAll() {
   const paying = state.phase === 'pay';
   // while paying, the payment panel (total + QR) replaces the promotion half — order list stays on the other half
   const wrap = h('div', { class: `disp ${d.layout === 'full' && !paying ? 'full' : 'split'}${active ? ' active' : ''}${paying ? ' paying' : ''}` },
-    h('div', { class: 'promo', id: 'promo' }), h('div', { class: 'panel', id: 'panel' }));
+    h('div', { class: 'promo', id: 'promo' }), h('div', { class: 'panel', id: 'panel' }),
+    h('div', { class: 'gclock', id: 'gclock' }, h('b', {}, timeText()), h('span', {}, dateText())));
   const old = $('.disp');
   if (old && old.className === wrap.className) { renderPanel(); if (paying) renderPay(); return renderDone(); }
   if ($('.done:not(.leaving)') && state.phase !== 'done') wrap.classList.add('welcome-in');
@@ -151,7 +152,7 @@ function renderPay() {
   const mode = showQr ? 'qr:' + s.qr : 'cash';
   if (el.dataset.mode !== mode) {
     el.dataset.mode = mode;
-    const top = h('div', { class: 'paytop' }, h('div', { class: 'pclock' }, h('b', { id: 'payTime' }, timeText()), h('span', { id: 'payDate' }, dateText())), h('div', { id: 'payQueue' }));
+    const top = h('div', { class: 'paytop' }, h('span'), h('div', { id: 'payQueue' })); // the time is on the clock at the top-left
     const head = h('div', { class: 'payhead' }, h('i', { class: 'shine' }), h('div', { class: 'lbl' }, T('pay_due'), h('span', { id: 'payUnit' })), h('div', { class: 'amt' }, h('span', { id: 'payAmt' }), h('small', {}, '฿')),
       h('div', { class: 'paybreak', id: 'payBreak' }));
     let body;
@@ -241,14 +242,14 @@ function renderPromo() {
   const media = (d.media || []).filter((m) => m.url);
   const logo = d.logo || settings.store.logo;
   const bar = () => h('div', { class: 'glassbar' }, logo ? h('img', { src: logo, alt: '' }) : null,
-    h('div', { class: 't' }, h('b', {}, settings.store.name || ''), d.welcome ? h('span', {}, d.welcome) : null), h('div', { class: 'clock', id: 'clock' }, clockText()));
+    h('div', { class: 't' }, h('b', {}, settings.store.name || ''), d.welcome ? h('span', {}, d.welcome) : null));
   const show = (i) => {
     if (!media.length) {
       // no promotion media: an animated welcome scene in the shop colour
       el.replaceChildren(h('div', { class: 'hero' }, h('span', { class: 'ring' }), h('span', { class: 'ring' }), h('span', { class: 'ring' }),
         h('div', { class: 'inner' }, h('div', { style: { position: 'relative' } }, h('div', { class: 'steam' }, h('i'), h('i'), h('i')), h('img', { class: 'bowl', src: logo || '/assets/bowl.svg', alt: '' })),
           h('h1', {}, settings.store.name || 'Welcome'), d.welcome ? h('p', {}, d.welcome) : null, T('idle_pill') ? h('span', { class: 'pill' }, T('idle_pill')) : null)),
-        h('div', { class: 'glassbar', style: { left: 'auto', width: 'auto' } }, h('div', { class: 'clock', id: 'clock' }, clockText())));
+        null);
       return;
     }
     const m = media[i % media.length];
@@ -264,16 +265,14 @@ function renderPromo() {
   };
   show(0);
 }
-const clockText = () => new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
-const timeText = () => new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-const dateText = () => new Date().toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
-setInterval(() => { const c = $('#clock'); if (c) c.textContent = clockText(); }, 15000);
-setInterval(() => { const t = $('#payTime'); if (t) { t.textContent = timeText(); $('#payDate').textContent = dateText(); } }, 1000);
-let prevQty = new Map(), prevTotal = null, latestKey = null;
+const timeText = () => new Date().toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+const dateText = () => new Date().toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+setInterval(() => { const c = $('#gclock'); if (c) { c.firstChild.textContent = timeText(); c.lastChild.textContent = dateText(); } }, 1000);
+let prevQty = new Map(), prevTotal = null, latestKey = null, lastAdd = null;
 function renderPanel() {
   const p = $('#panel'); if (!p) return;
   const s = state;
-  if (!s.phase || s.phase === 'idle') { p.replaceChildren(); prevQty = new Map(); prevTotal = null; latestKey = null; return; }
+  if (!s.phase || s.phase === 'idle') { p.replaceChildren(); prevQty = new Map(); prevTotal = null; latestKey = null; lastAdd = null; return; }
   const unit = settings.sale.count_unit || 'ชาม';
   const lines = s.lines || [];
   // lines that were just added (or got more) slide in and glow
@@ -282,8 +281,16 @@ function renderPanel() {
   const now = new Map(), fresh = new Set(), more = new Set();
   let last = null;
   for (const l of lines) { const k = l.name + '|' + (l.options || []).join(','); now.set(k, (now.get(k) || 0) + l.qty); }
-  for (const [k, q] of now) { const was = prevQty.get(k) || 0; if (q > was) { (was ? more : fresh).add(k); last = k; } }
+  let added = null;
+  for (const [k, q] of now) { const was = prevQty.get(k) || 0; if (q > was) { (was ? more : fresh).add(k); last = k; added = { k, n: q - was, total: q }; } }
   prevQty = now;
+  // "เพิ่มล่าสุด" bar: what was just added and its price — the list itself is not scrolled back to that line
+  if (added) {
+    const ls = lines.filter((l) => l.name + '|' + (l.options || []).join(',') === added.k);
+    const line = ls[ls.length - 1];
+    const each = line && line.qty ? Math.round(line.price / line.qty) : 0;
+    lastAdd = { name: line ? line.name : '', opts: line ? (line.options || []).map((o) => String(o).replace(/^[✓✗] /, '')).join(' · ') : '', n: added.n, each, sum: each * added.total, total: added.total, at: Date.now() };
+  } else if (lastAdd && !lines.some((l) => l.name === lastAdd.name)) lastAdd = null;
   if (last) latestKey = last; else if (latestKey && !now.has(latestKey)) latestKey = null;
   const bump = prevTotal !== null && prevTotal !== s.total; prevTotal = s.total;
   const m = s.member;
@@ -306,6 +313,11 @@ function renderPanel() {
       return h('div', { class: 'it' + (fresh.has(k) ? ' new' : more.has(k) ? ' more-q' : '') + (isLatest ? ' latest' : ''), 'data-k': k },
         h('span', { class: 'q' }, l.qty), h('div', { class: 'n' }, h('b', {}, l.name, isLatest ? h('em', { class: 'ltag' }, T('latest')) : null), opts.length ? h('small', {}, opts) : null), h('span', { class: 'p' }, baht(l.price)));
     })), h('div', { class: 'more down' })),
+    lastAdd ? h('div', { class: 'lastadd' + (added ? ' pop' : '') },
+      h('span', { class: 'la-k' }, T('last_added')),
+      h('div', { class: 'la-n' }, h('b', {}, lastAdd.name), lastAdd.opts ? h('small', {}, lastAdd.opts) : null),
+      h('span', { class: 'la-q' }, '+' + lastAdd.n),
+      h('span', { class: 'la-p' }, baht(lastAdd.each), h('small', {}, lastAdd.total > 1 ? ` × ${lastAdd.total} = ${baht(lastAdd.sum)}` : ''))) : null,
     h('div', { class: 'sum' },
       s.discount || s.packaging || s.tax ? r(T('subtotal'), baht(s.items_total)) : null, s.discount ? r(T('discount'), '−' + baht(s.discount)) : null,
       s.packaging ? r(T('packaging'), baht(s.packaging)) : null, s.tax ? r(T('vat'), baht(s.tax)) : null,
@@ -318,14 +330,10 @@ function renderPanel() {
 function followItems(oldTop) {
   const box = $('#panel .items'); if (!box) return;
   box.scrollTop = oldTop;
-  const changed = box.querySelector('.it.latest.new, .it.latest.more-q');
+  const changed = box.querySelector('.it.new, .it.more-q');
   const max = box.scrollHeight - box.clientHeight;
-  let to = Math.min(oldTop, max);
-  if (changed) {
-    // added at the end → go all the way down; an existing line → just bring it into view where it is
-    if (changed === box.lastElementChild) to = max;
-    else { const t = changed.offsetTop, b = t + changed.offsetHeight; if (b > to + box.clientHeight) to = b - box.clientHeight; else if (t < to) to = t; }
-  }
+  // something was added → always the newest end of the list (the "เพิ่มล่าสุด" bar says what it was)
+  let to = changed ? max : Math.min(oldTop, max);
   to = Math.max(0, Math.min(max, to));
   box.scrollTo({ top: to, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   countHidden(box, to);

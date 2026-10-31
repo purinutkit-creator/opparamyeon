@@ -116,6 +116,29 @@ function itemBubble(x, note = '') {
   };
 }
 // first card of the carousel: every item and its number in one list
+// how many to add: 1–100 on cards of ten you swipe through (or type any number)
+export function addPickerMessage(x) {
+  const cell = (n) => ({ type: 'box', layout: 'vertical', flex: 1, height: '52px', justifyContent: 'center', cornerRadius: '12px', backgroundColor: '#FFF1EC',
+    action: { type: 'postback', label: '+' + n, data: `a=addq&t=${x.type}&i=${x.id}&q=${n}`, displayText: `เติม ${x.name} +${n}` },
+    contents: [txt('+' + n, { align: 'center', weight: 'bold', size: 'lg', color: BRAND })] });
+  const page = (from) => ({ type: 'bubble', size: 'kilo',
+    header: { type: 'box', layout: 'vertical', paddingAll: '12px', backgroundColor: BRAND, contents: [txt(`➕ ${x.name}`, { color: '#FFFFFF', weight: 'bold', size: 'md' }), txt(`ตอนนี้มี ${num(x.stock)} ${x.unit || ''} · เลือก ${from}–${from + 9}`, { color: '#FFE4DC', size: 'xs' })] },
+    body: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '12px', contents: [0, 5].map((o) => ({ type: 'box', layout: 'horizontal', spacing: 'sm', contents: [0, 1, 2, 3, 4].map((c) => cell(from + o + c)) })) },
+    footer: { type: 'box', layout: 'vertical', paddingAll: '10px', contents: [txt(from < 91 ? 'เลื่อน ← → ดูเลขอื่น · หรือพิมพ์ตัวเลขเอง' : 'หรือพิมพ์ตัวเลขเองในแชต', { size: 'xs', color: GREY, align: 'center' })] } });
+  return [{ type: 'text', text: `➕ เติมสต็อก "${x.name}"\nตอนนี้มี ${num(x.stock)} ${x.unit || ''}\n\n👉 กดจำนวนในการ์ดด้านล่าง (เลื่อนดูได้ 1–100)\n⌨️ หรือพิมพ์ตัวเลขส่งมาเลย เช่น 36` },
+    { type: 'flex', altText: `เลือกจำนวนที่จะเติม ${x.name}`, contents: { type: 'carousel', contents: [1, 11, 21, 31, 41, 51, 61, 71, 81, 91].map(page) } }];
+}
+// done: before → after, big
+export function addedMessage(x, q, before) {
+  return { type: 'flex', altText: `เติม ${x.name} +${q} แล้ว ตอนนี้มี ${num(x.stock)} ${x.unit || ''}`, contents: { type: 'bubble', size: 'kilo',
+    header: { type: 'box', layout: 'vertical', paddingAll: '12px', backgroundColor: GREEN, contents: [txt('✅ เติมสต็อกแล้ว', { color: '#FFFFFF', weight: 'bold', size: 'md' })] },
+    body: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '16px', contents: [
+      txt(x.name, { weight: 'bold', size: 'lg' }),
+      txt(`+${num(q)} ${x.unit || ''}`, { size: 'xl', weight: 'bold', color: GREEN }),
+      txt(`${num(before)} → ${num(x.stock)} ${x.unit || ''}`, { size: '3xl', weight: 'bold' }),
+      txt('ก่อนเติม → หลังเติม', { size: 'xs', color: GREY })] },
+    footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [pb('➕ เติมอีก', `a=add&t=${x.type}&i=${x.id}`, 'secondary'), pb('📦 ดูของใกล้หมด', 'a=low', 'secondary')] } } };
+}
 export const stockCard = (x, note = '') => ({ type: 'flex', altText: `${x.name}: เหลือ ${num(x.stock)} ${x.unit || ''}`.slice(0, 380), contents: itemBubble(x, note) });
 // several possible matches: small cards, "this one?" opens the full stock card
 export function candidatesMessage(list, title) {

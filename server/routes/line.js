@@ -5,6 +5,7 @@ import { ah, now, bad, notFound, audit, setSecret, setSetting } from '../lib/uti
 import { staffAuth } from '../lib/auth.js';
 import { adjustStock } from '../lib/stock.js';
 import { decodeImage, readBarcode, similarProducts, aiMatch } from '../lib/imgmatch.js';
+import { addPickerMessage, addedMessage } from '../lib/line.js';
 import { lineContent, lineLoading, findProducts, stockCard, candidatesMessage, lineSecret, lineToken, verifyLineSignature, lineReply, lineCfg, lowItems, itemOf, openList, addToList, suggestQty, lowStockMessage, listMessage, tryLink, isRecipient, newLinkCode, setupRichMenu, lineToAll } from '../lib/line.js';
 
 const num = (v) => Math.round(Number(v || 0) * 100) / 100;
@@ -24,6 +25,9 @@ async function handle(ev) {
     if (linked) return lineReply(rt, { type: 'text', text: `✅ เชื่อมต่อแล้ว (${linked}) — จะได้รับแจ้งเตือนสินค้าใกล้หมดและรายการที่ต้องซื้อตอนปิดรอบ\nกดเมนูด้านล่าง หรือพิมพ์ "สต็อก" / "ซื้อ"` });
     if (!(await isRecipient(src))) return;
     const t = ev.message.text.trim();
+    // a number typed right after "เติมสต็อก" = how many to add
+    const pend = waiting.get(chatOf(src));
+    if (pend && pend.until > Date.now() && /^\d{1,4}(\.\d+)?$/.test(t) && Number(t) > 0) { waiting.delete(chatOf(src)); return addNow(rt, pend.type, pend.id, Number(t), src); }
     // a barcode number / product code / name → that product's stock
     const found = /^\d{4,}$/.test(t) || !/^(สต็อก|stock|ใกล้หมด|ซื้อ|list|รายการ)/i.test(t) ? await findProducts(t) : [];
     if (found.length === 1) return lineReply(rt, stockCard(found[0], `ค้นจาก "${t}"`));
@@ -56,16 +60,12 @@ async function handle(ev) {
   if (a === 'low') return lineReply(rt, lowStockMessage(await lowItems()));
   if (a === 'show') { const x = await itemOf(p.get('t'), p.get('i')); return x ? lineReply(rt, stockCard(x)) : null; }
   if (a === 'list') return lineReply(rt, listMessage(await openList(), await lowItems()));
-  if (a === 'add') { // how much to add: quick buttons
+  if (a === 'add') { // how much to add: 1–100 to swipe through, or type a number within 5 minutes
     const x = await itemOf(p.get('t'), p.get('i')); if (!x) return;
-    return lineReply(rt, { type: 'text', text: `➕ เติมสต็อก: ${x.name}\nตอนนี้เหลือ ${num(x.stock)} ${x.unit || ''}\n\n👇 กดเลือกจำนวนที่จะเติมด้านล่าง`,
-      quickReply: { items: [1, 6, 12, 24, 48, suggestQty(x)].filter((v, i, arr) => arr.indexOf(v) === i).map((q) => ({ type: 'action', action: { type: 'postback', label: `+${q}`, data: `a=addq&t=${x.type}&i=${x.id}&q=${q}`, displayText: `เพิ่ม ${x.name} +${q}` } })) } });
+    waiting.set(chatOf(src), { type: x.type, id: x.id, until: Date.now() + 5 * 60e3 });
+    return lineReply(rt, addPickerMessage(x));
   }
-  if (a === 'addq') {
-    const q = Number(p.get('q')); if (!(q > 0 && q <= 9999)) return;
-    const x = await adjustStock({ type: p.get('t'), id: p.get('i'), qty: q, mode: 'add', note: 'เติมผ่าน LINE', track: true, actor: who });
-    return lineReply(rt, { type: 'text', text: `✅ เติมสต็อกแล้ว\n${x.name}  +${q}\n\nตอนนี้มี ${num(x.stock)} ${x.unit || ''}` });
-  }
+  if (a === 'addq') { waiting.delete(chatOf(src)); return addNow(rt, p.get('t'), p.get('i'), Number(p.get('q')), src); }
   if (a === 'buy') {
     const x = await itemOf(p.get('t'), p.get('i')); if (!x) return;
     await addToList({ type: x.type, itemId: x.id, name: x.name, qty: suggestQty(x), unit: x.unit || '', by: who });
@@ -83,6 +83,16 @@ async function handle(ev) {
       ...(l.item_id ? { quickReply: { items: [{ type: 'action', action: { type: 'postback', label: `เติม +${num(l.qty)}`, data: `a=addq&t=${l.item_type}&i=${l.item_id}&q=${num(l.qty)}`, displayText: `เติม ${l.name} +${num(l.qty)}` } },
         { type: 'action', action: { type: 'postback', label: 'ยังไม่เติม', data: 'a=list', displayText: 'ดูรายการที่ต้องซื้อ' } }] } } : {}) });
   }
+}
+
+// "เติมสต็อก" pressed, waiting for a typed number (per chat, 5 minutes)
+const waiting = new Map();
+const chatOf = (src) => src.groupId || src.roomId || src.userId;
+async function addNow(rt, type, itemId, q, src) {
+  if (!(q > 0 && q <= 9999)) return lineReply(rt, { type: 'text', text: 'จำนวนต้องอยู่ระหว่าง 1–9999' });
+  const before = await itemOf(type, itemId); if (!before) return;
+  const x = await adjustStock({ type, id: itemId, qty: q, mode: 'add', note: 'เติมผ่าน LINE', track: true, actor: 'line:' + (src.userId || src.groupId || '') });
+  return lineReply(rt, addedMessage(x, q, before.stock));
 }
 
 const r = Router();

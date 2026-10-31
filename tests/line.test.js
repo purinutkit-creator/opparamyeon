@@ -69,10 +69,18 @@ test('LINE: ตั้งค่า เชื่อมแชตด้วยรห�
   assert.deepEqual(card.footer.contents.map((b) => b.action.data.split('&')[0]), ['a=add', 'a=buy']);
   // ➕ → quick replies → +12 adds stock
   await hook([{ type: 'postback', replyToken: 'rt2', source: { type: 'user', userId: 'Uowner' }, postback: { data: `a=add&t=product&i=${p.id}` } }]); await wait(100);
-  assert.ok(lastTo('/v2/bot/message/reply').body.messages[0].quickReply.items.some((x) => x.action.data.endsWith('&q=12')));
+  const picker = lastTo('/v2/bot/message/reply').body.messages[1].contents;
+  assert.equal(picker.contents.length, 10, 'การ์ด 1–100 เลื่อนดูได้');
+  assert.ok(JSON.stringify(picker).includes('&q=100') && JSON.stringify(picker).includes('&q=12'));
   await hook([{ type: 'postback', replyToken: 'rt3', source: { type: 'user', userId: 'Uowner' }, postback: { data: `a=addq&t=product&i=${p.id}&q=12` } }]); await wait(150);
   assert.equal((await db.get('SELECT stock FROM products WHERE id = ?', [p.id])).stock, 13);
+  assert.match(lastTo('/v2/bot/message/reply').body.messages[0].altText, /\+12/);
   assert.equal((await db.get("SELECT reason FROM stock_moves WHERE item_id = ? ORDER BY created_at DESC LIMIT 1", [p.id])).reason, 'เติมผ่าน LINE');
+  // ➕ then type a number in the chat
+  await hook([{ type: 'postback', replyToken: 'rt3b', source: { type: 'user', userId: 'Uowner' }, postback: { data: `a=add&t=product&i=${p.id}` } }]); await wait(100);
+  await hook([{ type: 'message', replyToken: 'rt3c', source: { type: 'user', userId: 'Uowner' }, message: { type: 'text', text: '7' } }]); await wait(150);
+  assert.equal((await db.get('SELECT stock FROM products WHERE id = ?', [p.id])).stock, 20, 'พิมพ์ 7 → เติม 7');
+  await S.call('POST', '/api/stock/adjust', { item_type: 'product', item_id: p.id, qty: 13, mode: 'set' }, { token: owner });
   // 🛒 → shopping list; bought → offer to restock
   await S.call('POST', '/api/stock/adjust', { item_type: 'product', item_id: p.id, qty: 1, mode: 'set' }, { token: owner });
   await hook([{ type: 'postback', replyToken: 'rt4', source: { type: 'user', userId: 'Uowner' }, postback: { data: `a=buy&t=product&i=${p.id}` } }]); await wait(150);

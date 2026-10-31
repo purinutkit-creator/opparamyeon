@@ -451,6 +451,30 @@
   @keyframes aurora { to { transform: rotate(360deg); } }
   [data-bg="particles"] .bgfx .pt { display: block; position: absolute; bottom: -2vh; width: .7vh; height: .7vh; border-radius: 50%; background: color-mix(in srgb, var(--a) 50%, #fff);
     box-shadow: 0 0 1.2vh .3vh color-mix(in srgb, var(--a) 60%, transparent); opacity: 0; animation: rise linear infinite; }
+
+  /* one clock on every screen: top-left, seconds + full date */
+  .gclock { position: fixed; top: 2vh; left: 2vh; z-index: 60; display: grid; gap: .1em; padding: 1vh 2vh; border-radius: 2vh; color: #fff;
+    background: rgb(0 0 0 / .32); border: 1px solid rgb(255 255 255 / .18); text-shadow: 0 2px 10px rgb(0 0 0 / .25); pointer-events: none; animation: popin .6s cubic-bezier(.2,1.4,.4,1) both; }
+  .gclock b { font-family: var(--hf); font-size: clamp(22px, 5vh, 56px); line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+  .gclock span { font-size: clamp(12px, 1.9vh, 22px); font-weight: 700; opacity: .92; }
+  .disp.split .panel .ph { padding-top: .5vh; }
+  /* the order list sits on the left half while paying / in the full layout: start it below the clock */
+  .disp.paying .panel .ph, .disp.full .panel .ph { margin-top: 9vh; }
+  /* what was just added: name, how many, price — pops on every add */
+  .lastadd { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 1.2vh; margin: 1vh 0 .4vh; padding: 1.1vh 1.6vh; border-radius: 1.8vh;
+    background: color-mix(in srgb, var(--hl, #f59e0b) 18%, var(--glass, rgb(255 255 255 / .08))); border: 1px solid color-mix(in srgb, var(--hl, #f59e0b) 55%, transparent); overflow: hidden; position: relative; }
+  .lastadd .la-k { font-size: clamp(11px, 1.6vh, 18px); font-weight: 800; padding: .3em .7em; border-radius: 99px; background: var(--hl, #f59e0b); color: #fff; white-space: nowrap; }
+  .lastadd .la-n { min-width: 0; } .lastadd .la-n b { display: block; font-size: clamp(14px, 2.4vh, 28px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lastadd .la-n small { display: block; opacity: .75; font-size: clamp(11px, 1.6vh, 18px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lastadd .la-q { font-family: var(--hf); font-weight: 800; font-size: clamp(16px, 3vh, 34px); color: var(--hl, #f59e0b); }
+  .lastadd .la-p { font-family: var(--hf); font-weight: 800; font-size: clamp(14px, 2.6vh, 30px); text-align: right; white-space: nowrap; } .lastadd .la-p small { font-size: .6em; opacity: .75; font-weight: 600; }
+  .lastadd.pop { animation: lapop .7s cubic-bezier(.2, 1.4, .4, 1) both; }
+  .lastadd.pop::after { content: ''; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, rgb(255 255 255 / .35) 50%, transparent 70%); transform: translateX(-100%); animation: lashine 1s .2s ease-out both; }
+  .lastadd.pop .la-q { animation: qbump .7s .15s cubic-bezier(.2,1.6,.4,1) both; }
+  @keyframes lapop { 0% { opacity: 0; transform: translateY(1.4vh) scale(.94); } 60% { opacity: 1; transform: translateY(-.3vh) scale(1.02); } 100% { transform: none; } }
+  @keyframes lashine { to { transform: translateX(100%); } }
+  .sum .grand small { transition: color .3s; }
+  @media (prefers-reduced-motion: reduce) { .lastadd.pop, .lastadd.pop::after, .lastadd.pop .la-q, .gclock { animation: none; } }
 </style>
 </head>
 <body>
