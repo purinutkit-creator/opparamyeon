@@ -14,10 +14,28 @@ import { staffAuth, can } from '../lib/auth.js';
 const r = Router();
 const changed = () => { emit('shop', 'catalog:changed', {}); emit('mobile', 'catalog:changed', {}); };
 
+// how a category orders its products: the order set on each product, product code, or name — up or down
+export const SORT_BY = ['sort', 'code_asc', 'code_desc', 'name_asc', 'name_desc'];
+const natural = (a, b) => String(a || '').localeCompare(String(b || ''), 'th', { numeric: true, sensitivity: 'base' });
+export function orderByCategory(prods, cats) {
+  const out = prods.slice();
+  for (const c of cats) {
+    const how = c.sort_by || 'sort';
+    if (how === 'sort') continue;
+    const [key, dir] = how.split('_');
+    const at = []; out.forEach((p, i) => { if (p.category_id === c.id) at.push(i); });
+    // re-ordered only among their own places, so the "all" list keeps its overall order
+    const mine = at.map((i) => out[i]).sort((a, b) => (dir === 'desc' ? -1 : 1) * (natural(a[key], b[key]) || natural(a.code, b.code)));
+    at.forEach((i, k) => { out[i] = mine[k]; });
+  }
+  return out;
+}
+
 export async function catalog({ includeInactive = false, mobile = false, withCost = false } = {}) {
   const cats = await db.all(`SELECT * FROM categories ${includeInactive ? '' : 'WHERE active = 1'} ORDER BY sort, name`);
   let prods = await db.all(`SELECT * FROM products ${includeInactive ? '' : 'WHERE active = 1'} ORDER BY sort, name`);
   if (mobile) prods = prods.filter((p) => p.mobile);
+  prods = orderByCategory(prods, cats);
   const bcs = await db.all('SELECT * FROM barcodes');
   const groups = (await db.all('SELECT * FROM option_groups ORDER BY sort, name')).map((g) => ({ ...g, options: J(g.options, []).filter((o) => includeInactive || o.active !== false)
     .map((o) => (withCost ? o : { id: o.id, name: o.name, price: o.price, active: o.active, image: o.image || '', rename_to: o.rename_to || '', mark: o.mark || '' })), display: g.display || 'normal', rename_all: !!g.rename_all }));
@@ -144,7 +162,7 @@ function crud(path, table, fields, perm, { normalize = (o) => o, afterChange = c
   }));
 }
 const bool = (v) => (v === false || v === 0 || v === '0' ? 0 : 1);
-crud('categories', 'categories', ['name', 'sort', 'active', 'color'], 'manage_menu', { normalize: (o) => ({ ...o, sort: Number(o.sort) || 0, active: bool(o.active) }) });
+crud('categories', 'categories', ['name', 'sort', 'active', 'color', 'sort_by'], 'manage_menu', { normalize: (o) => ({ ...o, sort: Number(o.sort) || 0, active: bool(o.active), sort_by: SORT_BY.includes(o.sort_by) ? o.sort_by : 'sort' }) });
 crud('stations', 'stations', ['name', 'split_mode', 'bowls_per_ticket', 'sort'], 'settings', {
   normalize: (o) => {
     if (o.split_mode && !['order', 'item', 'bowl', 'bowl_group'].includes(o.split_mode)) throw bad('รูปแบบใบครัวไม่ถูกต้อง');

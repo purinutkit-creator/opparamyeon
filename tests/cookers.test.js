@@ -412,3 +412,22 @@ test('สต็อก: เติมสต็อกแล้วสินค้า
   const q = await S.call('POST', '/api/stock/print', {}, { token: owner, terminal: 'pos1' });
   assert.equal(q.status, 200); assert.equal(q.body.jobs.length, 1);
 });
+
+test('หมวดหมู่ตั้งได้ว่าเรียงสินค้าตามรหัสหรือชื่อ ขึ้น/ลง (หน้าขายได้ลำดับตามนั้น)', async () => {
+  const c = (await S.call('POST', '/api/categories', { name: 'ท็อปปิ้งทดสอบ', sort: 99, active: true }, { token: owner })).body;
+  for (const [code, name, sort] of [['T10', 'ไข่', 1], ['T2', 'ชีส', 2], ['T1', 'แฮม', 3]]) {
+    assert.equal((await S.call('POST', '/api/products', { code, name, category_id: c.id, price: 1000, sort }, { token: owner })).status, 200);
+  }
+  const order = async () => (await S.call('GET', '/api/catalog', undefined, { token: owner })).body.products.filter((p) => p.category_id === c.id).map((p) => p.code);
+  assert.deepEqual(await order(), ['T10', 'T2', 'T1'], 'ค่าเริ่ม: ตามลำดับแสดงที่ตั้ง');
+  await S.call('PUT', '/api/categories/' + c.id, { sort_by: 'code_asc' }, { token: owner });
+  assert.deepEqual(await order(), ['T1', 'T2', 'T10'], 'รหัสน้อย → มาก (เลขเรียงแบบตัวเลข)');
+  await S.call('PUT', '/api/categories/' + c.id, { sort_by: 'code_desc' }, { token: owner });
+  assert.deepEqual(await order(), ['T10', 'T2', 'T1']);
+  await S.call('PUT', '/api/categories/' + c.id, { sort_by: 'name_asc' }, { token: owner });
+  assert.deepEqual(await order(), ['T10', 'T2', 'T1'].sort((a, b) => ({ T10: 'ไข่', T2: 'ชีส', T1: 'แฮม' }[a]).localeCompare({ T10: 'ไข่', T2: 'ชีส', T1: 'แฮม' }[b], 'th')), 'ชื่อ ก → ฮ');
+  await S.call('PUT', '/api/categories/' + c.id, { name: 'ท็อปปิ้งทดสอบ 2' }, { token: owner });
+  assert.equal((await S.call('GET', '/api/categories', undefined, { token: owner })).body.find((x) => x.id === c.id).sort_by, 'name_asc', 'แก้อย่างอื่นแล้วค่าเรียงไม่หาย');
+  assert.equal((await S.call('PUT', '/api/categories/' + c.id, { sort_by: 'evil' }, { token: owner })).status, 200);
+  assert.equal((await S.call('GET', '/api/categories', undefined, { token: owner })).body.find((x) => x.id === c.id).sort_by, 'sort');
+});

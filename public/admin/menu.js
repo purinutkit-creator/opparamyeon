@@ -66,7 +66,8 @@ export async function menuPage(set) {
     } else if (tab === 'import') {
       body = importBox(reload);
     } else if (tab === 'categories') {
-      body = simpleList('categories', cat.categories, [{ k: 'name', label: 'ชื่อหมวด' }, { k: 'sort', label: 'ลำดับ', type: 'number' }, { k: 'color', label: 'สี', type: 'color' }, { k: 'active', label: 'แสดง', type: 'bool' }], reload);
+      body = simpleList('categories', cat.categories, [{ k: 'name', label: 'ชื่อหมวด' }, { k: 'sort', label: 'ลำดับ', type: 'number' }, { k: 'color', label: 'สี', type: 'color' }, { k: 'active', label: 'แสดง', type: 'bool' },
+        { k: 'sort_by', label: 'เรียงสินค้าในหมวดนี้ตาม', type: 'select', options: SORT_BY_OPTS }], reload, (r) => (SORT_BY_OPTS.find(([v]) => v === (r.sort_by || 'sort')) || [])[1] || '');
     } else if (tab === 'options') {
       body = h('div', {}, h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => optionGroupDialog(null, ingredients, reload) }, '+ เพิ่มกลุ่มตัวเลือก'),
         h('button', { class: 'btn', onclick: () => optionGroupDialog(null, ingredients, reload, { name: 'แบบไข่', min_select: 1, max_select: 1, display: 'quick',
@@ -88,6 +89,7 @@ export async function menuPage(set) {
   draw();
   return page('เมนูและสินค้า', box);
 }
+const SORT_BY_OPTS = [['sort', 'ลำดับแสดงที่ตั้งในสินค้า'], ['code_asc', 'รหัสสินค้า น้อย → มาก'], ['code_desc', 'รหัสสินค้า มาก → น้อย'], ['name_asc', 'ชื่อสินค้า ก → ฮ / A → Z'], ['name_desc', 'ชื่อสินค้า ฮ → ก / Z → A']];
 function simpleList(path, rows, fields, reload, sub) {
   const open = (row) => {
     const f = form(fields, row || { active: true, sort: 0, bowls_per_ticket: 1, split_mode: 'order' });
