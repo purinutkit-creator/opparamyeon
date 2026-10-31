@@ -315,7 +315,8 @@ export async function renderDoc(tpl, data, opts = {}) {
           break;
         }
         case 'rows': { // [[left, right], …] from the data (e.g. clock-in slip: name · time)
-          for (const r of data[e.field || 'rows'] || []) twoCol(String(r[0] ?? ''), String(r[1] ?? ''), e, { weight: e.weight });
+          // a third value 'inv' prints the row white on black (e.g. stock running out)
+          for (const r of data[e.field || 'rows'] || []) twoCol(String(r[0] ?? ''), String(r[1] ?? ''), e, { weight: r[2] === 'inv' ? 800 : e.weight, invert: r[2] === 'inv' });
           break;
         }
         case 'shift_summary': {

@@ -407,9 +407,9 @@ async function connect() {
   // stock went down (a sale) or up (stock page): "เหลือ N" / "หมด" on the menu right away
   s.on('stock:changed', (x) => {
     const p = st.catalog && st.catalog.products.find((q) => q.id === x.id); if (!p) return;
-    const was = p.sold_out && p.stock <= 0;
+    const old = Number(p.stock);
     p.stock = x.stock; p.low_stock = x.low_stock;
-    if (p.track_stock) p.sold_out = x.stock <= 0 || (p.sold_out && !was);
+    if (p.track_stock) { if (x.stock <= 0) p.sold_out = true; else if (x.stock > old) p.sold_out = false; } // restocked → on sale again
     renderMenu();
   });
   s.on('settings:changed', async () => { loadCrewPlan(); st.settings = await fetch('/api/settings/public').then((r) => r.json()); applyTheme(st.settings.theme); setFxLevel((st.settings.theme || {}).pos_fx); render(); });
@@ -537,6 +537,7 @@ function renderTop() {
     h('button', { class: 'btn', onclick: shiftDialog }, '💰 รอบการขาย'),
     h('button', { class: 'btn', onclick: devicesDialog }, '🖨️ อุปกรณ์'),
     can('cut_paper') && h('button', { class: 'btn', onclick: manualCut }, '✂️ ตัดกระดาษ'),
+    h('button', { class: 'btn icon-refresh', title: 'รีเฟรชข้อมูลให้เป็นปัจจุบัน', 'aria-label': 'รีเฟรช', onclick: refreshAll }, '⟳'),
     h('button', { class: 'btn', onclick: moreMenu, 'aria-label': 'เมนูเพิ่มเติม' }, '⋯'),
     h('span', { class: 'version' }, 'v' + VERSION));
 }
@@ -596,6 +597,18 @@ function joinDialog() {
     return false;
   };
 }
+// ⟳ in the top bar: menu, stock, shift, settings and badges fetched again (the bill being keyed stays as it is)
+async function refreshAll(e) {
+  const b = e && e.currentTarget; if (b) { b.classList.add('spin'); b.disabled = true; }
+  try {
+    const [cat, sh, set] = await Promise.all([api.get('/catalog'), api.get('/shifts/current'), fetch('/api/settings/public').then((r) => r.json())]);
+    st.catalog = cat; st.shift = sh; st.settings = set;
+    applyTheme(set.theme); setFxLevel((set.theme || {}).pos_fx);
+    renderMenu(); renderCart(); renderTop(); refreshBadges(); loadCookers(); loadCrewPlan();
+    toast('✓ อัปเดตข้อมูลล่าสุดแล้ว', 'ok', 1800);
+  } catch (er) { errToast(er); }
+  finally { const nb = $('.icon-refresh'); if (nb) { nb.classList.remove('spin'); nb.disabled = false; } }
+}
 // shop management inside the same app window (no new tab / browser, no second login):
 // the admin site reuses this staff session and shows a "back to sales" button
 function openAdminInApp(hash = '') {
@@ -612,6 +625,7 @@ function moreMenu(e) {
     (can('view_sales') || can('settings')) && h('a', { href: '/admin/', onclick: (e) => { e.preventDefault(); openAdminInApp(); } }, '📊 จัดการร้าน'),
     h('a', { href: '/kitchen/' }, '👩‍🍳 จอครัว'),
     h('button', { onclick: () => { pop.remove(); joinDialog(); } }, '👥 พนักงานเข้างานเพิ่ม'),
+    h('button', { onclick: async () => { pop.remove(); try { const r = await api.post('/stock/print', {}); toast(`🖨 พิมพ์รายงานสต็อก ${r.count} รายการ (ใกล้หมด ${r.low}) ที่ ${r.printer}`, 'ok', 5000); } catch (e) { errToast(e); } } }, '📦 พิมพ์รายงานสต็อก'),
     h('button', { onclick: () => { pop.remove(); lockNow(); } }, '🔒 ล็อกหน้าจอ'),
     h('button', { onclick: logout }, '🚪 ออกจากระบบ / สลับผู้ใช้'),
     h('div', { class: 'version', style: { padding: '.4em .8em' } }, `${st.staff.name} · ${st.terminal.name} · เวอร์ชัน ${VERSION}`));

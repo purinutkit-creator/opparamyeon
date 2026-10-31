@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db, J, S } from '../db.js';
 import { ah, id, now, bad, notFound, conflict, audit, emit, getSettings, setSetting, getSecret, setSecret, rateLimit } from '../lib/util.js';
 import { enqueue, publicPrinter } from '../lib/print.js';
+import { STOCK_REPORT } from '../lib/templates.js';
 import { lookupBarcode, suggestCategory, fetchImage } from '../lib/productlookup.js';
 import { aiKeys, identifyWithClaude, findImages, basicNames, mineNames, nameVariants, AiError, AI_MODEL } from '../lib/productai.js';
 import { saveFile } from './system.js';
@@ -181,6 +182,8 @@ r.post('/stock/adjust', staffAuth('manage_stock'), ah(async (req, res) => {
         await audit(req.staff.id, 'stock_adjust', item_type, item_id, { stock: cur.stock }, { stock: cur.stock + delta }, reason);
       }
     }
+    // stock is back: a product someone had marked "หมด" by hand goes back on sale
+    if (table === 'products') await db.run('UPDATE products SET sold_out = 0 WHERE id = ? AND sold_out = 1 AND track_stock = 1 AND stock > 0', [item_id]);
     after = await db.get(`SELECT id, name, stock, low_stock FROM ${table} WHERE id = ?`, [item_id]);
   });
   changed();
@@ -198,6 +201,33 @@ r.get('/stock', staffAuth(), ah(async (req, res) => {
 }));
 
 export default r;
+
+// ---------- stock report on a receipt (POS menu or the stock page) ----------
+// items under `low` (default 5) come first, printed white on black as "ใกล้หมด" / "หมด"
+r.post('/stock/print', staffAuth(), ah(async (req, res) => {
+  const b = req.body || {};
+  const low = Math.max(0, Number(b.low ?? 5));
+  const ps = await db.all('SELECT * FROM printers WHERE active = 1');
+  const receipt = ps.filter((p) => J(p.roles, []).includes('receipt'));
+  const printer = (b.printer_id && ps.find((p) => p.id === b.printer_id)) || receipt.find((p) => req.terminalId && p.host_terminal_id === req.terminalId) || receipt[0];
+  if (!printer) throw bad('ยังไม่มีเครื่องพิมพ์ใบเสร็จ');
+  const n = (v) => Math.round(Number(v) * 100) / 100;
+  const prods = await db.all('SELECT name, unit, stock FROM products WHERE active = 1 AND track_stock = 1 ORDER BY name');
+  const ings = b.ingredients === false ? [] : await db.all('SELECT name, unit, stock FROM ingredients ORDER BY name');
+  const row = (x) => [x.name, `${n(x.stock)} ${x.unit || ''}`.trim()];
+  const lowRows = prods.filter((x) => Number(x.stock) < low).sort((a, c) => a.stock - c.stock).map((x) => [`${Number(x.stock) <= 0 ? 'หมด' : 'ใกล้หมด'} · ${x.name}`, `${n(x.stock)} ${x.unit || ''}`.trim(), 'inv']);
+  const s = await getSettings();
+  const data = { store_name: s.store.name, printed_at: new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'medium', timeStyle: 'short' }),
+    low_title: lowRows.length ? `⚠ เหลือน้อยกว่า ${low} (${lowRows.length})` : '', low: lowRows,
+    items: prods.filter((x) => Number(x.stock) >= low).map(row),
+    ing_title: ings.length ? '— วัตถุดิบ —' : '', ings: ings.map((x) => [x.name, `${n(x.stock)} ${x.unit || ''}`.trim(), Number(x.stock) < low ? 'inv' : '']),
+    summary: `สินค้า ${prods.length} รายการ · ใกล้หมด/หมด ${lowRows.length}` };
+  const template = STOCK_REPORT(Number(printer.paper) === 58 ? 58 : 80);
+  await audit(req.staff.id, 'stock_print', 'printer', printer.id, null, { items: prods.length, low: lowRows.length });
+  if (b.local) return res.json({ template, data, printer: publicPrinter(printer) });
+  const jobs = await enqueue('stock', 'stock-' + Date.now(), data, { printerId: printer.id, template });
+  res.json({ jobs: jobs.map((j) => j.id), printer: printer.name, count: prods.length, low: lowRows.length });
+}));
 
 // ---------- product barcode labels ----------
 r.get('/labels/config', staffAuth('manage_menu'), ah(async (req, res) => res.json(labelCfg((await getSettings()).labels))));

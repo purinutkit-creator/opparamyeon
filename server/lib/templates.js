@@ -261,3 +261,18 @@ export const MERCHANT_CLOSE = (paper = 58) => base([
   { type: 'rows', field: 'totals', size: paper === 58 ? 22 : 26, weight: 800 },
   { type: 'qr', value: '{shift_url}', size_mm: paper === 58 ? 20 : 24, align: 'center', caption: 'สแกนดูรายงานรอบ', caption_size: 16 },
 ], { paper, size: paper === 58 ? 20 : 24, force_paper: true, feed_after: 3 });
+
+// stock report on a receipt: compact list of name · quantity; running-out rows printed white on black
+export const STOCK_REPORT = (paper = 80) => base([
+  { type: 'field', field: 'store_name', align: 'center', size: 24, weight: 800 },
+  { type: 'text', text: 'รายงานสต็อกสินค้า', align: 'center', size: 24, weight: 800, invert: true },
+  { type: 'field', field: 'printed_at', align: 'center', size: 18 },
+  { type: 'field', field: 'low_title', align: 'center', size: 20, weight: 800, when: 'low_title' },
+  { type: 'rows', field: 'low', size: 20 },
+  { type: 'divider', style: 'dash', when: 'low_title' },
+  { type: 'rows', field: 'items', size: 20 },
+  { type: 'field', field: 'ing_title', align: 'center', size: 20, weight: 800, when: 'ing_title' },
+  { type: 'rows', field: 'ings', size: 20 },
+  { type: 'divider', style: 'dash' },
+  { type: 'field', field: 'summary', align: 'center', size: 18 },
+], { paper, size: 20, feed_after: 3 });

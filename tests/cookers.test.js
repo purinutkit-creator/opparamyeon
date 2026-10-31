@@ -385,3 +385,18 @@ test('พิมพ์บาร์โค้ด: พิมพ์จากหน้
   const pl = JSON.parse((await db.get("SELECT payload FROM print_jobs WHERE doc_type = 'label' ORDER BY seq DESC LIMIT 1")).payload);
   assert.deepEqual(pl.template.elements.map((e) => e.type + (e.type === 'cut' ? ':' + e.space : '')), ['label', 'cut:0', 'label']);
 });
+
+test('สต็อก: เติมสต็อกแล้วสินค้าที่เคยกด "หมด" เองกลับมาขายได้ · พิมพ์รายงานสต็อกแบบย่อ แถบดำเมื่อเหลือน้อยกว่า 5', async () => {
+  const p = (await S.call('GET', '/api/stock', undefined, { token: owner })).body.products.find((x) => !x.track_stock);
+  await S.call('POST', `/api/products/${p.id}/sold-out`, { sold_out: true }, { token: owner, terminal: 'pos1' });
+  assert.equal((await S.call('GET', '/api/catalog', undefined, { token: owner })).body.products.find((x) => x.id === p.id).sold_out, true);
+  await S.call('POST', '/api/stock/adjust', { item_type: 'product', item_id: p.id, qty: 3, track: true }, { token: owner });
+  assert.equal((await S.call('GET', '/api/catalog', undefined, { token: owner })).body.products.find((x) => x.id === p.id).sold_out, false, 'เติมแล้วขายได้');
+  const r = await S.call('POST', '/api/stock/print', { low: 5, local: true }, { token: owner, terminal: 'pos1' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const low = r.body.data.low.find((x) => x[0].includes(p.name));
+  assert.ok(low, 'เหลือ 3 < 5 อยู่ในส่วนใกล้หมด'); assert.equal(low[2], 'inv'); assert.match(low[0], /^ใกล้หมด/);
+  assert.ok(!r.body.data.items.some((x) => x[0] === p.name));
+  const q = await S.call('POST', '/api/stock/print', {}, { token: owner, terminal: 'pos1' });
+  assert.equal(q.status, 200); assert.equal(q.body.jobs.length, 1);
+});

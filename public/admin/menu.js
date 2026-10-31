@@ -3,6 +3,7 @@ import { baht, toSatang, fromThaiKeys } from '/shared/core.js';
 import { api, can, page, card, form, table, saveBtn, upload } from './common.js';
 import { drawStaffCard, printCards } from '/shared/staffcard.js';
 import { scanWithCamera, BARCODECAM_CSS } from '/shared/barcodecam.js';
+import { isLinkedHere, printDocument } from '/shared/printers.js';
 document.head.append(Object.assign(document.createElement('style'), { textContent: BARCODECAM_CSS }));
 
 // square centre crop (≤ 720 px) so a profile photo looks right inside a circle
@@ -240,9 +241,23 @@ export async function stockPage() {
       h('div', { class: 'st-alert-list' }, lows.map(([t, x]) => h('button', { class: 'st-low' + (Number(x.stock) <= 0 ? ' out' : ''), onclick: () => adjust(t, x) }, h('span', {}, x.name), h('b', {}, Number(x.stock) <= 0 ? 'หมด' : `เหลือ ${num(x.stock)}`), h('small', {}, `แจ้งเตือนที่ ≤ ${num(x.low_stock)}`)))))
     : h('div', { class: 'st-alert ok' }, '✓ ทุกรายการยังมีของพอ');
   const tracked = prods.filter((p) => p.track_stock), others = prods.filter((p) => !p.track_stock);
+  // stock report on a receipt printer (compact; under N left printed white on black)
+  const printReport = async () => {
+    const printers = (await api.get('/printers')).filter((x) => x.active);
+    if (!printers.length) return toast('ยังไม่มีเครื่องพิมพ์ — เพิ่มที่ จัดการร้าน → เครื่องพิมพ์', 'warn');
+    const first = (printers.find((x) => x.roles.includes('receipt')) || printers[0]).id;
+    const sel = h('select', { class: 'input' }, printers.map((x) => h('option', { value: x.id, selected: x.id === first }, `${x.name} (${x.paper} มม.)${isLinkedHere(x.id) ? ' · เชื่อมกับเครื่องนี้' : ''}`)));
+    const lowIn = h('input', { class: 'input', type: 'number', min: 0, value: 5 });
+    modal('🖨 พิมพ์รายงานสต็อก', h('div', {}, h('label', { class: 'field' }, 'เครื่องพิมพ์', sel), h('label', { class: 'field' }, 'ขึ้นแถบดำ "ใกล้หมด" เมื่อเหลือน้อยกว่า', lowIn),
+      h('p', { class: 'small muted' }, 'พิมพ์แบบย่อบนกระดาษใบเสร็จ: ชื่อสินค้า + จำนวนคงเหลือ · รายการที่ใกล้หมด/หมดขึ้นก่อนเป็นแถบขาวดำ')), { actions: [{ label: 'พิมพ์', class: 'primary', onClick: async () => {
+      const body = { printer_id: sel.value, low: Number(lowIn.value) };
+      if (isLinkedHere(sel.value)) { const r = await api.post('/stock/print', { ...body, local: true }); await printDocument(r.printer, r.template, r.data, 'stock'); toast('🖨 พิมพ์รายงานสต็อกแล้ว', 'ok'); }
+      else { const r = await api.post('/stock/print', body); toast(`ส่งพิมพ์แล้วที่ ${r.printer} — ออกเมื่ออุปกรณ์ที่เชื่อมเครื่องพิมพ์ (เช่น POS) เปิดอยู่`, 'ok', 6000); }
+    } }] });
+  };
   return page('สต็อก',
     alert,
-    card(h('div', { class: 'st-scan' }, h('span', { class: 'st-scan-ico' }, '🔎'), box, h('button', { class: 'btn primary', onclick: cam }, '📷 สแกนด้วยกล้อง')),
+    card(h('div', { class: 'st-scan' }, h('span', { class: 'st-scan-ico' }, '🔎'), box, h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: cam }, '📷 สแกนด้วยกล้อง'), h('button', { class: 'btn', onclick: printReport }, '🖨 พิมพ์รายงานสต็อก'))),
       h('p', { class: 'small muted', style: { margin: '.5em 0 0' } }, 'ยิงบาร์โค้ดด้วยเครื่องยิง (ภาษาไทยก็อ่านได้) หรือเปิดกล้องสแกน → เพิ่มสต็อก/นับจริง ใส่หมายเหตุหรือไม่ใส่ก็ได้ · ตั้งได้ว่าเหลือเท่าไหร่ถึงเรียกว่าใกล้หมด · สินค้าเหลือ 0 จะขึ้น "หมด" ที่ POS ทันที')),
     card(h('h3', {}, 'สินค้าที่นับสต็อก'), table([{ t: '', f: (x) => (x.image ? h('img', { class: 'st-thumb', src: x.image, alt: '' }) : '') }, { t: 'รหัส', k: 'code' }, { t: 'ชื่อ', k: 'name' },
       { t: 'คงเหลือ', r: 1, f: (x) => `${num(x.stock)} ${x.unit || ''}` }, { t: 'เตือนที่ ≤', r: 1, f: (x) => num(x.low_stock) }, { t: '', f: status }], tracked, { onRow: (x) => adjust('product', x), empty: 'ยังไม่มีสินค้าที่นับสต็อก — สแกนสินค้าเพื่อเริ่มนับ' })),

@@ -665,3 +665,5 @@ html[data-vt] .shift-crew .av, html[data-vt] .cp .av { animation: none; }
 .lk-card .bigpad .key { animation: keyin2 .55s var(--ease-spring) both; animation-delay: calc(.2s + var(--i, 0) * 30ms); }
 @media (max-width: 860px) { .lock.lock2 { grid-template-columns: 1fr; } .lk-left { padding: 3vh 6vw; } .lk-who { display: none; } }
 .prod .lowleft { position: absolute; left: 6px; bottom: 6px; padding: .15em .6em; border-radius: 99px; background: #f59e0b; color: #fff; font-weight: 800; font-size: .8em; box-shadow: 0 2px 8px rgb(0 0 0 / .2); animation: m-rise .4s var(--ease-out); }
+.topbar .icon-refresh { min-width: 40px; padding: .35em .6em; font-size: 1.15em; font-weight: 800; }
+.topbar .icon-refresh.spin { animation: spin .8s linear infinite; }
