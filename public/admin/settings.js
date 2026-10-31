@@ -434,18 +434,27 @@ export async function printersPage() {
     h('label', { class: 'switch' }, endCut, 'ตัดกระดาษด้วย (เฉพาะเครื่องที่มี auto cut — ตั้ง "การตัด" ของเครื่องไว้ไม่ใช่ "ไม่ตัด")'),
     h('p', { class: 'small muted' }, 'หน้าปิดรอบบน POS มีปุ่ม "ป้อนกระดาษเพิ่ม" และ "ตัดกระดาษ" ระหว่างนับถอยหลัง'));
   mTpl.addEventListener('change', drawParts);
+  // the whole shift's merchant summary, printed at close (the POS confirms the paper and waits until it's printed)
+  const mClose = h('input', { type: 'checkbox', checked: !!P0.merchant_close });
+  const mClosePaper = h('select', { class: 'input' }, [[58, '58 มม. (POS จะเตือนให้เช็ก/เปลี่ยนกระดาษก่อนพิมพ์)'], [80, '80 มม.']].map(([v, t]) => h('option', { value: v, selected: Number(P0.merchant_close_paper || 58) === v }, t)));
+  const mClosePrinter = h('select', { class: 'input' }, h('option', { value: '' }, '— เครื่องเดียวกับใบสรุปร้านค้า —'), printers.filter((x) => x.active).map((x) => h('option', { value: x.id, selected: P0.merchant_close_printer_id === x.id }, `${x.name} (${x.paper} มม.)`)));
+  const closeRow = h('div', {}, h('h4', {}, '🧾 พิมพ์ใบสรุปร้านค้าตอนปิดรอบ (รวมทุกบิลของรอบ)'),
+    h('label', { class: 'switch' }, mClose, 'พิมพ์ตอนปิดรอบ — ระบบรอจนพิมพ์เสร็จแล้วจึงกลับหน้าหลัก'),
+    h('div', { class: 'form-grid' }, h('label', { class: 'field' }, 'ขนาดกระดาษ', mClosePaper), h('label', { class: 'field' }, 'พิมพ์ที่เครื่อง', mClosePrinter)),
+    h('p', { class: 'small muted' }, 'ถ้าไม่ต้องการใบสรุปทุกบิล ให้ปิด "พิมพ์ใบสรุปร้านค้าอัตโนมัติทุกครั้งที่ชำระเงิน" ด้านบน แล้วใช้แบบตอนปิดรอบแทน'));
   const syncM = () => { tplRow.hidden = partsRow.hidden = endRow.hidden = mStyle.value !== 'compact'; if (mStyle.value === 'compact') drawParts(); };
   mStyle.addEventListener('change', syncM); syncM();
   const merchantCard = card(h('h3', {}, '🧾 ใบสรุปร้านค้า (ทุกบิล)'),
     h('p', { class: 'small muted' }, 'แบบย่อพิมพ์บิลละไม่กี่บรรทัด: เลขคิว เลขบิล เวลา ยอดเงิน วิธีชำระ และ QR ดูรายละเอียดบิล ต่อกันเป็นม้วนโดยไม่ตัดกระดาษ — ฉีกออกตอนปิดรอบได้เลย'),
     h('label', { class: 'switch' }, mAuto, 'พิมพ์ใบสรุปร้านค้าอัตโนมัติทุกครั้งที่ชำระเงิน'),
     h('div', { class: 'form-grid', style: { marginTop: '.6em' } }, h('label', { class: 'field' }, 'รูปแบบ', mStyle), h('label', { class: 'field' }, 'พิมพ์ที่เครื่อง', mPrinter), tplRow),
-    partsRow, endRow,
+    partsRow, endRow, closeRow,
     h('div', { style: { marginTop: '.6em' } }, saveBtn('บันทึกใบสรุปร้านค้า', async () => {
       const cur = (await api.get('/settings')).print || {};
       if (mStyle.value === 'compact' && partsBox._save) await partsBox._save();
       await saveKey('print', { ...cur, auto_merchant: mAuto.checked, merchant_style: mStyle.value, merchant_printer_id: mPrinter.value, merchant_template_id: mTpl.value,
-        merchant_end_feed: Math.max(1, Math.min(30, Number(endFeed.value) || 6)), merchant_end_cut: endCut.checked });
+        merchant_end_feed: Math.max(1, Math.min(30, Number(endFeed.value) || 6)), merchant_end_cut: endCut.checked,
+        merchant_close: mClose.checked, merchant_close_paper: Number(mClosePaper.value), merchant_close_printer_id: mClosePrinter.value });
     })));
   return page('เครื่องพิมพ์', cookerCard, merchantCard, h('button', { class: 'btn primary', onclick: () => open(null) }, '+ เพิ่มเครื่องพิมพ์'),
     h('p', { class: 'small muted' }, 'หลายงานที่ใช้เครื่องเดียวกันจะเข้าคิวพิมพ์ทีละงานตามลำดับ ไม่ปะปน · สถานะ "เครื่องรับงานแล้ว" หมายถึงส่งข้อมูลถึงเครื่องแต่เครื่องไม่รายงานผลพิมพ์ · "พิมพ์สำเร็จ" เฉพาะเมื่อเครื่องตอบสถานะปกติ'),

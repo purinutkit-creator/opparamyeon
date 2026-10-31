@@ -637,3 +637,11 @@ html[data-vt] .shift-crew .av, html[data-vt] .cp .av { animation: none; }
 .roll-box { display: grid; gap: 6px; margin: .4em 0 .9em; padding: .8em; border-radius: 16px; background: var(--surface2); }
 .roll-box small { font-weight: 700; color: var(--muted); }
 .roll-box small.flash { animation: m-rise .4s var(--ease-out); color: var(--ok); }
+/* shift summary for the shop, printed at close */
+.mc-box { display: grid; gap: 8px; margin: .2em 0 .9em; padding: .9em; border-radius: 16px; background: var(--surface2); animation: m-rise .4s var(--ease-out); }
+.mc-box small { font-weight: 700; color: var(--muted); }
+.mc-box.good small { color: var(--ok); } .mc-box.bad small { color: var(--bad); }
+.mc-warn { display: grid; gap: 4px; padding: .8em; border-radius: 12px; background: #fef3c7; color: #92400e; border: 2px solid #fcd34d; animation: m-rise .4s var(--ease-out); }
+.mc-warn b { font-size: 1.05em; } .mc-warn small { color: #92400e; }
+.spinner.sm { width: 28px; height: 28px; border-width: 4px; margin: 0 auto; }
+.leave-print.held .lp-ring { animation-play-state: paused; }

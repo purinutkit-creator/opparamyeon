@@ -306,3 +306,24 @@ test('ปิดรอบ: ม้วนใบสรุป 58 มม. ป้อน
   assert.deepEqual((await S.call('POST', '/api/shifts/close', { counted_cash: c2.expected_cash }, { token: owner, terminal: 'pos1' })).body.roll, []);
   await S.call('POST', '/api/shifts/open', { opening_cash: 0 }, { token: owner, terminal: 'pos1' });
 });
+
+test('ใบสรุปร้านค้าตอนปิดรอบ: รวมทุกบิล เลือก 58/80 มม. และ POS รอสถานะจนพิมพ์เสร็จ', async () => {
+  const pr = (await S.call('POST', '/api/printers', { name: 'สรุปปิดรอบ', conn: 'lan', address: '10.9.9.80', port: 9100, paper: 80, roles: ['receipt'] }, { token: owner })).body;
+  const P = (await S.call('GET', '/api/settings', undefined, { token: owner })).body.print;
+  await S.call('PUT', '/api/settings/print', { value: { ...P, merchant_close: true, merchant_close_paper: 58, merchant_close_printer_id: pr.id } }, { token: owner });
+  await S.call('POST', '/api/orders/checkout', { idempotency_key: key(), cart: { lines: [line('p_d001', 2)] }, payments: [{ method: 'cash', amount: 1e7, received: 1e7 }] }, { token: owner, terminal: 'pos1' });
+  const cur = (await S.call('GET', '/api/shifts/current', undefined, { token: owner, terminal: 'pos1' })).body;
+  const closed = (await S.call('POST', '/api/shifts/close', { counted_cash: cur.expected_cash }, { token: owner, terminal: 'pos1' })).body;
+  assert.deepEqual(closed.merchant_close, { enabled: true, paper: 58, printer: { id: pr.id, name: 'สรุปปิดรอบ', paper: 80 } });
+  const r = await S.call('POST', `/api/shifts/${closed.id}/merchant-print`, { paper: 58 }, { token: owner, terminal: 'pos1' });
+  assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.paper, 58);
+  const job = await db.get('SELECT payload, printer_id FROM print_jobs WHERE id = ?', [r.body.jobs[0]]);
+  const pl = JSON.parse(job.payload);
+  assert.equal(job.printer_id, pr.id);
+  assert.equal(pl.template.paper, 58); assert.equal(pl.template.force_paper, true, 'พิมพ์กว้าง 58 แม้เครื่องตั้ง 80');
+  assert.ok(pl.data.bills.length >= 1); assert.ok(pl.data.totals[0][0].startsWith('รวม'));
+  const st = (await S.call('GET', '/api/print/jobs/status?ids=' + r.body.jobs.join(','), undefined, { token: owner })).body;
+  assert.equal(st[0].status, 'queued');
+  await S.call('PUT', '/api/settings/print', { value: P }, { token: owner });
+  await S.call('POST', '/api/shifts/open', { opening_cash: 0 }, { token: owner, terminal: 'pos1' });
+});

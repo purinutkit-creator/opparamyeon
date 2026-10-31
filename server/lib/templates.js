@@ -246,3 +246,18 @@ export const ATTENDANCE_SLIP = (paper = 80) => base([
   { type: 'qr', value: '{att_url}', size_mm: 24, align: 'center', caption: 'เจ้าของร้านสแกนดูเวลาเข้างาน (ดูวันอื่นได้)', caption_size: 18 },
   { type: 'field', field: 'printed_at', label: 'พิมพ์ ', align: 'center', size: 18 },
 ], { paper, size: 24, feed_after: 3 });
+
+// merchant summary of a whole shift (printed at close): every bill in one list + totals by payment method
+export const MERCHANT_CLOSE = (paper = 58) => base([
+  { type: 'field', field: 'store_name', align: 'center', size: paper === 58 ? 24 : 28, weight: 800 },
+  { type: 'text', text: 'ใบสรุปร้านค้า · ทั้งรอบ', align: 'center', size: paper === 58 ? 24 : 28, weight: 800, invert: true },
+  { type: 'field', field: 'shift_line', align: 'center', size: 18 },
+  { type: 'field', field: 'time_line', align: 'center', size: 18 },
+  { type: 'divider', style: 'dash' },
+  { type: 'rows', field: 'bills', size: paper === 58 ? 18 : 22 },
+  { type: 'divider', style: 'dash' },
+  { type: 'rows', field: 'pays', size: paper === 58 ? 20 : 24 },
+  { type: 'divider', style: 'solid' },
+  { type: 'rows', field: 'totals', size: paper === 58 ? 22 : 26, weight: 800 },
+  { type: 'qr', value: '{shift_url}', size_mm: paper === 58 ? 20 : 24, align: 'center', caption: 'สแกนดูรายงานรอบ', caption_size: 16 },
+], { paper, size: paper === 58 ? 20 : 24, force_paper: true, feed_after: 3 });

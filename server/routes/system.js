@@ -139,6 +139,12 @@ r.get('/print/jobs', staffAuth(), ah(async (req, res) => {
     FROM print_jobs j LEFT JOIN printers p ON p.id = j.printer_id ${req.query.status ? 'WHERE j.status = ?' : ''} ORDER BY j.seq DESC LIMIT 200`, req.query.status ? [req.query.status] : []);
   res.json(rows.map((x) => ({ ...x, history: J(x.history, []) })));
 }));
+// status of a few jobs (the POS waits for the shift-close summary to finish printing)
+r.get('/print/jobs/status', staffAuth(), ah(async (req, res) => {
+  const ids = String(req.query.ids || '').split(',').filter(Boolean).slice(0, 20);
+  const rows = ids.length ? await db.all(`SELECT id, status, error FROM print_jobs WHERE id IN (${ids.map(() => '?').join(',')})`, ids) : [];
+  res.json(rows);
+}));
 // test pages & manual cut are executed on the device; this records them and lets a remote device run them
 r.post('/print/test', staffAuth('manage_printers'), ah(async (req, res) => {
   const p = await db.get('SELECT * FROM printers WHERE id = ?', [req.body.printer_id]);

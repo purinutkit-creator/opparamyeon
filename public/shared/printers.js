@@ -186,9 +186,10 @@ export async function printDocument(printer, template, data, docType) {
   else if (docType === 'feed') { if (t.kind === 'browser') return { status: 'sent', note: 'เครื่องพิมพ์ผ่านเบราว์เซอร์ป้อนกระดาษไม่ได้' }; bytes = concat([init(), feed(Number(data.lines) || 6), ...(data.cut && (printer.cut_mode || 'full') !== 'none' ? [cutCmd(printer.cut_mode || 'full')] : [])]); }
   else if (docType === 'drawer') { if (t.kind === 'browser') return { status: 'sent', note: 'เครื่องพิมพ์ผ่านเบราว์เซอร์เปิดลิ้นชักไม่ได้' }; bytes = concat([init(), drawerCmd(o.drawer_pin)]); }
   else {
-    const tpl = docType === 'test' ? testTemplate(printer.paper, template && template.font) : { ...template, paper: printer.paper || template.paper };
+    // force_paper: the document picks its width itself (e.g. the shift summary chosen as 58 or 80 mm)
+    const tpl = docType === 'test' ? testTemplate(printer.paper, template && template.font) : { ...template, paper: template && template.force_paper ? template.paper : printer.paper || template.paper };
     if (printer.margin) tpl.margin = printer.margin;
-    if (o.width_dots) tpl.width_dots = o.width_dots;
+    if (o.width_dots && !tpl.force_paper) tpl.width_dots = o.width_dots;
     const r = await renderDoc(tpl, data, { scale: o.scale, noLogo: o.print_logo === false, reprintMark: o.reprint_mark, font: docType === 'test' ? null : await docFontStack(docType) });
     if (t.kind === 'browser') { await browserPrint(r.canvas); return { status: 'sent', note: 'ส่งไปยังหน้าต่างพิมพ์ของเบราว์เซอร์' }; }
     // a template set to "ไม่ตัด" prints as a continuous roll (e.g. short merchant slips): no cut, just a little space between slips

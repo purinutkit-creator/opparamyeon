@@ -7,6 +7,8 @@ import { enqueue, orderDocData, reprint, retry, feedMerchantRoll } from '../lib/
 import { cookerStatus, finishTicket, finishOrder, voidOrderJobs } from '../lib/cookers.js';
 import { billFromToken, shiftToken, shiftFromToken } from '../lib/billlink.js';
 import { joinShiftCrew, verifyOnDuty, clockIn, printAttendance, selfieOf, needSelfie } from '../lib/crew.js';
+import { MERCHANT_CLOSE } from '../lib/templates.js';
+import { baht } from '../../public/shared/core.js';
 
 const r = Router();
 
@@ -248,7 +250,45 @@ r.post('/shifts/close', staffAuth('shift'), ah(async (req, res) => {
   await enqueue('shift', sh.id, await shiftDoc(closed, 'ใบสรุปปิดรอบการขาย'), { dedupe: 'shift-close:' + sh.id });
   // the compact merchant roll: feed it out (and cut, if set and possible) so the day's slips can be torn off
   const roll = s.print && s.print.merchant_style === 'compact' ? await feedMerchantRoll() : [];
-  res.json({ ...closed, roll });
+  res.json({ ...closed, roll, merchant_close: await merchantCloseInfo() });
+}));
+// ---- merchant summary of the whole shift, printed at close (the POS confirms the paper first, then waits until it's done) ----
+async function merchantClosePrinter() {
+  const P = (await getSettings()).print || {};
+  const want = P.merchant_close_printer_id || P.merchant_printer_id;
+  const ps = await db.all('SELECT id, name, roles, paper FROM printers WHERE active = 1');
+  return (want && ps.find((p) => p.id === want)) || ps.find((p) => J(p.roles, []).includes('merchant')) || null;
+}
+async function merchantCloseInfo() {
+  const P = (await getSettings()).print || {};
+  if (!P.merchant_close) return { enabled: false };
+  const p = await merchantClosePrinter();
+  return { enabled: true, paper: Number(P.merchant_close_paper) === 80 ? 80 : 58, printer: p ? { id: p.id, name: p.name, paper: p.paper } : null };
+}
+r.post('/shifts/:id/merchant-print', staffAuth('shift'), ah(async (req, res) => {
+  const sh = await db.get('SELECT * FROM shifts WHERE id = ?', [req.params.id]);
+  if (!sh) throw notFound('ไม่พบรอบ');
+  const info = await merchantCloseInfo();
+  const p = await merchantClosePrinter();
+  if (!p) throw bad('ยังไม่ได้ตั้งเครื่องพิมพ์ใบสรุปร้านค้า (จัดการร้าน → เครื่องพิมพ์ → ใบสรุปร้านค้า)');
+  const paper = Number(req.body.paper || info.paper) === 80 ? 80 : 58;
+  const s = await getSettings();
+  const names = Object.fromEntries(s.sale.payment_methods.map((m) => [m.id, m.name]));
+  const orders = await db.all("SELECT id, bill_no, queue_no, total, status, paid_at FROM orders WHERE shift_id = ? AND paid_at IS NOT NULL ORDER BY paid_at", [sh.id]);
+  const pays = await db.all("SELECT p.order_id, p.method, p.amount FROM payments p JOIN orders o ON o.id = p.order_id WHERE o.shift_id = ? AND p.status = 'paid'", [sh.id]);
+  const hm = (iso) => (iso ? new Date(iso).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' }) : '-');
+  const methodOf = (oid) => [...new Set(pays.filter((x) => x.order_id === oid).map((x) => names[x.method] || x.method))].join('+');
+  const sum = await shiftSummary(sh);
+  const term = await db.get('SELECT name FROM terminals WHERE id = ?', [sh.terminal_id]);
+  const data = { store_name: s.store.name, shift_line: `${(term && term.name) || ''} · ${sum.staff_name || ''}`,
+    time_line: `${new Date(sh.opened_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' })} – ${sh.closed_at ? hm(sh.closed_at) : 'ยังเปิดอยู่'}`,
+    bills: orders.map((o) => [`${hm(o.paid_at)} ${o.queue_no || ''} ${o.bill_no}${o.status === 'void' ? ' (ยกเลิก)' : ''} ${methodOf(o.id)}`.replace(/\s+/g, ' ').trim(), baht(o.total)]),
+    pays: sum.payments.map((x) => [`${names[x.method] || x.method} (${x.count})`, baht(x.amount)]),
+    totals: [[`รวม ${sum.bills} บิล`, baht(sum.net_sales)]],
+    shift_url: `${process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || ''}/s/#${await shiftToken(sh.id)}` };
+  const jobs = await enqueue('merchant', 'close-' + sh.id, data, { printerId: p.id, template: MERCHANT_CLOSE(paper) });
+  await audit(req.staff.id, 'merchant_close_print', 'shift', sh.id, null, { printer: p.id, paper });
+  res.json({ jobs: jobs.map((j) => j.id), printer: p.name, paper });
 }));
 // shift report from the QR on the shift slip (no login)
 r.get('/public/shift/:token', ah(async (req, res) => {

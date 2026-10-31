@@ -67,7 +67,9 @@ export const DEFAULT_SETTINGS = {
     // merchant summary: 'normal' = the usual slip, 'compact' = short block on a continuous roll; printer '' = printers with the merchant role
     merchant_style: 'normal', merchant_printer_id: '', merchant_template_id: '',
     // compact roll at shift close: feed this many lines so it can be torn off; also cut when the printer has a cutter and this is on
-    merchant_end_feed: 6, merchant_end_cut: true },
+    merchant_end_feed: 6, merchant_end_cut: true,
+    // merchant summary of the whole shift, printed when the shift is closed (paper 58/80 on the chosen printer; '' = the merchant printer)
+    merchant_close: false, merchant_close_paper: 58, merchant_close_printer_id: '' },
   // noodle cookers: bowls are queued on the machine that is free first (estimates shown on the POS)
   cookers: { enabled: true, count: 2, minutes_per_bowl: 4, split_by_bowl: true, machines: [{ name: 'เครื่องต้ม 1', printer_id: '' }, { name: 'เครื่องต้ม 2', printer_id: '' }] },
   week_start: 1,

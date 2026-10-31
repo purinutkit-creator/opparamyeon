@@ -1298,8 +1298,55 @@ function rollBox(roll, onPress) {
       canCut ? h('button', { class: 'btn', onclick: () => send(2, true, '✂️ ตัดแล้ว') }, '✂️ ตัดกระดาษ') : null));
 }
 // after closing a shift: stay a few seconds so this device (the print host) finishes the report, then sign out
+// merchant summary of the whole shift, printed at close: confirm the paper (58 mm warning), print, wait until it's done
+function mcBox(r, hold) {
+  const mc = r.merchant_close || {};
+  if (!mc.enabled) return null;
+  const box = h('div', { class: 'mc-box' });
+  const head = h('b', {}, `🧾 ใบสรุปร้านค้า (ทั้งรอบ) · ${mc.paper} มม.`, mc.printer ? ' · ' + mc.printer.name : '');
+  if (!mc.printer) { box.append(head, h('small', { class: 'bad' }, '⚠️ ยังไม่ได้ตั้งเครื่องพิมพ์ใบสรุปร้านค้า — ตั้งที่ จัดการร้าน → เครื่องพิมพ์')); return box; }
+  let jobs = [], since = 0;
+  const confirm = () => {
+    hold(true);
+    box.className = 'mc-box ask';
+    box.replaceChildren(head,
+      mc.paper === 58 ? h('div', { class: 'mc-warn' }, h('b', {}, '⚠️ ตรวจกระดาษก่อนพิมพ์'), h('span', {}, 'ใส่ม้วนกระดาษ 58 มม. แล้วหรือยัง? ถ้าเครื่องยังเป็นกระดาษ 80 มม. อย่าลืมเปลี่ยนเป็น 58 มม. ก่อนกดพิมพ์'),
+        mc.printer.paper && Number(mc.printer.paper) !== 58 ? h('small', {}, `(เครื่องนี้ตั้งไว้ ${mc.printer.paper} มม. — ใบนี้จะพิมพ์กว้าง 58 มม.)`) : null)
+        : h('small', {}, 'พิมพ์กว้าง 80 มม.'),
+      h('div', { class: 'row', style: { justifyContent: 'center' } },
+        h('button', { class: 'btn', onclick: () => { hold(false); box.replaceChildren(head, h('small', {}, 'ข้าม ไม่พิมพ์ใบสรุปร้านค้า')); } }, 'ไม่พิมพ์'),
+        h('button', { class: 'btn primary', onclick: print }, '🖨️ ยืนยัน พิมพ์เลย')));
+  };
+  const print = async () => {
+    box.className = 'mc-box busy';
+    box.replaceChildren(head, h('div', { class: 'spinner sm' }), h('small', {}, 'กำลังพิมพ์… ระบบจะกลับหน้าหลักเมื่อพิมพ์เสร็จ'));
+    try { const x = await api.post(`/shifts/${r.id}/merchant-print`, { paper: mc.paper }); jobs = x.jobs; since = Date.now(); watch(); }
+    catch (e) { failed(e.message); }
+  };
+  const failed = (msg) => {
+    box.className = 'mc-box bad';
+    box.replaceChildren(head, h('small', {}, '⚠️ ' + msg), h('div', { class: 'row', style: { justifyContent: 'center' } },
+      h('button', { class: 'btn', onclick: () => { hold(false); box.replaceChildren(head, h('small', {}, 'ไม่ได้พิมพ์')); } }, 'ข้าม'),
+      h('button', { class: 'btn primary', onclick: print }, '↻ พิมพ์ใหม่')));
+  };
+  const watch = async () => {
+    if (!document.body.contains(box)) return;
+    try {
+      const st2 = await api.get('/print/jobs/status?ids=' + jobs.join(','));
+      if (st2.length && st2.every((j) => j.status === 'printed' || j.status === 'sent')) {
+        box.className = 'mc-box good'; box.replaceChildren(head, h('small', {}, '✓ พิมพ์เสร็จแล้ว')); hold(false, 3); return;
+      }
+      const bad = st2.find((j) => ['failed', 'unknown', 'cancelled'].includes(j.status));
+      if (bad) return failed(bad.error || 'พิมพ์ไม่สำเร็จ — ตรวจกระดาษ/การเชื่อมต่อเครื่องพิมพ์');
+      if (Date.now() - since > 45000) box.querySelector('small').textContent = 'ยังไม่ออก? ตรวจว่าเครื่องพิมพ์เปิดอยู่และเชื่อมกับเครื่องนี้ · ยังรออยู่…';
+    } catch { /* keep waiting */ }
+    setTimeout(watch, 1000);
+  };
+  setTimeout(confirm, 0);
+  return box;
+}
 function leaveAfterPrint(r, secs = 10) {
-  let left = secs;
+  let left = secs, held = false;
   const num = h('b', { class: 'lp-num' }, String(left));
   const ring = h('i', { class: 'lp-ring', style: `--s:${secs}s` });
   const box = h('div', { class: 'leave-print' }, h('div', { class: 'card' },
@@ -1308,11 +1355,13 @@ function leaveAfterPrint(r, secs = 10) {
     h('p', {}, '🖨️ กำลังพิมพ์รายงานปิดรอบ… อย่าเพิ่งปิดเครื่อง'),
     h('p', { class: 'muted' }, r.diff === 0 ? 'เงินสดตรงพอดี' : r.diff > 0 ? `เงินสดเกิน ${baht(r.diff)} บาท` : `เงินสดขาด ${baht(-r.diff)} บาท`),
     rollBox(r.roll || [], () => { if (left < 4) { left = 4; num.textContent = '4'; } }),
+    // printing the shift's merchant summary: the countdown waits until it is printed (then 3 s more)
+    mcBox(r, (on, after) => { held = on; box.classList.toggle('held', on); if (!on && after) { left = after; num.textContent = String(left); ring.style.setProperty('--s', left + 's'); ring.style.animation = 'none'; void ring.offsetWidth; ring.style.animation = ''; } }),
     h('div', { class: 'row', style: { justifyContent: 'center' } },
       h('button', { class: 'btn', onclick: () => { left += 10; num.textContent = String(left); ring.style.setProperty('--s', left + 's'); ring.style.animation = 'none'; void ring.offsetWidth; ring.style.animation = ''; } }, '+10 วินาที'),
       h('button', { class: 'btn primary', onclick: () => { clearInterval(t); logout(); } }, 'ออกจากระบบเลย'))));
   document.body.append(box);
-  const t = setInterval(() => { left--; num.textContent = String(Math.max(0, left)); if (left <= 0) { clearInterval(t); logout(); } }, 1000);
+  const t = setInterval(() => { if (held) return; left--; num.textContent = String(Math.max(0, left)); if (left <= 0) { clearInterval(t); logout(); } }, 1000);
 }
 async function shiftDialog() {
   const s = await api.get('/shifts/current');
