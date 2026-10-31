@@ -1,7 +1,7 @@
 // Pure logic shared by the server (Node) and the browser.
 // Money is always an integer number of satang (1 บาท = 100 satang).
 
-export const VERSION = '1.39.0';
+export const VERSION = '1.39.1';
 
 export const baht = (satang) => {
   const v = (Number(satang) || 0) / 100;
@@ -124,7 +124,9 @@ export function splitTickets(lines, mode = 'order', perCut = 1) {
     if (b.label) cur.labels.push(b.label);
   }
   for (const t of tickets) t.label = t.labels.join(', ');
-  if (loose.length) tickets.push({ label: 'รายการอื่น', lines: loose, n: 0 });
+  // items that are not bowls and not in a bowl (toppings, sides) ride on the last bowl ticket — no slip of their own
+  if (loose.length && tickets.length) tickets[tickets.length - 1].lines.push(...loose);
+  else if (loose.length) tickets.push({ label: 'รายการอื่น', lines: loose, n: 0 });
   return tickets.map((t, i) => ({ label: t.label, index: i + 1, count: tickets.length, lines: t.lines }));
 }
 

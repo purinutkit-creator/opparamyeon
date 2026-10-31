@@ -266,6 +266,23 @@ async function enqueueMerchant(orderId, P) {
   }
   await enqueue('merchant', orderId, await orderDocData(await getOrder(orderId)), { dedupe: `merchant:${orderId}`, printerId: printer ? printer.id : null, template });
 }
+// Toppings sold as their own product (cheese, egg ...) that were not put in a bowl would print on a slip of their own
+// at their station. When that station prints on exactly the same printer(s) as the bowls' station, the extra slip is
+// pointless: they go with the bowls instead (shops that route toppings to another printer keep that).
+async function kitchenPrinterIds(stationId) {
+  const ps = (await db.all('SELECT id, roles, station_ids FROM printers WHERE active = 1')).filter((p) => J(p.roles, []).includes('kitchen'));
+  return ps.filter((p) => { const st = J(p.station_ids, []); return !st.length || st.includes(stationId); }).map((p) => p.id).sort().join(',');
+}
+async function mergeLooseToppings(byStation) {
+  const bowlSt = [...byStation].find(([, ls]) => ls.some((l) => (Number(l.bowl_count) || 0) > 0));
+  if (!bowlSt) return;
+  const target = await kitchenPrinterIds(bowlSt[0]);
+  for (const [st, ls] of [...byStation]) {
+    if (st === bowlSt[0] || ls.some((l) => (Number(l.bowl_count) || 0) > 0 || l.bowl_group)) continue;
+    if ((await kitchenPrinterIds(st)) !== target) continue;
+    bowlSt[1].push(...ls); byStation.delete(st);
+  }
+}
 export async function kitchenTickets(order, lines, kind, staff) {
   // toppings in a bowl group follow the station of that bowl so they are never separated
   const groupStation = new Map();
@@ -278,6 +295,7 @@ export async function kitchenTickets(order, lines, kind, staff) {
     if (!byStation.has(st)) byStation.set(st, []);
     byStation.get(st).push(l);
   }
+  await mergeLooseToppings(byStation);
   const staffName = staff ? staff.name : order.source === 'pos' ? '' : 'Mobile Ordering';
   const settings = await getSettings();
   const cook = cookerCfg(settings);

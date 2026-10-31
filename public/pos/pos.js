@@ -726,7 +726,12 @@ function showcase(p, manual = false) {
   const at = st.showcase.at;
   showcaseTimer = setTimeout(() => { if (st.showcase && st.showcase.at === at) { st.showcase = null; pushDisplay(); renderMenu(); } }, 12000);
 }
-function currentBowlGroup() { return st.activeBowl || null; }
+// the bowl a topping goes into: the one just picked, else the last bowl not yet sent to the kitchen
+function currentBowlGroup() {
+  if (st.activeBowl && st.cart.lines.some((l) => l.bowl_group === st.activeBowl)) return st.activeBowl;
+  const open = st.cart.lines.filter((l) => l.bowl_group && (Number(l.bowl_count) || 0) > 0 && !(l.sent_qty > 0));
+  return open.length ? Math.max(...open.map((l) => l.bowl_group)) : null;
+}
 function pickProduct(p, { fromScan = false } = {}) {
   if (p.sold_out) return toast('สินค้าหมด: ' + p.name, 'warn');
   if (p.show_details) showcase(p);
