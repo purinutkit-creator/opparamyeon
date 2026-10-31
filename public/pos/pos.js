@@ -43,6 +43,8 @@ async function boot() {
   if (!st.shift && !later) openShiftDialog();
   setupScanner();
   setupAutoLock();
+  // in the Android app on a two-screen device: put the customer display on the second screen by itself
+  try { if (window.OppaBridge && window.OppaBridge.hasSecondScreen && window.OppaBridge.hasSecondScreen() && !window.OppaBridge.customerDisplayOpen()) openSecondScreen().catch(() => {}); } catch { /* older app */ }
   reportDevice();
 }
 
@@ -1491,7 +1493,11 @@ async function openSecondScreen() {
   const r = await api.post('/display/pairing', { mode: 'dual' });
   const url = `/display/?code=${r.code}&local=${st.terminal.id}`;
   store.set('dual_screen', true);
-  if (window.OppaBridge && window.OppaBridge.openCustomerDisplay) { window.OppaBridge.openCustomerDisplay(location.origin + url); return toast('เปิดจอลูกค้าผ่านแอป Android แล้ว', 'ok'); }
+  // the shop's Android app (android/ in this repo): the customer display goes on the built-in second screen, no mirroring
+  if (window.OppaBridge && window.OppaBridge.openCustomerDisplay) {
+    const ok = window.OppaBridge.openCustomerDisplay(location.origin + url);
+    return ok === false ? toast('ไม่พบจอที่สองบนเครื่องนี้', 'warn', 6000) : toast('🖥️ เปิดจอลูกค้าบนจอที่สองแล้ว', 'ok');
+  }
   // Android 2-screen POS (iMin, Sunmi ...): Chrome can show a page on the built-in second screen via the Presentation API
   if (/Android/i.test(navigator.userAgent)) {
     if ('PresentationRequest' in window) {
@@ -1524,6 +1530,9 @@ function dualScreenGuide(code) {
   const step = (n, title, ...body) => h('div', { class: 'dg-step' }, h('b', { class: 'n' }, n), h('div', {}, h('strong', {}, title), ...body));
   modal('📱 เชื่อมจอลูกค้า เครื่อง Android 2 จอ', h('div', { class: 'dualguide' },
     h('p', { class: 'muted' }, 'สำหรับเครื่อง POS แบบ 2 จอ เช่น iMin Swan 2 / Swan 1 / D4 / Falcon 2, Sunmi D3 Pro / T2s / D2s และรุ่นอื่นที่จอลูกค้าต่ออยู่กับเครื่องเดียวกัน — ลองทีละวิธีตามลำดับ'),
+    step('★', 'แนะนำ: ติดตั้งแอป Oppa POS (จอที่สองไม่สะท้อนจอ)', h('p', {}, 'บนเครื่อง POS เปิด ', h('a', { href: 'https://github.com/purinutkit-creator/opparamyeon/releases/tag/android-latest', target: '_blank' }, 'หน้าดาวน์โหลดแอป'),
+      ' → ดาวน์โหลด OppaPOS-dual-screen.apk → เปิดไฟล์ → อนุญาตติดตั้งแอปจากแหล่งนี้ → ติดตั้ง แล้วเปิดแอป "Oppa POS" เข้าสู่ระบบตามปกติ จอลูกค้าจะขึ้นบนจอที่สองเองทุกครั้ง'),
+      h('p', { class: 'small muted' }, 'แอปใช้จอที่สองของ Android โดยตรง (iMin Swan / D4 / Falcon, Sunmi D3 ...) — กล้อง เครื่องพิมพ์ LAN/Bluetooth ใช้ได้ในแอป')),
     step('1', 'ปุ่ม "🖥️ เปิดบนจอที่สอง" ใน Chrome', h('p', {}, 'เปิด POS ด้วย Google Chrome (อัปเดตล่าสุด) → อุปกรณ์ → เปิดบนจอที่สอง → ถ้ามีหน้าต่างให้เลือกจอ ให้เลือกจอที่สอง/Built-in display หน้าจอลูกค้าจะขึ้นบนจอฝั่งลูกค้าและอัปเดตเรียลไทม์'),
       h('p', { class: 'small muted' }, 'ใช้ Presentation API ของ Chrome — ขึ้นกับรุ่นและเฟิร์มแวร์ ถ้าไม่มีจอให้เลือก ให้ใช้วิธีที่ 2–4')),
     step('2', 'เปิดเบราว์เซอร์บนจอที่สองเอง แล้วกรอกรหัส', h('p', {}, 'บางรุ่นย้ายแอปไปจอที่สองได้ (แอปจัดการจอที่สองของผู้ผลิต หรือ ตั้งค่า → ตัวเลือกสำหรับนักพัฒนา → "บังคับโหมดเดสก์ท็อป"/"Force desktop mode" แล้วรีสตาร์ต) เมื่อเปิด Chrome บนจอที่สองได้ ให้เข้า ',

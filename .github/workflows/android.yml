@@ -1,0 +1,46 @@
+# Builds the Android app (POS in a WebView + customer display on the built-in second screen, for iMin / Sunmi
+# two-screen devices) and publishes the APK on the release "android-latest".
+name: Android app
+
+on:
+  push:
+    paths: ['android/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Build APK
+        working-directory: android
+        run: gradle --no-daemon assembleRelease
+      - name: Name the APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk OppaPOS-dual-screen.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OppaPOS-dual-screen
+          path: OppaPOS-dual-screen.apk
+      - name: Publish on the release "android-latest"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-latest
+          name: Oppa POS — แอป Android (จอที่สอง iMin / Sunmi)
+          target_commitish: ${{ github.sha }}
+          prerelease: false
+          make_latest: true
+          body: |
+            แอป Oppa POS สำหรับเครื่อง POS 2 จอ (iMin Swan / D4 / Falcon, Sunmi D3 ...) — จอลูกค้าขึ้นบนจอที่สองแยกจากจอแคชเชียร์ ไม่สะท้อนจอ
+            ติดตั้ง: ดาวน์โหลดไฟล์ OppaPOS-dual-screen.apk บนเครื่อง POS → เปิดไฟล์ → อนุญาต "ติดตั้งแอปที่ไม่รู้จัก" → ติดตั้ง
+            สร้างจาก commit ${{ github.sha }}
+          files: OppaPOS-dual-screen.apk
