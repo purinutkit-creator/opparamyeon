@@ -160,23 +160,38 @@ crud('tables', 'dining_tables', ['name', 'zone', 'seats', 'sort', 'active', 'sta
 });
 
 // ---------- stock ----------
+// add / count stock (the note is optional); also: the low-stock level, and start counting a product that wasn't tracked yet
 r.post('/stock/adjust', staffAuth('manage_stock'), ah(async (req, res) => {
-  const { item_type, item_id, qty, mode, reason } = req.body || {};
-  if (!reason) throw bad('กรุณาระบุเหตุผล');
+  const { item_type, item_id, qty, mode, note, low_stock, track } = req.body || {};
+  const reason = String(req.body.reason || note || '').trim().slice(0, 200) || (mode === 'set' ? 'นับสต็อก' : Number(qty) >= 0 ? 'รับเข้า' : 'ปรับลด');
   const table = item_type === 'ingredient' ? 'ingredients' : 'products';
+  const n = Number(qty);
+  if (qty !== undefined && qty !== '' && !Number.isFinite(n)) throw bad('จำนวนไม่ถูกต้อง');
+  let after;
   await db.tx(async () => {
-    const cur = await db.get(`SELECT stock FROM ${table} WHERE id = ?`, [item_id]);
+    const cur = await db.get(`SELECT * FROM ${table} WHERE id = ?`, [item_id]);
     if (!cur) throw notFound();
-    const delta = mode === 'set' ? Number(qty) - cur.stock : Number(qty);
-    await db.run(`UPDATE ${table} SET stock = stock + ? WHERE id = ?`, [delta, item_id]);
-    await db.run('INSERT INTO stock_moves(id, item_type, item_id, qty, reason, ref, staff_id, created_at) VALUES(?,?,?,?,?,?,?,?)', [id(), item_type, item_id, delta, reason, mode, req.staff.id, now()]);
-    await audit(req.staff.id, 'stock_adjust', item_type, item_id, { stock: cur.stock }, { stock: cur.stock + delta }, reason);
+    if (table === 'products' && track && !cur.track_stock) await db.run('UPDATE products SET track_stock = 1 WHERE id = ?', [item_id]);
+    if (low_stock !== undefined && low_stock !== '' && Number.isFinite(Number(low_stock))) await db.run(`UPDATE ${table} SET low_stock = ? WHERE id = ?`, [Math.max(0, Number(low_stock)), item_id]);
+    if (qty !== undefined && qty !== '') {
+      const delta = mode === 'set' ? n - cur.stock : n;
+      if (delta) {
+        await db.run(`UPDATE ${table} SET stock = stock + ? WHERE id = ?`, [delta, item_id]);
+        await db.run('INSERT INTO stock_moves(id, item_type, item_id, qty, reason, ref, staff_id, created_at) VALUES(?,?,?,?,?,?,?,?)', [id(), item_type, item_id, delta, reason, mode === 'set' ? 'set' : 'add', req.staff.id, now()]);
+        await audit(req.staff.id, 'stock_adjust', item_type, item_id, { stock: cur.stock }, { stock: cur.stock + delta }, reason);
+      }
+    }
+    after = await db.get(`SELECT id, name, stock, low_stock FROM ${table} WHERE id = ?`, [item_id]);
   });
   changed();
-  res.json({ ok: true });
+  emit('shop', 'stock:changed', { id: item_id, type: item_type, stock: after.stock, low_stock: after.low_stock });
+  res.json({ ok: true, item: after });
 }));
 r.get('/stock', staffAuth(), ah(async (req, res) => {
-  const products = await db.all('SELECT id, code, name, unit, stock, low_stock, track_stock FROM products WHERE track_stock = 1 ORDER BY name');
+  // every active product (scanning one that isn't counted yet can start counting it); barcodes for the scanner
+  const bcs = await db.all('SELECT code, product_id FROM barcodes');
+  const products = (await db.all('SELECT id, code, name, unit, image, stock, low_stock, track_stock FROM products WHERE active = 1 ORDER BY name'))
+    .map((p) => ({ ...p, track_stock: !!p.track_stock, barcodes: bcs.filter((b) => b.product_id === p.id).map((b) => b.code) }));
   const ingredients = await db.all('SELECT * FROM ingredients ORDER BY name');
   const moves = await db.all('SELECT * FROM stock_moves ORDER BY created_at DESC LIMIT 200');
   res.json({ products, ingredients, moves });

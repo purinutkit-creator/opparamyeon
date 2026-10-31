@@ -32,6 +32,8 @@ async function boot() {
   applyFonts(ctx.settings.fonts, 'admin'); applyTheme(ctx.settings.theme);
   sock = await socket({ kind: 'staff', token: store.get('admin_token') });
   window.addEventListener('hashchange', route);
+  // low stock anywhere in the shop: a heads-up on whatever page is open
+  sock.on('stock:low', (x) => toast(`⚠️ ใกล้หมด: ${x.name} เหลือ ${Math.round(x.stock * 100) / 100}${Number(x.stock) <= 0 ? ' (หมดแล้ว)' : ''} — ดูที่หน้าสต็อก`, 'warn', 9000));
   route();
 }
 function login() {

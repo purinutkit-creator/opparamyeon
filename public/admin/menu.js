@@ -1,7 +1,9 @@
 import { h, toast, errToast, modal, confirmBox, fmtTime } from '/shared/ui.js';
-import { baht, toSatang } from '/shared/core.js';
+import { baht, toSatang, fromThaiKeys } from '/shared/core.js';
 import { api, can, page, card, form, table, saveBtn, upload } from './common.js';
 import { drawStaffCard, printCards } from '/shared/staffcard.js';
+import { scanWithCamera, BARCODECAM_CSS } from '/shared/barcodecam.js';
+document.head.append(Object.assign(document.createElement('style'), { textContent: BARCODECAM_CSS }));
 
 // square centre crop (≤ 720 px) so a profile photo looks right inside a circle
 async function squareCrop(fileOrBlob, size = 720) {
@@ -169,20 +171,86 @@ function optionGroupDialog(g, ingredients, reload, preset = null) {
 // ---------------- stock ----------------
 export async function stockPage() {
   const s = await api.get('/stock');
+  const num = (v) => Math.round(Number(v || 0) * 100) / 100;
+  const prods = s.products, ings = s.ingredients;
+  const reload = () => window.dispatchEvent(new HashChangeEvent('hashchange'));
+  const isLow = (x) => (x.track_stock !== false) && Number(x.stock) <= Number(x.low_stock || 0);
+  const status = (x) => (x.track_stock === false ? h('span', { class: 'badge' }, 'ไม่นับสต็อก') : Number(x.stock) <= 0 ? h('span', { class: 'badge bad' }, 'หมด')
+    : isLow(x) ? h('span', { class: 'badge warn' }, 'ใกล้หมด') : h('span', { class: 'badge ok' }, 'ปกติ'));
+
+  // ---- quick adjust: add / count, optional note, low-stock level ----
+  let fromCamera = false;
   const adjust = (type, item) => {
-    const qty = h('input', { class: 'input', type: 'number', step: 'any' });
-    const mode = h('select', { class: 'input' }, h('option', { value: 'add' }, 'รับเข้า/ปรับเพิ่ม-ลด (+/-)'), h('option', { value: 'set' }, 'นับจริง (ตั้งค่าใหม่)'));
-    const reason = h('input', { class: 'input', placeholder: 'เหตุผล เช่น รับของ, นับสต็อก, ของเสีย' });
-    modal(`ปรับสต็อก: ${item.name} (คงเหลือ ${item.stock})`, h('div', {}, h('label', { class: 'field' }, 'วิธี', mode), h('label', { class: 'field' }, 'จำนวน', qty), h('label', { class: 'field' }, 'เหตุผล', reason)), { actions: [{ label: 'บันทึก', class: 'primary', onClick: async () => {
-      await api.post('/stock/adjust', { item_type: type, item_id: item.id, qty: Number(qty.value), mode: mode.value, reason: reason.value }); toast('บันทึกแล้ว', 'ok'); location.hash = '#/stock'; window.dispatchEvent(new HashChangeEvent('hashchange'));
-    } }] });
+    const tracked = type === 'ingredient' || item.track_stock;
+    let mode = 'add';
+    const qty = h('input', { class: 'input st-qty', type: 'number', step: 'any', inputmode: 'decimal', placeholder: '0' });
+    const after = h('b', {});
+    const note = h('input', { class: 'input', placeholder: 'หมายเหตุ (ไม่ใส่ก็ได้) เช่น รับของจากร้าน A, ของเสีย' });
+    const low = h('input', { class: 'input', type: 'number', min: 0, step: 'any', value: item.low_stock ?? 0 });
+    const calc = () => { const q = Number(qty.value) || 0; after.textContent = `${num(mode === 'set' ? q : Number(item.stock) + q)} ${item.unit || ''}`; };
+    qty.oninput = calc;
+    const step = (d) => { qty.value = num((Number(qty.value) || 0) + d); calc(); };
+    const quick = h('div', { class: 'st-quick' });
+    const seg = h('div', { class: 'seg st-seg' });
+    const drawMode = () => {
+      seg.replaceChildren(h('button', { type: 'button', class: mode === 'add' ? 'on' : '', onclick: () => { mode = 'add'; drawMode(); } }, '➕ เพิ่ม / รับเข้า'), h('button', { type: 'button', class: mode === 'set' ? 'on' : '', onclick: () => { mode = 'set'; qty.value = num(item.stock); drawMode(); } }, '📋 นับจริง (ตั้งยอดใหม่)'));
+      quick.replaceChildren(...(mode === 'add' ? [1, 6, 12, 24, 48].map((n) => h('button', { type: 'button', class: 'chip', onclick: () => step(n) }, '+' + n)).concat([h('button', { type: 'button', class: 'chip', onclick: () => step(-1) }, '−1')]) : []));
+      if (mode === 'add' && Number(qty.value) === num(item.stock)) qty.value = '';
+      calc();
+    };
+    drawMode();
+    const save = async (again) => {
+      if (qty.value === '' && Number(low.value) === Number(item.low_stock ?? 0) && tracked) { toast('ใส่จำนวน', 'warn'); return false; }
+      const r = await api.post('/stock/adjust', { item_type: type, item_id: item.id, qty: qty.value === '' ? undefined : Number(qty.value), mode, note: note.value, low_stock: low.value, track: !tracked });
+      toast(`✓ ${item.name} คงเหลือ ${num(r.item.stock)} ${item.unit || ''}`, 'ok');
+      reload();
+      if (again) setTimeout(() => (fromCamera ? cam() : document.querySelector('.st-scan input') && document.querySelector('.st-scan input').focus()), 400);
+    };
+    modal('📦 ' + item.name, h('div', { class: 'st-panel' },
+      h('div', { class: 'st-head' }, item.image ? h('img', { src: item.image, alt: '' }) : h('span', { class: 'st-ico' }, type === 'ingredient' ? '🧂' : '📦'),
+        h('div', {}, h('small', { class: 'muted' }, [item.code, ...(item.barcodes || [])].filter(Boolean).join(' · ')), h('div', { class: 'st-now' }, num(item.stock), h('small', {}, ' ' + (item.unit || ''))), status(item))),
+      tracked ? null : h('p', { class: 'st-note' }, 'สินค้านี้ยังไม่ได้นับสต็อก — บันทึกแล้วจะเริ่มนับ และ POS จะขึ้น "หมด" เมื่อเหลือ 0'),
+      seg, h('div', { class: 'st-row' }, h('button', { type: 'button', class: 'btn big', onclick: () => step(-1) }, '−'), qty, h('button', { type: 'button', class: 'btn big', onclick: () => step(1) }, '+')), quick,
+      h('div', { class: 'st-after' }, 'หลังบันทึก: ', after),
+      h('label', { class: 'field' }, 'หมายเหตุ', note),
+      h('label', { class: 'field' }, '🔔 แจ้งเตือนว่าใกล้หมดเมื่อเหลือไม่เกิน', low)), { autofocus: false, actions: [
+      { label: 'บันทึก', onClick: () => save(false) },
+      { label: '✓ บันทึก แล้วสแกนต่อ', class: 'primary', onClick: () => save(true) }] });
+    setTimeout(() => qty.focus(), 80);
   };
-  const low = (x) => (x.stock <= x.low_stock ? h('span', { class: 'badge bad' }, 'ใกล้หมด') : h('span', { class: 'badge ok' }, 'ปกติ'));
+
+  // ---- find by barcode (scanner, also typed with a Thai keyboard), code or name ----
+  const find = (raw) => {
+    const q = fromThaiKeys(String(raw || '').trim());
+    if (!q) return;
+    const hit = prods.find((p) => p.code === q || p.barcodes.includes(q));
+    if (hit) return adjust('product', hit);
+    const byName = [...prods.map((p) => ['product', p]), ...ings.map((x) => ['ingredient', x])].filter(([, x]) => x.name.toLowerCase().includes(String(raw).trim().toLowerCase()));
+    if (byName.length === 1) return adjust(byName[0][0], byName[0][1]);
+    if (byName.length > 1) return modal('เลือกรายการ', h('div', { class: 'st-pick' }, byName.slice(0, 30).map(([t, x]) => h('button', { class: 'btn block', onclick: (e) => { e.currentTarget.closest('.modal-back').remove(); adjust(t, x); } }, `${x.name} · คงเหลือ ${num(x.stock)}`))));
+    toast(`ไม่พบสินค้าบาร์โค้ด/รหัส "${q}" — เพิ่มสินค้าได้ที่ เมนูและสินค้า หรือ ผู้ช่วยเพิ่มสินค้า`, 'warn', 6000);
+  };
+  const box = h('input', { class: 'input', placeholder: 'ยิงบาร์โค้ด / พิมพ์รหัส หรือชื่อสินค้า แล้วกด Enter', autocomplete: 'off', onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); const v = box.value; box.value = ''; fromCamera = false; find(v); } } });
+  const cam = () => { fromCamera = true; scanWithCamera((code) => find(code)); };
+  setTimeout(() => box.focus(), 300);
+
+  const lows = [...prods.filter((p) => p.track_stock && isLow(p)).map((p) => ['product', p]), ...ings.filter(isLow).map((x) => ['ingredient', x])];
+  const alert = lows.length
+    ? h('div', { class: 'st-alert' }, h('b', {}, `⚠️ สินค้า/วัตถุดิบเหลือน้อย ${lows.length} รายการ`),
+      h('div', { class: 'st-alert-list' }, lows.map(([t, x]) => h('button', { class: 'st-low' + (Number(x.stock) <= 0 ? ' out' : ''), onclick: () => adjust(t, x) }, h('span', {}, x.name), h('b', {}, Number(x.stock) <= 0 ? 'หมด' : `เหลือ ${num(x.stock)}`), h('small', {}, `แจ้งเตือนที่ ≤ ${num(x.low_stock)}`)))))
+    : h('div', { class: 'st-alert ok' }, '✓ ทุกรายการยังมีของพอ');
+  const tracked = prods.filter((p) => p.track_stock), others = prods.filter((p) => !p.track_stock);
   return page('สต็อก',
-    card(h('h3', {}, 'วัตถุดิบ'), table([{ t: 'ชื่อ', k: 'name' }, { t: 'คงเหลือ', r: 1, f: (x) => `${Math.round(x.stock * 100) / 100} ${x.unit || ''}` }, { t: 'แจ้งเตือน', r: 1, k: 'low_stock' }, { t: '', f: low }], s.ingredients, { onRow: (x) => adjust('ingredient', x) })),
-    card(h('h3', {}, 'สินค้าที่นับสต็อก'), table([{ t: 'รหัส', k: 'code' }, { t: 'ชื่อ', k: 'name' }, { t: 'คงเหลือ', r: 1, k: 'stock' }, { t: '', f: low }], s.products, { onRow: (x) => adjust('product', x) })),
-    card(h('h3', {}, 'ความเคลื่อนไหวล่าสุด'), table([{ t: 'เวลา', f: (m) => fmtTime(m.created_at) }, { t: 'ประเภท', k: 'item_type' }, { t: 'รายการ', f: (m) => ((m.item_type === 'ingredient' ? s.ingredients : s.products).find((x) => x.id === m.item_id) || {}).name || m.item_id },
-      { t: 'จำนวน', r: 1, f: (m) => Math.round(m.qty * 100) / 100 }, { t: 'เหตุผล', k: 'reason' }, { t: 'อ้างอิง', k: 'ref' }], s.moves)));
+    alert,
+    card(h('div', { class: 'st-scan' }, h('span', { class: 'st-scan-ico' }, '🔎'), box, h('button', { class: 'btn primary', onclick: cam }, '📷 สแกนด้วยกล้อง')),
+      h('p', { class: 'small muted', style: { margin: '.5em 0 0' } }, 'ยิงบาร์โค้ดด้วยเครื่องยิง (ภาษาไทยก็อ่านได้) หรือเปิดกล้องสแกน → เพิ่มสต็อก/นับจริง ใส่หมายเหตุหรือไม่ใส่ก็ได้ · ตั้งได้ว่าเหลือเท่าไหร่ถึงเรียกว่าใกล้หมด · สินค้าเหลือ 0 จะขึ้น "หมด" ที่ POS ทันที')),
+    card(h('h3', {}, 'สินค้าที่นับสต็อก'), table([{ t: '', f: (x) => (x.image ? h('img', { class: 'st-thumb', src: x.image, alt: '' }) : '') }, { t: 'รหัส', k: 'code' }, { t: 'ชื่อ', k: 'name' },
+      { t: 'คงเหลือ', r: 1, f: (x) => `${num(x.stock)} ${x.unit || ''}` }, { t: 'เตือนที่ ≤', r: 1, f: (x) => num(x.low_stock) }, { t: '', f: status }], tracked, { onRow: (x) => adjust('product', x), empty: 'ยังไม่มีสินค้าที่นับสต็อก — สแกนสินค้าเพื่อเริ่มนับ' })),
+    card(h('h3', {}, 'วัตถุดิบ'), table([{ t: 'ชื่อ', k: 'name' }, { t: 'คงเหลือ', r: 1, f: (x) => `${num(x.stock)} ${x.unit || ''}` }, { t: 'เตือนที่ ≤', r: 1, f: (x) => num(x.low_stock) }, { t: '', f: status }], ings, { onRow: (x) => adjust('ingredient', x) })),
+    others.length ? h('details', { class: 'card' }, h('summary', {}, `สินค้าที่ยังไม่นับสต็อก (${others.length}) — แตะเพื่อเริ่มนับ`),
+      table([{ t: 'รหัส', k: 'code' }, { t: 'ชื่อ', k: 'name' }, { t: '', f: () => h('span', { class: 'badge' }, 'ไม่นับสต็อก') }], others, { onRow: (x) => adjust('product', x) })) : null,
+    card(h('h3', {}, 'ความเคลื่อนไหวล่าสุด'), table([{ t: 'เวลา', f: (m) => fmtTime(m.created_at) }, { t: 'รายการ', f: (m) => ((m.item_type === 'ingredient' ? ings : prods).find((x) => x.id === m.item_id) || {}).name || m.item_id },
+      { t: 'จำนวน', r: 1, f: (m) => (m.qty > 0 ? '+' : '') + num(m.qty) }, { t: 'หมายเหตุ / เหตุผล', k: 'reason' }, { t: 'อ้างอิง', f: (m) => ({ add: 'ปรับ/รับเข้า', set: 'นับจริง' })[m.ref] || m.ref }], s.moves)));
 }
 
 // ---------------- staff & roles ----------------

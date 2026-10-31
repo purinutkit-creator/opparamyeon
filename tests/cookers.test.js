@@ -339,3 +339,29 @@ test('ล็อกหน้าจอ Inactive: ตั้งเวลา/เต�
   // PIN check on the lock screen
   assert.equal((await S.call('POST', '/api/auth/unlock', { pin: '1234' }, { token: owner })).body.ok, true);
 });
+
+test('สต็อก: สแกนแล้วเพิ่ม/นับจริง หมายเหตุไม่บังคับ ตั้งจุดเตือนใกล้หมด เริ่มนับสินค้าใหม่ และขายจนหมดแล้ว POS เห็นว่าหมด', async () => {
+  const stock = (await S.call('GET', '/api/stock', undefined, { token: owner })).body;
+  const p = stock.products.find((x) => !x.track_stock && x.barcodes.length) || stock.products.find((x) => !x.track_stock);
+  assert.ok(p, 'มีสินค้าที่ยังไม่นับสต็อกให้ทดสอบ');
+  // scan → start counting: no note needed
+  let r = await S.call('POST', '/api/stock/adjust', { item_type: 'product', item_id: p.id, qty: 3, mode: 'add', track: true, low_stock: 2 }, { token: owner });
+  assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.item.stock, 3); assert.equal(r.body.item.low_stock, 2);
+  const mv = await db.get('SELECT reason, ref FROM stock_moves WHERE item_id = ? ORDER BY created_at DESC LIMIT 1', [p.id]);
+  assert.equal(mv.reason, 'รับเข้า'); assert.equal(mv.ref, 'add');
+  r = await S.call('POST', '/api/stock/adjust', { item_type: 'product', item_id: p.id, qty: 2, mode: 'set', note: 'นับหลังร้าน' }, { token: owner });
+  assert.equal(r.body.item.stock, 2);
+  assert.equal((await db.get('SELECT reason FROM stock_moves WHERE item_id = ? ORDER BY created_at DESC LIMIT 1', [p.id])).reason, 'นับหลังร้าน');
+  assert.equal((await S.call('POST', '/api/stock/adjust', { item_type: 'product', item_id: p.id, qty: 'abc' }, { token: owner })).status, 400);
+  // only the low-stock level
+  r = await S.call('POST', '/api/stock/adjust', { item_type: 'product', item_id: p.id, low_stock: 1 }, { token: owner });
+  assert.equal(r.body.item.stock, 2); assert.equal(r.body.item.low_stock, 1);
+  // sell all of it → the catalog (POS) shows it sold out
+  const opts = p.option_groups && p.option_groups.length ? ramyeonOpts : [];
+  const sale = await S.call('POST', '/api/orders/checkout', { idempotency_key: key(), cart: { lines: [line(p.id, 2, { options: opts })] }, payments: [{ method: 'cash', amount: 1e7, received: 1e7 }] }, { token: owner, terminal: 'pos1' });
+  assert.equal(sale.status, 200, JSON.stringify(sale.body));
+  const cat = (await S.call('GET', '/api/catalog', undefined, { token: owner })).body.products.find((x) => x.id === p.id);
+  assert.equal(cat.stock, 0); assert.equal(cat.sold_out, true, 'หมดที่ POS');
+  await S.call('POST', '/api/stock/adjust', { item_type: 'product', item_id: p.id, qty: 5 }, { token: owner });
+  assert.equal((await S.call('GET', '/api/catalog', undefined, { token: owner })).body.products.find((x) => x.id === p.id).sold_out, false, 'เติมแล้วขายได้');
+});

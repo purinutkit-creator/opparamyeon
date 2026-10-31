@@ -336,10 +336,11 @@ async function moveStock(type, itemId, qty, reason, ref, staffId) {
   if (type === 'product') {
     const r = await db.get('UPDATE products SET stock = stock + ? WHERE id = ? AND track_stock = 1 RETURNING stock, low_stock, name', [qty, itemId]);
     if (!r) return;
-    if (r.stock <= r.low_stock) emit('admin', 'stock:low', { id: itemId, name: r.name, stock: r.stock });
+    if (r.stock <= r.low_stock) emit('admin', 'stock:low', { id: itemId, name: r.name, stock: r.stock, low_stock: r.low_stock });
+    emit('shop', 'stock:changed', { id: itemId, type: 'product', stock: r.stock, low_stock: r.low_stock }); // POS: "เหลือ N" / "หมด" right away
   } else {
     const r = await db.get('UPDATE ingredients SET stock = stock + ? WHERE id = ? RETURNING stock, low_stock, name', [qty, itemId]);
-    if (r && r.stock <= r.low_stock) emit('admin', 'stock:low', { id: itemId, name: r.name, stock: r.stock });
+    if (r && r.stock <= r.low_stock) emit('admin', 'stock:low', { id: itemId, name: r.name, stock: r.stock, low_stock: r.low_stock });
   }
   await db.run('INSERT INTO stock_moves(id, item_type, item_id, qty, reason, ref, staff_id, created_at) VALUES(?,?,?,?,?,?,?,?)', [id(), type, itemId, qty, reason, ref, staffId, now()]);
 }

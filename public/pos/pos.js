@@ -404,6 +404,14 @@ async function connect() {
   s.on('connect', () => { setNet(true); pushDisplay(); refreshBadges(); loadCookers(); });
   s.on('disconnect', () => setNet(false));
   s.on('catalog:changed', async () => { st.catalog = await api.get('/catalog'); renderMenu(); });
+  // stock went down (a sale) or up (stock page): "เหลือ N" / "หมด" on the menu right away
+  s.on('stock:changed', (x) => {
+    const p = st.catalog && st.catalog.products.find((q) => q.id === x.id); if (!p) return;
+    const was = p.sold_out && p.stock <= 0;
+    p.stock = x.stock; p.low_stock = x.low_stock;
+    if (p.track_stock) p.sold_out = x.stock <= 0 || (p.sold_out && !was);
+    renderMenu();
+  });
   s.on('settings:changed', async () => { loadCrewPlan(); st.settings = await fetch('/api/settings/public').then((r) => r.json()); applyTheme(st.settings.theme); setFxLevel((st.settings.theme || {}).pos_fx); render(); });
   s.on('mobile:new_order', (o) => {
     st.pending.mobile++; renderTop();
@@ -653,7 +661,8 @@ function renderGrid() {
   g.replaceChildren(...(list.length ? list.map((p) => h('button', { class: 'prod' + (enter ? ' fx-in' : '') + (p.sold_out ? ' out' : '') + (inCart.get(p.id) ? ' picked' : ''), style: `--i:${Math.min(ix++, 24)};` + (catColor[p.category_id] ? `--cat:${catColor[p.category_id]}` : ''),
     onclick: (e) => { rememberTap(e.currentTarget); pickProduct(p); }, oncontextmenu: (e) => { e.preventDefault(); soldOutToggle(p); } },
     h('div', { class: 'img' + (p.image ? '' : ' noimg'), style: p.image ? { backgroundImage: `url(${p.image})` } : {} }, p.image ? null : h('img', { src: '/assets/bowl.svg', alt: '' }),
-      inCart.get(p.id) ? h('span', { class: 'incart' }, '×' + inCart.get(p.id)) : null, p.sold_out ? h('span', { class: 'soldout' }, 'หมด') : null),
+      inCart.get(p.id) ? h('span', { class: 'incart' }, '×' + inCart.get(p.id)) : null, p.sold_out ? h('span', { class: 'soldout' }, 'หมด')
+        : p.track_stock && Number(p.stock) <= Number(p.low_stock || 0) ? h('span', { class: 'lowleft' }, `เหลือ ${Math.max(0, Math.round(p.stock * 100) / 100)}`) : null),
     h('div', { class: 'nm' }, p.name),
     h('div', { class: 'pr' }, h('span', { class: 'price' }, baht(p.price) + ' ฿'), p.bowl_count ? h('span', { class: 'unit' }, `${p.bowl_count} ${U()}`) : null, h('span', { class: 'plus' }, '+')))) : [h('div', { class: 'empty' }, 'ไม่พบสินค้า')]));
 }
@@ -680,6 +689,11 @@ function addByCode(code) {
 function currentBowlGroup() { return st.activeBowl || null; }
 function pickProduct(p, { fromScan = false } = {}) {
   if (p.sold_out) return toast('สินค้าหมด: ' + p.name, 'warn');
+  // counted stock: no more than what is left (everything already in this bill counts)
+  if (p.track_stock) {
+    const inBill = st.cart.lines.filter((l) => l.product_id === p.id).reduce((a, l) => a + l.qty, 0); // stock is taken at payment
+    if (inBill + 1 > Number(p.stock)) return toast(`${p.name} เหลือ ${Math.max(0, Number(p.stock))} — อยู่ในบิลแล้ว ${inBill}`, 'warn');
+  }
   if (p.option_groups.length) {
     // "เลือกด่วน" groups (e.g. egg style): big picture buttons right away, one tap adds the item
     const groups = p.option_groups.map((gid) => st.catalog.option_groups.find((g) => g.id === gid)).filter(Boolean);
@@ -856,6 +870,8 @@ function lineView(l, ch = { fresh: new Set(), more: new Set(), latest: null }) {
   const sent = l.sent_qty || 0;
   const setQty = (q) => {
     if (q < sent && !can('void_item')) return toast('รายการนี้ส่งครัวแล้ว ต้องมีสิทธิ์ยกเลิกรายการ', 'warn');
+    const prod = q > l.qty && st.catalog.products.find((x) => x.id === l.product_id);
+    if (prod && prod.track_stock) { const inBill = st.cart.lines.filter((x) => x.product_id === prod.id).reduce((t, x) => t + x.qty, 0); if (inBill - l.qty + q > Number(prod.stock)) return toast(`${prod.name} เหลือ ${Math.max(0, Number(prod.stock))}`, 'warn'); }
     if (q <= 0) st.cart.lines = st.cart.lines.filter((x) => x !== l); else l.qty = q;
     saveCart(); renderCart();
   };
