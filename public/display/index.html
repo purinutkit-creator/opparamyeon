@@ -477,6 +477,37 @@
   @keyframes lashine { to { transform: translateX(100%); } }
   .sum .grand small { transition: color .3s; }
   @media (prefers-reduced-motion: reduce) { .lastadd.pop, .lastadd.pop::after, .lastadd.pop .la-q, .gclock { animation: none; } }
+
+  /* list: product picture instead of the quantity badge; quantity small on its corner */
+  .it .th { position: relative; width: 7.2vh; height: 7.2vh; flex: none; border-radius: 1.6vh; overflow: visible; background: rgb(255 255 255 / .9); box-shadow: 0 .4vh 1.2vh rgb(0 0 0 / .25); }
+  .it .th img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
+  .it .th.noimg img { object-fit: contain; padding: .8vh; }
+  .it .th .q { position: absolute; right: -1vh; bottom: -1vh; min-width: 3.4vh; height: 3.4vh; padding: 0 .7vh; border-radius: 99px; font-style: normal; font-size: clamp(11px, 1.8vh, 20px); line-height: 1; box-shadow: 0 0 0 .3vh var(--panel-bg, #1b1b1f); }
+  .it.new .th { animation: thin .6s cubic-bezier(.2,1.4,.4,1) both; }
+  @keyframes thin { from { transform: scale(.4) rotate(-12deg); opacity: 0; } }
+  /* product details card (👁 on the POS) */
+  .showcase { position: absolute; inset: 0; z-index: 30; display: grid; place-items: center; padding: 10vh 3vh 3vh; background: rgb(0 0 0 / .45); animation: m-fade .4s ease-out both; }
+  .showcase.out { animation: scout .45s ease-in forwards; }
+  @keyframes scout { to { opacity: 0; } }
+  @keyframes m-fade { from { opacity: 0; } }
+  .sc-card { width: min(92%, 80vh); max-height: 100%; overflow: hidden; display: grid; grid-template-rows: auto 1fr; border-radius: 3vh; background: #fff; color: #1d1410; box-shadow: 0 3vh 8vh rgb(0 0 0 / .45); animation: scin .7s cubic-bezier(.2,1.3,.4,1) both; }
+  @keyframes scin { from { opacity: 0; transform: translateY(6vh) scale(.88); } }
+  .sc-img { height: 34vh; background: #f6efe9; }
+  .sc-img img { width: 100%; height: 100%; object-fit: cover; animation: sczoom 9s ease-out both; }
+  @keyframes sczoom { from { transform: scale(1.12); } }
+  .sc-body { padding: 2.4vh 3vh 3vh; overflow: hidden; display: grid; gap: 1.1vh; align-content: start; }
+  .sc-body h2 { margin: 0; font-family: var(--hf); font-size: clamp(22px, 4.4vh, 50px); line-height: 1.1; animation: scup .6s .15s cubic-bezier(.2,1,.4,1) both; }
+  .sc-price { font-family: var(--hf); font-weight: 800; font-size: clamp(20px, 3.8vh, 44px); color: #d6301d; animation: scup .6s .22s cubic-bezier(.2,1,.4,1) both; } .sc-price small { font-size: .55em; }
+  .sc-spice { display: flex; align-items: center; gap: 1.2vh; font-weight: 800; font-size: clamp(13px, 2.2vh, 24px); animation: scup .6s .28s both; }
+  .sc-spice .chili i { font-style: normal; opacity: .18; filter: grayscale(1); display: inline-block; animation: chili .5s cubic-bezier(.2,1.6,.4,1) both; }
+  .sc-spice .chili i.on { opacity: 1; filter: none; }
+  @keyframes chili { from { transform: scale(0) rotate(-40deg); } }
+  .sc-desc { margin: 0; font-size: clamp(13px, 2.2vh, 24px); line-height: 1.45; color: #4b3d36; animation: scup .6s .32s both; }
+  .sc-hl { margin: 0; padding: 0; list-style: none; display: grid; gap: .7vh; }
+  .sc-hl li { display: flex; gap: 1vh; align-items: baseline; font-size: clamp(13px, 2.2vh, 24px); font-weight: 700; animation: scup .5s cubic-bezier(.2,1,.4,1) both; }
+  .sc-hl li b { color: #16a34a; }
+  @keyframes scup { from { opacity: 0; transform: translateY(1.6vh); } }
+  @media (prefers-reduced-motion: reduce) { .showcase, .sc-card, .sc-img img, .sc-body *, .it.new .th { animation: none !important; } }
 </style>
 </head>
 <body>

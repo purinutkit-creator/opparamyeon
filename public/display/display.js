@@ -119,11 +119,32 @@ function renderAll() {
     h('div', { class: 'promo', id: 'promo' }), h('div', { class: 'panel', id: 'panel' }),
     h('div', { class: 'gclock', id: 'gclock' }, h('b', {}, timeText()), h('span', {}, dateText())));
   const old = $('.disp');
-  if (old && old.className === wrap.className) { renderPanel(); if (paying) renderPay(); return renderDone(); }
+  if (old && old.className === wrap.className) { renderPanel(); renderShowcase(); if (paying) renderPay(); return renderDone(); }
   if ($('.done:not(.leaving)') && state.phase !== 'done') wrap.classList.add('welcome-in');
   root.replaceChildren(wrap);
   if (paying) renderPay(); else renderPromo();
-  renderPanel(); renderDone(); renderPrompt();
+  renderPanel(); renderShowcase(); renderDone(); renderPrompt();
+}
+// product details the cashier chose to show (👁 on the POS): picture, price, spice level, description, highlights
+let showcaseAt = 0, showcaseTimer = null;
+function renderShowcase() {
+  const sc = state.showcase && state.phase !== 'pay' && state.phase !== 'done' && Date.now() - state.showcase.at < 15000 ? state.showcase : null;
+  const old = $('#showcase');
+  if (!sc) { if (old && !old.classList.contains('out')) { old.classList.add('out'); setTimeout(() => old.remove(), 450); } return; }
+  if (old && sc.at === showcaseAt) return;
+  showcaseAt = sc.at;
+  if (old) old.remove();
+  const chili = Array.from({ length: 5 }, (_, i) => h('i', { class: i < sc.spice ? 'on' : '', style: `animation-delay:${0.35 + i * 0.08}s` }, '🌶️'));
+  const el = h('div', { id: 'showcase', class: 'showcase' }, h('div', { class: 'sc-card' },
+    h('div', { class: 'sc-img' }, h('img', { src: sc.image || '/assets/bowl.svg', alt: '' })),
+    h('div', { class: 'sc-body' },
+      h('h2', {}, sc.name), h('div', { class: 'sc-price' }, baht(sc.price), h('small', {}, ' ฿')),
+      h('div', { class: 'sc-spice' }, h('span', {}, sc.spice ? 'ความเผ็ด' : 'ไม่เผ็ด'), sc.spice ? h('span', { class: 'chili' }, chili) : null),
+      sc.description ? h('p', { class: 'sc-desc' }, sc.description) : null,
+      sc.highlights && sc.highlights.length ? h('ul', { class: 'sc-hl' }, sc.highlights.map((x, i) => h('li', { style: `animation-delay:${0.4 + i * 0.1}s` }, h('b', {}, '✓'), x))) : null)));
+  ($('.disp .promo') || root).append(el);
+  clearTimeout(showcaseTimer);
+  showcaseTimer = setTimeout(() => { if (showcaseAt === sc.at) { state = { ...state, showcase: null }; renderShowcase(); } }, Math.max(1000, 15000 - (Date.now() - sc.at)));
 }
 // smooth number change (counts from the previous value)
 function tween(node, to, ms = 520) {
@@ -311,7 +332,8 @@ function renderPanel() {
       if (l.dine_type === 'takeaway' && s.dine_type === 'mixed') opts.push(h('span', { class: 'tw' }, T('takeaway_tag')));
       const isLatest = k === latestKey;
       return h('div', { class: 'it' + (fresh.has(k) ? ' new' : more.has(k) ? ' more-q' : '') + (isLatest ? ' latest' : ''), 'data-k': k },
-        h('span', { class: 'q' }, l.qty), h('div', { class: 'n' }, h('b', {}, l.name), opts.length ? h('small', {}, opts) : null), h('span', { class: 'p' }, baht(l.price)));
+        // the product picture says what it is; how many sits small on its corner
+        h('span', { class: 'th' + (l.image ? '' : ' noimg') }, l.image ? h('img', { src: l.image, alt: '' }) : h('img', { src: '/assets/bowl.svg', alt: '' }), h('i', { class: 'q' }, '×' + l.qty)), h('div', { class: 'n' }, h('b', {}, l.name), opts.length ? h('small', {}, opts) : null), h('span', { class: 'p' }, baht(l.price)));
     })), h('div', { class: 'more down' })),
     lastAdd ? h('div', { class: 'lastadd' + (added ? ' pop' : '') },
       h('span', { class: 'la-k' }, T('last_added')),

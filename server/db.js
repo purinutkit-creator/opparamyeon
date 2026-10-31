@@ -113,6 +113,9 @@ CREATE INDEX IF NOT EXISTS cooker_jobs_active ON cooker_jobs(status, end_at);
 const MIGRATIONS = [
   ['printers', 'options', "TEXT DEFAULT '{}'"],
   ['products', 'big_options', 'INTEGER DEFAULT 0'],
+  ['products', 'highlights', "TEXT DEFAULT ''"],
+  ['products', 'spice_level', 'INTEGER DEFAULT 0'],
+  ['products', 'show_details', 'INTEGER DEFAULT 0'],
   ['option_groups', 'display', "TEXT DEFAULT 'normal'"],
   ['option_groups', 'rename_all', 'INTEGER DEFAULT 0'],
   ['option_groups', 'topic', "TEXT DEFAULT ''"],

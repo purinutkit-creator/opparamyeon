@@ -26,7 +26,7 @@ export async function catalog({ includeInactive = false, mobile = false, withCos
     categories: cats, stations, option_groups: groups,
     products: prods.map((p) => ({
       id: p.id, code: p.code, name: p.name, category_id: p.category_id, description: p.description, image: p.image, price: p.price,
-      unit: p.unit, bowl_count: p.bowl_count, per_bowl_limit: p.per_bowl_limit, station_id: p.station_id, active: !!p.active, mobile: !!p.mobile, big_options: !!p.big_options,
+      unit: p.unit, bowl_count: p.bowl_count, per_bowl_limit: p.per_bowl_limit, station_id: p.station_id, active: !!p.active, mobile: !!p.mobile, big_options: !!p.big_options, highlights: p.highlights || '', spice_level: Number(p.spice_level) || 0, show_details: !!p.show_details,
       sold_out: !!p.sold_out || (p.track_stock && p.stock <= 0), track_stock: !!p.track_stock, stock: mobile ? undefined : p.stock, low_stock: mobile ? undefined : p.low_stock,
       kind: p.kind, option_groups: J(p.option_groups, []), sort: p.sort, barcodes: bcs.filter((b) => b.product_id === p.id).map((b) => b.code),
       ...(withCost ? { cost: p.cost, recipe: J(p.recipe, []) } : {}),
@@ -55,12 +55,15 @@ async function saveBarcodes(pid, codes) {
   for (const c of list) await db.run('INSERT INTO barcodes(code, product_id) VALUES(?,?)', [c, pid]);
 }
 const PFIELDS = ['code', 'name', 'category_id', 'description', 'image', 'price', 'cost', 'unit', 'bowl_count', 'per_bowl_limit', 'station_id', 'track_stock', 'stock',
-  'low_stock', 'active', 'sold_out', 'kind', 'recipe', 'option_groups', 'sort', 'mobile', 'big_options'];
+  'low_stock', 'active', 'sold_out', 'kind', 'recipe', 'option_groups', 'sort', 'mobile', 'big_options', 'highlights', 'spice_level', 'show_details'];
 function normProduct(b, cur = {}) {
   const o = {};
   for (const f of PFIELDS) o[f] = b[f] !== undefined ? b[f] : cur[f];
   for (const f of ['recipe', 'option_groups']) if (typeof o[f] !== 'string') o[f] = S(o[f] || []);
-  for (const f of ['track_stock', 'active', 'sold_out', 'mobile', 'big_options']) o[f] = o[f] === undefined ? (f === 'active' || f === 'mobile' ? 1 : 0) : o[f] ? 1 : 0;
+  for (const f of ['track_stock', 'active', 'sold_out', 'mobile', 'big_options', 'show_details']) o[f] = o[f] === undefined ? (f === 'active' || f === 'mobile' ? 1 : 0) : o[f] ? 1 : 0;
+  // shown on the customer display: highlights (one per line) and spice level 0–5
+  o.spice_level = Math.max(0, Math.min(5, Math.round(Number(o.spice_level) || 0)));
+  o.highlights = String(o.highlights || '').slice(0, 1000);
   for (const f of ['price', 'cost', 'per_bowl_limit', 'sort']) o[f] = Math.round(Number(o[f]) || 0);
   for (const f of ['bowl_count', 'stock', 'low_stock']) o[f] = Number(o[f]) || 0;
   if (!o.name || !o.code) throw bad('กรุณากรอกรหัสและชื่อสินค้า');

@@ -667,3 +667,6 @@ html[data-vt] .shift-crew .av, html[data-vt] .cp .av { animation: none; }
 .prod .lowleft { position: absolute; left: 6px; bottom: 6px; padding: .15em .6em; border-radius: 99px; background: #f59e0b; color: #fff; font-weight: 800; font-size: .8em; box-shadow: 0 2px 8px rgb(0 0 0 / .2); animation: m-rise .4s var(--ease-out); }
 .topbar .icon-refresh { min-width: 40px; padding: .35em .6em; font-size: 1.15em; font-weight: 800; }
 .topbar .icon-refresh.spin { animation: spin .8s linear infinite; }
+.prod .eye { position: absolute; left: 6px; top: 6px; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 15px; background: rgb(255 255 255 / .85); box-shadow: 0 2px 6px rgb(0 0 0 / .15); opacity: .75; transition: transform .2s var(--ease-spring), opacity .2s, background .2s; z-index: 2; }
+.prod .eye:hover { opacity: 1; transform: scale(1.12); }
+.prod .eye.on { opacity: 1; background: var(--brand); color: #fff; animation: dotpop .4s var(--ease-spring); }

@@ -688,7 +688,8 @@ function renderGrid() {
   g.replaceChildren(...(list.length ? list.map((p) => h('button', { class: 'prod' + (enter ? ' fx-in' : '') + (p.sold_out ? ' out' : '') + (inCart.get(p.id) ? ' picked' : ''), style: `--i:${Math.min(ix++, 24)};` + (catColor[p.category_id] ? `--cat:${catColor[p.category_id]}` : ''),
     onclick: (e) => { rememberTap(e.currentTarget); pickProduct(p); }, oncontextmenu: (e) => { e.preventDefault(); soldOutToggle(p); } },
     h('div', { class: 'img' + (p.image ? '' : ' noimg'), style: p.image ? { backgroundImage: `url(${p.image})` } : {} }, p.image ? null : h('img', { src: '/assets/bowl.svg', alt: '' }),
-      inCart.get(p.id) ? h('span', { class: 'incart' }, '×' + inCart.get(p.id)) : null, p.sold_out ? h('span', { class: 'soldout' }, 'หมด')
+      inCart.get(p.id) ? h('span', { class: 'incart' }, '×' + inCart.get(p.id)) : null,
+      h('span', { class: 'eye' + (st.showcase && st.showcase.id === p.id ? ' on' : ''), title: 'โชว์รายละเอียดสินค้านี้บนจอลูกค้า', onclick: (e) => { e.stopPropagation(); showcase(p, true); } }, '👁'), p.sold_out ? h('span', { class: 'soldout' }, 'หมด')
         : p.track_stock && Number(p.stock) <= Number(p.low_stock || 0) ? h('span', { class: 'lowleft' }, `เหลือ ${Math.max(0, Math.round(p.stock * 100) / 100)}`) : null),
     h('div', { class: 'nm' }, p.name),
     h('div', { class: 'pr' }, h('span', { class: 'price' }, baht(p.price) + ' ฿'), p.bowl_count ? h('span', { class: 'unit' }, `${p.bowl_count} ${U()}`) : null, h('span', { class: 'plus' }, '+')))) : [h('div', { class: 'empty' }, 'ไม่พบสินค้า')]));
@@ -713,9 +714,22 @@ function addByCode(code) {
   pickProduct(p, { fromScan: true });
   return true;
 }
+// product details on the customer display: picture, description, highlights, spice level (👁 on a product, or every time it is added)
+let showcaseTimer = null;
+function showcase(p, manual = false) {
+  if (manual && st.showcase && st.showcase.id === p.id) { st.showcase = null; pushDisplay(); renderMenu(); return toast('ซ่อนรายละเอียดบนจอลูกค้าแล้ว', 'info', 1500); }
+  st.showcase = { id: p.id, name: p.name, image: p.image || '', price: p.price, description: p.description || '', spice: Number(p.spice_level) || 0,
+    highlights: String(p.highlights || '').split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 6), at: Date.now() };
+  pushDisplay(); renderMenu();
+  if (manual) toast(`👁 แสดง "${p.name}" บนจอลูกค้า (กด 👁 อีกครั้งเพื่อซ่อน)`, 'info', 2500);
+  clearTimeout(showcaseTimer);
+  const at = st.showcase.at;
+  showcaseTimer = setTimeout(() => { if (st.showcase && st.showcase.at === at) { st.showcase = null; pushDisplay(); renderMenu(); } }, 12000);
+}
 function currentBowlGroup() { return st.activeBowl || null; }
 function pickProduct(p, { fromScan = false } = {}) {
   if (p.sold_out) return toast('สินค้าหมด: ' + p.name, 'warn');
+  if (p.show_details) showcase(p);
   // counted stock: no more than what is left (everything already in this bill counts)
   if (p.track_stock) {
     const inBill = st.cart.lines.filter((l) => l.product_id === p.id).reduce((a, l) => a + l.qty, 0); // stock is taken at payment
@@ -1133,7 +1147,9 @@ function pushDisplay(extra = {}) {
   lastPhase = phase;
   const m = st.cart.member;
   const state = { cart_id: st.cart.cart_id, phase, dine_type: orderDineType(st.cart.lines.length ? st.cart.lines : [{ qty: 1, dine_type: st.cart.dine_type }]),
-    lines: st.cart.lines.map((l) => { const rn = renamedLine(l.name, l.options || [], 'everywhere'); return { name: rn.name, qty: l.qty, options: rn.options.map(displayOption), price: lineTotal(l), dine_type: l.dine_type, bowl_group: l.bowl_group }; }),
+    lines: st.cart.lines.map((l) => { const rn = renamedLine(l.name, l.options || [], 'everywhere'); const pr = st.catalog && st.catalog.products.find((x) => x.id === l.product_id);
+      return { name: rn.name, qty: l.qty, options: rn.options.map(displayOption), price: lineTotal(l), dine_type: l.dine_type, bowl_group: l.bowl_group, image: (pr && pr.image) || '' }; }),
+    showcase: st.showcase || null,
     items_total: t.items_total, discount: t.discount, packaging: t.packaging, tax: t.tax, total: t.total, bowls: t.bowls, table: st.cart.table_name,
     member: m && st.settings.members.show_on_display ? { name: (m.first_name || m.nickname || '').slice(0, 2) + '***', points: m.points, tier: m.tier && m.tier.name, earn: previewEarn(st.cart, t) } : null,
     queue_no: st.cart.queue_no || '', discounts: discountRows(st.cart, t),
