@@ -45,7 +45,8 @@ async function boot() {
   try { await api.get('/display/me'); } catch (e) { if (e.status === 403) { store.del('display_token'); return pairing(); } }
   applyTheme(); renderAll();
   sock = await socket({ kind: 'display', token: store.get('display_token') });
-  sock.on('connect', () => net(true));
+  sock.on('connect', () => { net(true); checkVersion(); });
+  setInterval(checkVersion, 3 * 60e3);
   sock.on('disconnect', () => net(false));
   sock.on('display:state', onState);
   sock.on('display:revoked', () => { store.del('display_token'); location.reload(); });
@@ -56,6 +57,15 @@ async function boot() {
   const local = qs.get('local');
   if (local) try { new BroadcastChannel('opp-display-' + local).onmessage = (e) => onState(e.data); } catch { /* */ }
   setInterval(() => { if (prompt && new Date(prompt.expires_at) < new Date()) { prompt = null; renderPrompt(); } }, 1000);
+}
+// a newer version on the server: reload while nothing is on screen (between customers)
+async function checkVersion() {
+  try {
+    const v = (await fetch('/api/settings/public', { cache: 'no-store' }).then((r) => r.json())).version;
+    if (!v || v === VERSION || qs.get('demo')) return;
+    if ((state.phase && state.phase !== 'idle') || prompt) return setTimeout(checkVersion, 30e3); // try again shortly
+    location.reload();
+  } catch { /* offline */ }
 }
 function net(ok) { let n = $('.net'); if (!n) { n = h('div', { class: 'net' }); document.body.append(n); } n.textContent = ok ? `● เชื่อมต่อแล้ว · v${VERSION}` : '○ ขาดการเชื่อมต่อ กำลังเชื่อมต่อใหม่…'; }
 
@@ -332,8 +342,9 @@ function renderPanel() {
       if (l.dine_type === 'takeaway' && s.dine_type === 'mixed') opts.push(h('span', { class: 'tw' }, T('takeaway_tag')));
       const isLatest = k === latestKey;
       return h('div', { class: 'it' + (fresh.has(k) ? ' new' : more.has(k) ? ' more-q' : '') + (isLatest ? ' latest' : ''), 'data-k': k },
-        // the product picture says what it is; how many sits small on its corner
-        h('span', { class: 'th' + (l.image ? '' : ' noimg') }, l.image ? h('img', { src: l.image, alt: '' }) : h('img', { src: '/assets/bowl.svg', alt: '' }), h('i', { class: 'q' }, '×' + l.qty)), h('div', { class: 'n' }, h('b', {}, l.name), opts.length ? h('small', {}, opts) : null), h('span', { class: 'p' }, baht(l.price)));
+        // the product picture says what it is; how many sits small under the price
+        h('span', { class: 'th' + (l.image ? '' : ' noimg') }, h('img', { src: l.image || '/assets/bowl.svg', alt: '' })), h('div', { class: 'n' }, h('b', {}, l.name), opts.length ? h('small', {}, opts) : null),
+        h('span', { class: 'p' }, baht(l.price), h('i', { class: 'q' }, '×' + l.qty)));
     })), h('div', { class: 'more down' })),
     lastAdd ? h('div', { class: 'lastadd' + (added ? ' pop' : '') },
       h('span', { class: 'la-k' }, T('last_added')),

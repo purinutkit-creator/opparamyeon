@@ -479,10 +479,11 @@
   @media (prefers-reduced-motion: reduce) { .lastadd.pop, .lastadd.pop::after, .lastadd.pop .la-q, .gclock { animation: none; } }
 
   /* list: product picture instead of the quantity badge; quantity small on its corner */
-  .it .th { position: relative; width: 7.2vh; height: 7.2vh; flex: none; border-radius: 1.6vh; overflow: visible; background: rgb(255 255 255 / .9); box-shadow: 0 .4vh 1.2vh rgb(0 0 0 / .25); }
+  .it .th { position: relative; width: 10vh; height: 10vh; flex: none; border-radius: 2vh; overflow: hidden; background: rgb(255 255 255 / .9); box-shadow: 0 .5vh 1.4vh rgb(0 0 0 / .28); }
   .it .th img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
   .it .th.noimg img { object-fit: contain; padding: .8vh; }
-  .it .th .q { position: absolute; right: -1vh; bottom: -1vh; min-width: 3.4vh; height: 3.4vh; padding: 0 .7vh; border-radius: 99px; font-style: normal; font-size: clamp(11px, 1.8vh, 20px); line-height: 1; box-shadow: 0 0 0 .3vh var(--panel-bg, #1b1b1f); }
+  .it .p { display: grid; justify-items: end; gap: .6vh; }
+  .it .p .q { min-width: 0; height: auto; padding: .3em .8em; border-radius: 99px; font-style: normal; font-size: clamp(12px, 2.3vh, 26px); line-height: 1.1; box-shadow: none; }
   .it.new .th { animation: thin .6s cubic-bezier(.2,1.4,.4,1) both; }
   @keyframes thin { from { transform: scale(.4) rotate(-12deg); opacity: 0; } }
   /* product details card (👁 on the POS) */
