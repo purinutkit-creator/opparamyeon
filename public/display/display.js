@@ -311,7 +311,7 @@ function renderPanel() {
       if (l.dine_type === 'takeaway' && s.dine_type === 'mixed') opts.push(h('span', { class: 'tw' }, T('takeaway_tag')));
       const isLatest = k === latestKey;
       return h('div', { class: 'it' + (fresh.has(k) ? ' new' : more.has(k) ? ' more-q' : '') + (isLatest ? ' latest' : ''), 'data-k': k },
-        h('span', { class: 'q' }, l.qty), h('div', { class: 'n' }, h('b', {}, l.name, isLatest ? h('em', { class: 'ltag' }, T('latest')) : null), opts.length ? h('small', {}, opts) : null), h('span', { class: 'p' }, baht(l.price)));
+        h('span', { class: 'q' }, l.qty), h('div', { class: 'n' }, h('b', {}, l.name), opts.length ? h('small', {}, opts) : null), h('span', { class: 'p' }, baht(l.price)));
     })), h('div', { class: 'more down' })),
     lastAdd ? h('div', { class: 'lastadd' + (added ? ' pop' : '') },
       h('span', { class: 'la-k' }, T('last_added')),
