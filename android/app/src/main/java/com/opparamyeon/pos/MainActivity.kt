@@ -63,7 +63,7 @@ class MainActivity : AppCompatActivity() {
         hideSystemBars()
         // the second screen can be plugged in / come up after the app started
         val displays = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
-        displays.registerListener(object : DisplayManager.DisplayListener {
+        displays.registerDisplayListener(object : DisplayManager.DisplayListener {
             override fun onDisplayAdded(id: Int) { reopenCustomer() }
             override fun onDisplayRemoved(id: Int) { if (customer?.display?.displayId == id) { customer?.dismiss(); customer = null } }
             override fun onDisplayChanged(id: Int) {}
