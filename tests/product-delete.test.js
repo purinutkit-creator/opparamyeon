@@ -46,3 +46,25 @@ test('จัดเรียงลำดับเมนูด้วยการ�
   assert.equal((await list()).find((p) => p.id === ids[0]).station_id, null, 'ไม่ระบุจุดครัว');
   await S.call('POST', '/api/products/station', { ids, station_id: 'st_ramyeon' }, { token: owner });
 });
+
+test('ประเทศของสินค้า: ตั้งรายชื่อประเทศ+ธง ติ๊กสินค้าของแต่ละประเทศ และอยู่ในข้อมูลเมนู', async () => {
+  const r = await S.call('PUT', '/api/settings/countries', { value: [{ id: 'kr', name: 'เกาหลีใต้', flag: '🇰🇷' }, { id: 'jp', name: 'ญี่ปุ่น', flag: '/files/abc' }, { id: 'kr', name: 'ซ้ำ' }, { id: 'x', name: '' }] }, { token: owner });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.map((c) => c.id), ['kr', 'jp'], 'ตัดชื่อว่าง/ซ้ำ');
+  const ids = (await S.call('GET', '/api/catalog', undefined, { token: owner })).body.products.slice(0, 3).map((p) => p.id);
+  assert.equal((await S.call('POST', '/api/countries/kr/products', { ids: ids.slice(0, 2) }, { token: owner })).status, 200);
+  let cat = (await S.call('GET', '/api/catalog', undefined, { token: owner })).body;
+  assert.deepEqual(cat.countries.map((c) => c.id), ['kr', 'jp']);
+  assert.deepEqual(cat.products.filter((p) => p.country === 'kr').map((p) => p.id).sort(), ids.slice(0, 2).sort());
+  // tick again with a different set: the one left out loses the country
+  await S.call('POST', '/api/countries/kr/products', { ids: [ids[2]] }, { token: owner });
+  cat = (await S.call('GET', '/api/catalog', undefined, { token: owner })).body;
+  assert.deepEqual(cat.products.filter((p) => p.country === 'kr').map((p) => p.id), [ids[2]]);
+  // product form
+  const p = cat.products.find((x) => x.id === ids[0]);
+  await S.call('PUT', '/api/products/' + p.id, { ...p, country: 'jp' }, { token: owner });
+  assert.equal((await S.call('GET', '/api/catalog', undefined, { token: owner })).body.products.find((x) => x.id === p.id).country, 'jp');
+  assert.equal((await S.call('POST', '/api/countries/nope/products', { ids }, { token: owner })).status, 404);
+  const cashier = await S.login('0002', '2222');
+  assert.equal((await S.call('POST', '/api/countries/kr/products', { ids }, { token: cashier })).status, 403);
+});

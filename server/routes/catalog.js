@@ -41,10 +41,10 @@ export async function catalog({ includeInactive = false, mobile = false, withCos
     .map((o) => (withCost ? o : { id: o.id, name: o.name, price: o.price, active: o.active, image: o.image || '', rename_to: o.rename_to || '', mark: o.mark || '' })), display: g.display || 'normal', rename_all: !!g.rename_all }));
   const stations = await db.all('SELECT * FROM stations ORDER BY sort, name');
   return {
-    categories: cats, stations, option_groups: groups,
+    categories: cats, stations, option_groups: groups, countries: ((await getSettings()).countries || []),
     products: prods.map((p) => ({
       id: p.id, code: p.code, name: p.name, category_id: p.category_id, description: p.description, image: p.image, price: p.price,
-      unit: p.unit, bowl_count: p.bowl_count, per_bowl_limit: p.per_bowl_limit, station_id: p.station_id, active: !!p.active, mobile: !!p.mobile, big_options: !!p.big_options, highlights: p.highlights || '', spice_level: Number(p.spice_level) || 0, show_details: !!p.show_details,
+      unit: p.unit, bowl_count: p.bowl_count, per_bowl_limit: p.per_bowl_limit, station_id: p.station_id, active: !!p.active, mobile: !!p.mobile, big_options: !!p.big_options, highlights: p.highlights || '', spice_level: Number(p.spice_level) || 0, show_details: !!p.show_details, country: p.country || '',
       sold_out: !!p.sold_out || (p.track_stock && p.stock <= 0), track_stock: !!p.track_stock, stock: mobile ? undefined : p.stock, low_stock: mobile ? undefined : p.low_stock,
       kind: p.kind, option_groups: J(p.option_groups, []), sort: p.sort, barcodes: bcs.filter((b) => b.product_id === p.id).map((b) => b.code),
       ...(withCost ? { cost: p.cost, recipe: J(p.recipe, []) } : {}),
@@ -73,7 +73,7 @@ async function saveBarcodes(pid, codes) {
   for (const c of list) await db.run('INSERT INTO barcodes(code, product_id) VALUES(?,?)', [c, pid]);
 }
 const PFIELDS = ['code', 'name', 'category_id', 'description', 'image', 'price', 'cost', 'unit', 'bowl_count', 'per_bowl_limit', 'station_id', 'track_stock', 'stock',
-  'low_stock', 'active', 'sold_out', 'kind', 'recipe', 'option_groups', 'sort', 'mobile', 'big_options', 'highlights', 'spice_level', 'show_details'];
+  'low_stock', 'active', 'sold_out', 'kind', 'recipe', 'option_groups', 'sort', 'mobile', 'big_options', 'highlights', 'spice_level', 'show_details', 'country'];
 function normProduct(b, cur = {}) {
   const o = {};
   for (const f of PFIELDS) o[f] = b[f] !== undefined ? b[f] : cur[f];
@@ -82,6 +82,7 @@ function normProduct(b, cur = {}) {
   // shown on the customer display: highlights (one per line) and spice level 0–5
   o.spice_level = Math.max(0, Math.min(5, Math.round(Number(o.spice_level) || 0)));
   o.highlights = String(o.highlights || '').slice(0, 1000);
+  o.country = String(o.country || '').replace(/[^\w-]/g, '').slice(0, 24);
   for (const f of ['price', 'cost', 'per_bowl_limit', 'sort']) o[f] = Math.round(Number(o[f]) || 0);
   for (const f of ['bowl_count', 'stock', 'low_stock']) o[f] = Number(o[f]) || 0;
   if (!o.name || !o.code) throw bad('กรุณากรอกรหัสและชื่อสินค้า');
@@ -161,6 +162,17 @@ r.post('/products/reorder', staffAuth('manage_menu'), ah(async (req, res) => {
   res.json({ ok: true, count: ids.length });
 }));
 // quick kitchen station for one or many items ('' = none set → the general kitchen printers)
+// "ประเทศ" tab: tick which products come from a country (the others that had it lose it)
+r.post('/countries/:id/products', staffAuth('manage_menu'), ah(async (req, res) => {
+  const cid = String(req.params.id);
+  if (!((await getSettings()).countries || []).some((c) => c.id === cid)) throw notFound('ไม่พบประเทศนี้');
+  const ids = [...new Set([].concat(req.body.ids || []).map(String))].slice(0, 2000);
+  await db.run("UPDATE products SET country = '' WHERE country = ?", [cid]);
+  for (const pid of ids) await db.run('UPDATE products SET country = ? WHERE id = ?', [cid, pid]);
+  await audit(req.staff.id, 'set_country', 'product', cid, null, { count: ids.length });
+  changed();
+  res.json({ ok: true, count: ids.length });
+}));
 r.post('/products/station', staffAuth('manage_menu'), ah(async (req, res) => {
   const ids = [...new Set([].concat(req.body.ids || []).map(String))].slice(0, 1000);
   const st = String(req.body.station_id || '');

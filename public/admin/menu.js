@@ -49,7 +49,7 @@ export async function menuPage(set) {
   const box = h('div');
   const reload = async () => { Object.assign(cat, await api.get('/catalog?all=1')); draw(); };
   const draw = () => {
-    const tabs = h('div', { class: 'tabs', style: { marginBottom: '1em' } }, [['products', 'สินค้า/เมนู'], ['categories', 'หมวดหมู่'], ['options', 'ตัวเลือก/ท็อปปิ้ง'], ['ingredients', 'วัตถุดิบ'], ['stations', 'จุดครัวและการแบ่งใบ'], ['import', '📥 นำเข้าจาก Google Sheet']].map(([k, t]) =>
+    const tabs = h('div', { class: 'tabs', style: { marginBottom: '1em' } }, [['products', 'สินค้า/เมนู'], ['categories', 'หมวดหมู่'], ['countries', '🌏 ประเทศ'], ['options', 'ตัวเลือก/ท็อปปิ้ง'], ['ingredients', 'วัตถุดิบ'], ['stations', 'จุดครัวและการแบ่งใบ'], ['import', '📥 นำเข้าจาก Google Sheet']].map(([k, t]) =>
       h('button', { class: 'tab' + (tab === k ? ' active' : ''), onclick: () => { tab = k; draw(); } }, t)));
     let body;
     if (tab === 'products') {
@@ -87,6 +87,8 @@ export async function menuPage(set) {
         h('button', { class: 'btn', onclick: () => sortDialog(cat, reload) }, '↕ จัดเรียงลำดับ'), stBulk, delBtn), list);
     } else if (tab === 'import') {
       body = importBox(reload);
+    } else if (tab === 'countries') {
+      body = countriesTab(cat, reload);
     } else if (tab === 'categories') {
       body = simpleList('categories', cat.categories, [{ k: 'name', label: 'ชื่อหมวด' }, { k: 'sort', label: 'ลำดับ', type: 'number' }, { k: 'color', label: 'สี', type: 'color' }, { k: 'active', label: 'แสดง', type: 'bool' },
         { k: 'sort_by', label: 'เรียงสินค้าในหมวดนี้ตาม', type: 'select', options: SORT_BY_OPTS }], reload, (r) => (SORT_BY_OPTS.find(([v]) => v === (r.sort_by || 'sort')) || [])[1] || '');
@@ -311,6 +313,63 @@ async function researchDialog(f, p) {
   { wide: true, actions: [{ label: 'ยกเลิก', onClick: () => {} }, { label: '✓ ใช้ข้อมูลที่เลือก', class: 'primary', onClick: apply }] });
   if ((q.value || bc.value) && has(engine)) search();
 }
+// ---------- 🌏 countries: where products come from (name + flag), tick which products ----------
+const COUNTRY_PRESETS = [['kr', 'เกาหลีใต้', '🇰🇷'], ['jp', 'ญี่ปุ่น', '🇯🇵'], ['cn', 'จีน', '🇨🇳'], ['th', 'ไทย', '🇹🇭'], ['tw', 'ไต้หวัน', '🇹🇼'], ['hk', 'ฮ่องกง', '🇭🇰'],
+  ['sg', 'สิงคโปร์', '🇸🇬'], ['my', 'มาเลเซีย', '🇲🇾'], ['id', 'อินโดนีเซีย', '🇮🇩'], ['vn', 'เวียดนาม', '🇻🇳'], ['ph', 'ฟิลิปปินส์', '🇵🇭'], ['us', 'สหรัฐอเมริกา', '🇺🇸'],
+  ['it', 'อิตาลี', '🇮🇹'], ['de', 'เยอรมนี', '🇩🇪'], ['fr', 'ฝรั่งเศส', '🇫🇷'], ['au', 'ออสเตรเลีย', '🇦🇺']];
+const flagEl = (f, size = '1.6em') => (/^(\/|https:)/.test(f || '') ? h('img', { src: f, alt: '', style: { height: size, borderRadius: '4px', boxShadow: '0 0 0 1px rgb(0 0 0 / .08)', verticalAlign: 'middle' } }) : h('span', { style: { fontSize: size, lineHeight: 1 } }, f || '🌏'));
+function countriesTab(cat, reload) {
+  const list = (cat.countries || []).slice();
+  const save = async (next, msg) => { await api.put('/settings/countries', { value: next }); toast(msg || 'บันทึกแล้ว', 'ok'); await reload(); };
+  const count = (id) => cat.products.filter((p) => p.country === id).length;
+  const presets = COUNTRY_PRESETS.filter(([id]) => !list.some((c) => c.id === id));
+  return h('div', {},
+    h('p', { class: 'small muted' }, 'ตั้งว่าสินค้ามาจากประเทศไหน — จอลูกค้าจะขึ้น "สินค้าจาก 🇰🇷 เกาหลีใต้" ในการ์ดสินค้าที่เพิ่มล่าสุดและป๊อปอัปรายละเอียด · ธงใช้อีโมจิ หรืออัปโหลดรูปธงเองได้'),
+    list.length ? h('div', { class: 'ct-grid' }, list.map((c) => h('div', { class: 'card ct-card' },
+      h('div', { class: 'ct-flag' }, flagEl(c.flag, '2.6em')), h('div', {}, h('b', {}, c.name), h('div', { class: 'small muted' }, `${count(c.id)} สินค้า`)),
+      h('div', { class: 'row', style: { gap: '6px' } }, h('button', { class: 'btn sm primary', onclick: () => countryProducts(c, cat, reload) }, '✓ เลือกสินค้า'), h('button', { class: 'btn sm', onclick: () => countryDialog(c, list, save) }, 'แก้ไข'))))) : h('div', { class: 'empty' }, 'ยังไม่มีประเทศ — กดเพิ่มจากรายการด้านล่าง'),
+    h('h4', { style: { margin: '1.2em 0 .5em' } }, '+ เพิ่มประเทศ'),
+    h('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap' } }, presets.map(([id, name, flag]) => h('button', { class: 'chip', onclick: () => save([...list, { id, name, flag }], `เพิ่ม ${name} แล้ว`) }, flag + ' ' + name)),
+      h('button', { class: 'chip', onclick: () => countryDialog(null, list, save) }, '✏️ เพิ่มประเทศเอง')),
+    h('style', {}, '.ct-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; } .ct-card { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; align-items: center; margin: 0 !important; } .ct-card .row { grid-column: 1 / -1; } .ct-flag { width: 3.2em; text-align: center; }'));
+}
+function countryDialog(c, list, save) {
+  const name = h('input', { class: 'input', value: c ? c.name : '', placeholder: 'เช่น เกาหลีใต้' });
+  const flag = h('input', { class: 'input', value: c && !/^(\/|https:)/.test(c.flag || '') ? c.flag : '', placeholder: 'อีโมจิธง เช่น 🇰🇷', style: { maxWidth: '160px' } });
+  let pic = c && /^(\/|https:)/.test(c.flag || '') ? c.flag : '';
+  const prev = h('span');
+  const showPrev = () => prev.replaceChildren(flagEl(pic || flag.value, '2.4em'));
+  flag.addEventListener('input', () => { if (flag.value) pic = ''; showPrev(); });
+  const file = h('input', { type: 'file', accept: 'image/*', onchange: async () => { try { pic = (await upload(file.files[0])).url; flag.value = ''; showPrev(); } catch (e) { errToast(e); } } });
+  showPrev();
+  modal(c ? 'แก้ไขประเทศ' : 'เพิ่มประเทศ', h('div', {}, h('label', { class: 'field' }, 'ชื่อประเทศ', name),
+    h('div', { class: 'row', style: { gap: '12px', alignItems: 'end' } }, h('label', { class: 'field' }, 'ธง (อีโมจิ)', flag), h('label', { class: 'field' }, 'หรืออัปโหลดรูปธง', file), prev)),
+  { actions: [c ? { label: 'ลบ', class: 'danger', onClick: async () => { if (!await confirmBox('ลบประเทศ', `ลบ "${c.name}"? สินค้าที่ตั้งไว้จะกลายเป็นไม่ระบุประเทศ`, 'ลบ', true)) return false; await save(list.filter((x) => x.id !== c.id), 'ลบแล้ว'); } } : null,
+    { label: 'บันทึก', class: 'primary', onClick: async () => {
+      if (!name.value.trim()) { toast('ใส่ชื่อประเทศ', 'warn'); return false; }
+      const item = { id: c ? c.id : 'c' + Date.now().toString(36), name: name.value.trim(), flag: pic || flag.value.trim() };
+      await save(c ? list.map((x) => (x.id === c.id ? item : x)) : [...list, item]);
+    } }].filter(Boolean) });
+}
+function countryProducts(c, cat, reload) {
+  const picked = new Set(cat.products.filter((p) => p.country === c.id).map((p) => p.id));
+  let q = '', onlyNone = false;
+  const list = h('div', { style: { maxHeight: '56vh', overflow: 'auto', display: 'grid', gap: '4px' } });
+  const other = (p) => p.country && p.country !== c.id && (cat.countries || []).find((x) => x.id === p.country);
+  const draw = () => list.replaceChildren(...cat.products.filter((p) => (!q || p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)) && (!onlyNone || !p.country || p.country === c.id)).map((p) => {
+    const o = other(p);
+    return h('label', { class: 'switch', style: { padding: '6px 8px', borderRadius: '10px', background: picked.has(p.id) ? 'var(--brand-soft)' : '' } },
+      h('input', { type: 'checkbox', checked: picked.has(p.id), onchange: (e) => { e.target.checked ? picked.add(p.id) : picked.delete(p.id); draw(); } }),
+      p.image ? h('img', { src: p.image, style: { width: '34px', height: '34px', objectFit: 'cover', borderRadius: '8px' } }) : '🍜',
+      h('span', {}, p.name, h('small', { class: 'muted' }, '  ' + p.code), o ? h('small', { style: { color: 'var(--warn)' } }, `  (ตอนนี้: ${o.name} — ติ๊กแล้วจะย้ายมา)`) : null));
+  }));
+  const search = h('input', { class: 'input', placeholder: 'ค้นหาสินค้า', oninput: (e) => { q = e.target.value.toLowerCase(); draw(); } });
+  draw();
+  modal(h('span', {}, flagEl(c.flag, '1.3em'), ` สินค้าจาก${c.name}`), h('div', {}, h('div', { class: 'row', style: { gap: '10px', marginBottom: '8px' } }, search,
+    h('label', { class: 'switch' }, h('input', { type: 'checkbox', onchange: (e) => { onlyNone = e.target.checked; draw(); } }), 'เฉพาะที่ยังไม่ระบุประเทศ'),
+    h('button', { class: 'btn sm', type: 'button', onclick: () => { for (const el of list.querySelectorAll('input')) el.checked = true; cat.products.forEach((p) => { if ((!q || p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)) && (!onlyNone || !p.country || p.country === c.id)) picked.add(p.id); }); draw(); } }, 'เลือกทั้งหมดที่แสดง')), list),
+  { wide: true, actions: [{ label: 'ยกเลิก', onClick: () => {} }, { label: '💾 บันทึก', class: 'primary', onClick: async () => { await api.post(`/countries/${c.id}/products`, { ids: [...picked] }); toast(`สินค้าจาก${c.name}: ${picked.size} รายการ`, 'ok'); reload(); } }] });
+}
 // delete menu items (asks first); sold items stay in old bills and reports, everything else is removed for good
 async function deleteProducts(ids, cat, reload) {
   const names = ids.map((id) => (cat.products.find((p) => p.id === id) || {}).name).filter(Boolean);
@@ -341,6 +400,7 @@ function productDialog(p, cat, ingredients, reload) {
     { k: 'option_groups', label: 'ตัวเลือก/ท็อปปิ้ง', type: 'multi', options: cat.option_groups.map((g) => [g.id, g.name]), wide: true },
     { k: 'description', label: 'คำอธิบาย / รายละเอียดสินค้า (แสดงบนจอลูกค้า)', type: 'textarea', wide: true }, { k: 'image', label: 'รูปภาพ', type: 'image' },
     { k: 'highlights', label: 'สรรพคุณ / จุดเด่น (บรรทัดละข้อ เช่น เส้นเหนียวนุ่ม, ซุปเข้มข้น)', type: 'textarea', wide: true },
+    { k: 'country', label: '🌏 สินค้าจากประเทศ', type: 'select', options: [['', '— ไม่ระบุ —'], ...(cat.countries || []).map((c) => [c.id, `${/^(\/|https:)/.test(c.flag || '') ? '' : (c.flag || '') + ' '}${c.name}`])], hint: 'เพิ่ม/แก้รายชื่อประเทศได้ที่แท็บ 🌏 ประเทศ' },
     { k: 'spice_level', label: '🌶️ ระดับความเผ็ด', type: 'select', options: [[0, 'ไม่เผ็ด'], [1, '🌶️ เผ็ดน้อย'], [2, '🌶️🌶️'], [3, '🌶️🌶️🌶️ เผ็ดกลาง'], [4, '🌶️🌶️🌶️🌶️'], [5, '🌶️🌶️🌶️🌶️🌶️ เผ็ดมาก']] },
     { k: 'show_details', label: '👁 แสดงรายละเอียดบนจอลูกค้าทุกครั้งที่เพิ่มลงบิล', type: 'bool' },
     { k: 'track_stock', label: 'นับสต็อกสินค้านี้', type: 'bool' }, { k: 'low_stock', label: 'แจ้งเตือนใกล้หมดเมื่อเหลือ', type: 'number' },

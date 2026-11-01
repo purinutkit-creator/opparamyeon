@@ -171,6 +171,10 @@ function renderAll() {
 let showcaseAt = 0, showcaseTimer = null, latestAt = 0;
 // spice: 5 chilies lit up to the level, with words
 const SPICE_WORDS = ['ไม่เผ็ด', 'เผ็ดน้อย', 'เผ็ดปานกลาง', 'เผ็ดมาก', 'เผ็ดมากๆ', 'เผ็ดที่สุด'];
+// "made in" badge: flag (emoji or picture) + country name
+const originRow = (c, delay = 0.3) => (c && c.name ? h('div', { class: 'origin', style: `animation-delay:${delay}s` },
+  c.flag ? (/^(\/|https:)/.test(c.flag) ? h('img', { class: 'flag', src: c.flag, alt: '' }) : h('span', { class: 'flag' }, c.flag)) : h('span', { class: 'flag' }, '🌏'),
+  h('span', {}, 'สินค้าจาก', h('b', {}, c.name))) : null);
 const spiceRow = (n, delay = 0.35) => h('div', { class: 'sc-spice' + (n ? '' : ' none') },
   h('span', { class: 'chili' }, Array.from({ length: 5 }, (_, i) => h('i', { class: i < n ? 'on' : '', style: `animation-delay:${delay + i * 0.08}s` }, '🌶️'))),
   h('b', {}, SPICE_WORDS[Math.max(0, Math.min(5, n))] + (n ? ` ${n}/5` : '')));
@@ -189,6 +193,7 @@ function renderLatest() {
       h('h2', {}, lt.name),
       lt.options && lt.options.length ? h('div', { class: 'lc-opts' }, lt.options.map((o) => h('span', {}, o))) : null,
       h('div', { class: 'sc-price' }, baht(lt.price), h('small', {}, ' ฿')),
+      originRow(lt.country),
       spiceRow(lt.spice),
       lt.description ? h('p', { class: 'sc-desc' }, lt.description) : null,
       lt.highlights && lt.highlights.length ? h('ul', { class: 'sc-hl' }, lt.highlights.map((x, i) => h('li', { style: `animation-delay:${0.4 + i * 0.1}s` }, h('b', {}, '✓'), x))) : null)));
@@ -208,6 +213,7 @@ function renderShowcase() {
     h('div', { class: 'pop-body' },
       h('span', { class: 'pop-kicker' }, '✨ รู้จักเมนูนี้'),
       h('h2', {}, sc.name), h('div', { class: 'sc-price' }, baht(sc.price), h('small', {}, ' ฿')),
+      originRow(sc.country, 0.4),
       spiceRow(sc.spice, 0.45),
       sc.description ? h('p', { class: 'sc-desc' }, sc.description) : null,
       sc.highlights && sc.highlights.length ? h('ul', { class: 'sc-hl' }, sc.highlights.map((x, i) => h('li', { style: `animation-delay:${0.5 + i * 0.1}s` }, h('b', {}, '✓'), x))) : null),

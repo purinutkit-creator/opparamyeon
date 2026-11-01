@@ -356,7 +356,7 @@ r.put('/settings/:key', staffAuth('settings'), ah(async (req, res) => {
   const key = req.params.key;
   if (!(key in DEFAULT_SETTINGS)) throw bad('ไม่รู้จักหมวดการตั้งค่า');
   const before = (await getSettings())[key];
-  const v = req.body.value;
+  let v = req.body.value;
   if (key === 'payment' && v && v.providers) for (const p of Object.values(v.providers)) { delete p.api_key; delete p.secret; } // secrets live in env vars only
   if (key === 'lock' && v) { // screen lock: 15 s … 8 h, warning 0–60 s, lock (PIN) or sign out
     v.enabled = !!v.enabled; v.seconds = Math.max(15, Math.min(8 * 3600, Math.round(Number(v.seconds) || 300)));
@@ -373,6 +373,12 @@ r.put('/settings/:key', staffAuth('settings'), ah(async (req, res) => {
     v.selfie_when = ['every', 'first'].includes(v.selfie_when) ? v.selfie_when : (before && before.selfie_when) || 'every';
   }
   if (key === 'web' && v) Object.assign(v, cleanWeb({ ...(before || {}), ...v })); // a partial save keeps the rest
+  if (key === 'countries') { // [{ id, name, flag }]: short names, flag = emoji or a picture link
+    const list = Array.isArray(v) ? v : [];
+    const seen = new Set();
+    v = list.map((c) => ({ id: String((c && c.id) || '').replace(/[^\w-]/g, '').slice(0, 24), name: String((c && c.name) || '').trim().slice(0, 40), flag: String((c && c.flag) || '').trim().slice(0, 300) }))
+      .filter((c) => c.id && c.name && !seen.has(c.id) && seen.add(c.id)).filter((c) => !c.flag || /^(\/files\/[\w-]+|https:\/\/\S+)$/.test(c.flag) || c.flag.length <= 16).slice(0, 60);
+  }
   const after = await setSetting(key, v);
   await audit(req.staff.id, 'settings', 'settings', key, before, after, req.body.reason);
   emit('shop', 'settings:changed', { key });

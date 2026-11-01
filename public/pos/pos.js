@@ -717,17 +717,19 @@ function addByCode(code) {
 // product details on the customer display: picture, description, highlights, spice level (👁 on a product, or every time it is added)
 let showcaseTimer = null;
 // the item just added: shown big on the customer display (picture, price, description, spice) until the next one
+// where the product comes from (shop's country list): { name, flag } or null
+const countryOf = (p) => { const c = p && p.country && ((st.catalog && st.catalog.countries) || []).find((x) => x.id === p.country); return c ? { name: c.name, flag: c.flag || '' } : null; };
 function noteLatest(p, l) {
   if (!p) return;
   const each = l && l.qty ? Math.round(lineTotal(l) / l.qty) : p.price;
   st.latest = { id: p.id, name: p.name, image: p.image || '', price: each, description: p.description || '', spice: Number(p.spice_level) || 0,
     highlights: String(p.highlights || '').split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 4),
-    options: l ? (renamedLine(l.name, l.options || [], 'everywhere').options || []).map((o) => displayOption(o)).slice(0, 6) : [], at: Date.now() };
+    options: l ? (renamedLine(l.name, l.options || [], 'everywhere').options || []).map((o) => displayOption(o)).slice(0, 6) : [], country: countryOf(p), at: Date.now() };
 }
 function showcase(p, manual = false) {
   if (manual && st.showcase && st.showcase.id === p.id) { st.showcase = null; pushDisplay(); renderMenu(); return toast('ซ่อนรายละเอียดบนจอลูกค้าแล้ว', 'info', 1500); }
   st.showcase = { id: p.id, name: p.name, image: p.image || '', price: p.price, description: p.description || '', spice: Number(p.spice_level) || 0,
-    highlights: String(p.highlights || '').split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 6), at: Date.now() };
+    highlights: String(p.highlights || '').split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 6), country: countryOf(p), at: Date.now() };
   pushDisplay(); renderMenu();
   if (manual) toast(`👁 แสดง "${p.name}" บนจอลูกค้า (กด 👁 อีกครั้งเพื่อซ่อน)`, 'info', 2500);
   clearTimeout(showcaseTimer);

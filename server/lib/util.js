@@ -62,6 +62,8 @@ export const DEFAULT_SETTINGS = {
     tier_mode: 'auto' },
   // what prints automatically after payment, and in which order (same printer = printed in this order)
   labels: {},
+  // where products come from: [{ id, name, flag }] — flag is an emoji or a picture link; set per product in the menu
+  countries: [],
   // customer website (/web): shop info, hours, menu, map and links — edited in admin → เว็บไซต์ร้าน
   web: { enabled: true, tagline: 'มาม่าเกาหลีต้มสด ร้อน ๆ ทุกชาม', about: '', hero_image: '', announcement: '',
     hours: { 0: { open: '10:00', close: '21:00', closed: false }, 1: { open: '10:00', close: '21:00', closed: false }, 2: { open: '10:00', close: '21:00', closed: false },

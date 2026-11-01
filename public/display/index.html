@@ -521,6 +521,10 @@
   @keyframes scup { from { opacity: 0; transform: translateY(1.6vh); } }
   .sc-img img.noimg { object-fit: contain; padding: 4vh; box-sizing: border-box; }
   .sc-spice b { font-weight: 800; }
+  .origin { justify-self: start; display: inline-flex; align-items: center; gap: 1vh; padding: .45em 1.1em .45em .5em; border-radius: 99px; background: linear-gradient(90deg, #eef4ff, #f6f0ff); border: 1px solid #dfe6fb;
+    font-size: clamp(13px, 2.2vh, 24px); font-weight: 700; color: #2b3150; animation: scup .6s cubic-bezier(.2,1,.4,1) both; }
+  .origin .flag { font-size: 1.5em; line-height: 1; } .origin img.flag { height: 1.4em; width: auto; border-radius: .2em; box-shadow: 0 0 0 1px rgb(0 0 0 / .08); }
+  .origin b { margin-left: .35em; font-weight: 800; }
   /* the item just added: fills the left side while the bill is open */
   .latestcard { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; padding: 11vh 3vh 3vh; background: radial-gradient(120% 90% at 50% 0%, #2a1712, #120a08); animation: m-fade .35s ease-out both; }
   .latestcard.out { animation: lcout .4s ease-in forwards; pointer-events: none; }
