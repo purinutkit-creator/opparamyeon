@@ -89,3 +89,79 @@ test('AI ตรวจสลิปจากรูป: ยอด/ผู้รั�
     delete process.env.ANTHROPIC_BASE_URL; mock.close();
   }
 });
+
+test('Slip2Go ตรวจกับธนาคาร + บังคับสแกนสลิป: ไม่มีผลตรวจ = รับเงินไม่ได้ · ผู้จัดการข้ามด้วย PIN', async () => {
+  const http = await import('node:http');
+  const seen = [];
+  const bank = {}; // qrCode → transfer the "bank" knows
+  const mock = http.createServer((req, res) => { let b = ''; req.on('data', (c) => { b += c; }); req.on('end', () => {
+    res.setHeader('content-type', 'application/json');
+    seen.push({ path: req.url, auth: req.headers.authorization });
+    if (req.headers.authorization !== 's2g-secret') { res.statusCode = 401; return res.end(JSON.stringify({ code: '401001', message: 'Authentication Token Mismatch' })); }
+    const q = JSON.parse(b || '{}').payload || {};
+    const t = bank[q.qrCode];
+    res.end(JSON.stringify(t ? { code: '200000', message: 'Slip found', data: t } : { code: '200404', message: 'Slip not found', data: null }));
+  }); });
+  await new Promise((r) => mock.listen(0, '127.0.0.1', r));
+  process.env.SLIP2GO_BASE_URL = `http://127.0.0.1:${mock.address().port}`;
+  const egg = await db.get("SELECT id, price FROM products WHERE code = 'T001'");
+  const checkout = (payments, extra = {}, token = owner) => S.call('POST', '/api/orders/checkout', { idempotency_key: key(), cart: { lines: [line(egg.id, 1)] }, payments, ...extra }, { token, terminal: 'pos1' });
+  try {
+    await S.call('PUT', '/api/settings/payment', { value: { promptpay_id: '0812345678', promptpay_name: 'นาย ปุริณัฐ กิตติ', slip_method: 'slip2go', slip_required: true } }, { token: owner });
+    assert.equal((await S.call('PUT', '/api/settings/payment', { value: { slip_method: 'magic' } }, { token: owner })).status, 400);
+    const pub = (await S.call('GET', '/api/settings/public', undefined)).body;
+    assert.equal(pub.payment.slip_required, true); assert.equal(pub.payment.slip_method, 'slip2go');
+    // no key yet
+    const q1 = makeSlipQr('004', 'S2G' + Date.now());
+    assert.equal((await S.call('POST', '/api/payments/slip-verify', { code: q1, amount: egg.price }, { token: owner })).body.code, 'no_key');
+    await S.call('PUT', '/api/payments/slip2go', { api_key: 's2g-secret' }, { token: owner });
+    const k = (await S.call('GET', '/api/payments/slip2go', undefined, { token: owner })).body;
+    assert.equal(k.key_set, true); assert.ok(!JSON.stringify(k).includes('s2g-secret'), 'ไม่ส่งคีย์กลับ');
+    const tst = (await S.call('POST', '/api/payments/slip2go/test', {}, { token: owner })).body;
+    assert.equal(tst.ok, true, JSON.stringify(tst));
+    // the bank knows this transfer: right amount, into the shop
+    const ref1 = 'TR' + Date.now();
+    bank[q1] = { transRef: ref1, dateTime: new Date().toISOString(), amount: egg.price / 100, receiver: { account: { name: { th: 'นาย ปุริณัฐ ก' }, proxy: { account: 'xxx-xxx-5678' } } }, sender: { account: { name: { th: 'สมชาย' } } } };
+    let r = await S.call('POST', '/api/payments/slip-verify', { code: q1, amount: egg.price }, { token: owner });
+    assert.equal(r.body.verdict, 'pass', JSON.stringify(r.body)); assert.ok(r.body.pass);
+    assert.equal(seen.at(-1).path, '/api/verify-slip/qr-code/info');
+    assert.ok(seen.some((x) => x.auth === 'Bearer s2g-secret') && seen.at(-1).auth === 's2g-secret', 'ลอง Bearer แล้วใช้คีย์ตรง ๆ');
+    // wrong amount / unknown slip fail
+    assert.equal((await S.call('POST', '/api/payments/slip-verify', { code: q1, amount: egg.price + 100 }, { token: owner })).body.verdict, 'fail');
+    assert.equal((await S.call('POST', '/api/payments/slip-verify', { code: makeSlipQr('004', 'NOPE' + Date.now()), amount: egg.price }, { token: owner })).body.verdict, 'fail');
+    // required: no pass → refused · pass for another amount → refused · pass → paid, then the slip is used
+    assert.equal((await checkout([{ method: 'promptpay', amount: egg.price }])).body.code, 'slip_required');
+    assert.equal((await checkout([{ method: 'promptpay', amount: egg.price, slip_pass: r.body.pass.replace(/\.\d+\./, '.1.') }])).body.code, 'slip_pass');
+    const paid = await checkout([{ method: 'promptpay', amount: egg.price, slip_qr: q1, slip_pass: r.body.pass }]);
+    assert.equal(paid.status, 200, JSON.stringify(paid.body));
+    assert.ok(await db.get('SELECT 1 AS x FROM slips WHERE ref = ?', [ref1]), 'บันทึกเลขอ้างอิงจาก Slip2Go');
+    assert.equal((await checkout([{ method: 'promptpay', amount: egg.price, slip_pass: r.body.pass }])).body.code, 'slip_used');
+    // cash is never asked for a slip
+    assert.equal((await checkout([{ method: 'cash', amount: egg.price, received: egg.price }])).status, 200);
+    // cashier can't skip alone; with a manager PIN they can
+    const cashier = await S.login('0002', '2222');
+    assert.equal((await checkout([{ method: 'promptpay', amount: egg.price }], { slip_skip: true }, cashier)).status, 403);
+    const skipped = await checkout([{ method: 'promptpay', amount: egg.price }], { slip_skip: true, slip_approver: { code: '0001', pin: '1234' } }, cashier);
+    assert.equal(skipped.status, 200, JSON.stringify(skipped.body));
+    assert.ok(await db.get("SELECT 1 AS x FROM audit WHERE action = 'slip_skip'"), 'บันทึกว่าใครข้าม');
+    // free QR mode: a real slip passes without the amount
+    await S.call('PUT', '/api/settings/payment', { value: { slip_method: 'qr' } }, { token: owner });
+    r = await S.call('POST', '/api/payments/slip-verify', { code: makeSlipQr('014', 'QRONLY' + Date.now()), amount: egg.price }, { token: owner });
+    assert.equal(r.body.verdict, 'pass'); assert.ok(r.body.pass);
+    // AI mode: a scanned QR alone asks for a photo
+    await S.call('PUT', '/api/settings/payment', { value: { slip_method: 'ai' } }, { token: owner });
+    assert.equal((await S.call('POST', '/api/payments/slip-verify', { code: makeSlipQr('014', 'AIQR' + Date.now()), amount: egg.price }, { token: owner })).body.verdict, 'need_photo');
+  } finally {
+    await S.call('PUT', '/api/settings/payment', { value: { slip_required: false, slip_method: 'ai' } }, { token: owner });
+    await S.call('PUT', '/api/payments/slip2go', { clear: true }, { token: owner });
+    delete process.env.SLIP2GO_BASE_URL; mock.close();
+  }
+});
+
+test('เครื่องสแกนอ่านได้แม้แป้นเป็นภาษาไทย: ใช้ปุ่มจริง (e.code)', async () => {
+  const { keyFromCode } = await import('../public/shared/core.js');
+  const k = (code, o = {}) => keyFromCode({ code, shiftKey: false, getModifierState: () => false, ...o });
+  assert.equal(k('KeyA'), 'a'); assert.equal(k('KeyA', { shiftKey: true }), 'A');
+  assert.equal(k('KeyB', { getModifierState: (m) => m === 'CapsLock' }), 'B');
+  assert.equal(k('Digit7'), '7'); assert.equal(k('Numpad0'), '0'); assert.equal(k('Enter'), null);
+});

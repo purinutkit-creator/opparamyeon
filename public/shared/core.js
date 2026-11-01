@@ -1,7 +1,7 @@
 // Pure logic shared by the server (Node) and the browser.
 // Money is always an integer number of satang (1 บาท = 100 satang).
 
-export const VERSION = '1.53.0';
+export const VERSION = '1.54.0';
 
 export const baht = (satang) => {
   const v = (Number(satang) || 0) / 100;
@@ -351,4 +351,14 @@ export function makeSlipQr(bank, ref) {
   const sub = `0006000001` + `0103${bank}` + `02${String(ref.length).padStart(2, '0')}${ref}`;
   const body = `00${String(sub.length).padStart(2, '0')}${sub}` + '5102TH' + '9104';
   return body + crc16(body);
+}
+
+// scanner guns "type" the QR: read the physical key, so a Thai keyboard layout (or Caps Lock) can't garble it
+export function keyFromCode(e) {
+  const c = e.code || '';
+  let m = /^Key([A-Z])$/.exec(c);
+  if (m) { const up = e.shiftKey !== (e.getModifierState && e.getModifierState('CapsLock')); return up ? m[1] : m[1].toLowerCase(); }
+  m = /^(?:Digit|Numpad)([0-9])$/.exec(c);
+  if (m && !e.shiftKey) return m[1];
+  return ({ Minus: e.shiftKey ? '_' : '-', Period: '.', Slash: '/', Equal: e.shiftKey ? '+' : '=', NumpadSubtract: '-', NumpadDecimal: '.', NumpadDivide: '/', NumpadAdd: '+' })[c] || null;
 }

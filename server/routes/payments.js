@@ -173,6 +173,32 @@ r.post('/payments/providers/beam/test', staffAuth('settings'), ah(async (req, re
   res.json(await GATEWAYS.beam.test((s.payment.providers.beam || {}).mode));
 }));
 
+// Slip2Go (slip check service): key kept on the server only; base URL in settings
+r.get('/payments/slip2go', staffAuth('settings'), ah(async (req, res) => {
+  const k = (await getSecret('slip2go_api_key')) || '';
+  res.json({ key_set: !!(k || process.env.SLIP2GO_API_KEY), key_hint: k ? k.slice(0, 3) + '•••' + k.slice(-3) : '', from_env: !k && !!process.env.SLIP2GO_API_KEY });
+}));
+r.put('/payments/slip2go', staffAuth('settings'), ah(async (req, res) => {
+  const b = req.body || {};
+  if (b.api_key) await setSecret('slip2go_api_key', String(b.api_key).trim());
+  if (b.clear) await setSecret('slip2go_api_key', null);
+  await audit(req.staff.id, 'slip2go_key', 'settings', 'slip2go', null, { api_key: b.api_key ? 'changed' : 'kept', clear: !!b.clear });
+  res.json({ ok: true });
+}));
+// sends a made-up slip QR: an auth error means a bad key; "slip not found" means the key works
+r.post('/payments/slip2go/test', staffAuth('settings'), ah(async (req, res) => {
+  const { slip2goKey, slip2goByQr, Slip2GoError } = await import('../lib/slip2go.js');
+  const key = await slip2goKey();
+  if (!key) return res.json({ ok: false, message: 'ยังไม่ได้ใส่ API Key' });
+  const { makeSlipQr } = await import('../../public/shared/core.js');
+  try {
+    const d = await slip2goByQr(makeSlipQr('004', 'TEST' + Date.now()), key);
+    res.json({ ok: true, message: `เชื่อมต่อ Slip2Go ได้ · คีย์ใช้งานได้${d.code ? ` (ตอบกลับ ${d.code}${d.message ? ' ' + d.message : ''})` : ''}` });
+  } catch (e) {
+    res.json({ ok: false, message: e instanceof Slip2GoError ? e.message : e.name === 'TimeoutError' ? 'Slip2Go ไม่ตอบภายในเวลา' : 'เชื่อมต่อ Slip2Go ไม่ได้: ' + e.message });
+  }
+}));
+
 // mock checkout page calls this to simulate the provider (only when mock is enabled)
 r.post('/payments/mock/:ref/complete', ah(async (req, res) => {
   const s = await getSettings();

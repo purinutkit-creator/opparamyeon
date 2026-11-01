@@ -1,6 +1,6 @@
 import { makeApi, store, socket, uid, storageWarning } from '/shared/api.js';
 import { loginHero, h, $, toast, errToast, modal, confirmBox, promptBox, keypad, fmtTime, STATUS_TH, PREP_TH, SOURCE_TH, JOB_TH, debounce } from '/shared/ui.js';
-import { baht, toSatang, addToCart, computeTotals, countBowls, dineLabel, lineUnitTotal, lineTotal, orderDineType, promptPayPayload, VERSION, maskPhone, pointsFor, isAddon, renamedLine, markOf, displayOption, fromThaiKeys, billTokenOf } from '/shared/core.js';
+import { baht, toSatang, addToCart, computeTotals, countBowls, dineLabel, lineUnitTotal, lineTotal, orderDineType, promptPayPayload, VERSION, maskPhone, pointsFor, isAddon, renamedLine, markOf, displayOption, fromThaiKeys, keyFromCode, billTokenOf } from '/shared/core.js';
 import { applyTheme } from '/shared/theme.js';
 import { rememberTap, flyToCart, countTo, lineChanges, setFxLevel } from './fx.js';
 import { flip, leave } from '/shared/motion.js';
@@ -1061,7 +1061,7 @@ function payDialog() {
       h('div', { class: 'muted small', style: { textAlign: 'center' } }, `${t.bowls} ${U()} · ${dineLabel(orderDineType(st.cart.lines))}`),
       pays.length ? h('div', { class: 'card', style: { margin: '.6em 0' } }, pays.map((p, i) => row(h('span', {}, methods.find((m) => m.id === p.method).name, ' ', h('button', { class: 'chip', onclick: () => { pays.splice(i, 1); drawLeft(); drawRight(); } }, 'ลบ')),
         baht(p.method === 'cash' ? p.received : p.amount))), row('คงเหลือ', baht(rem))) : null,
-      h('div', { class: 'pay-methods' }, methods.map((m) => h('button', { class: 'btn big' + (method === m.id ? ' on' : ''), onclick: () => { method = m.id; fillAmt(); drawLeft(); drawRight(); } }, m.name))),
+      h('div', { class: 'pay-methods' }, methods.map((m) => h('button', { class: 'btn big' + (method === m.id ? ' on' : ''), onclick: () => { method = m.id; fillAmt(); drawLeft(); drawRight(); if (m.id === 'promptpay' && slipCfg().required && st.settings.payment.promptpay_enabled) setTimeout(() => openSlip(), 400); } }, m.name))),
       h('div', { style: { marginTop: '1em' } }, h('label', { class: 'switch' }, printReceipt, 'พิมพ์ใบเสร็จ'), ' ', h('label', { class: 'switch' }, printQueue, 'พิมพ์ใบเลขคิว'), ' ',
         h('label', { class: 'switch' }, printMerchant, 'พิมพ์ใบสรุปร้านค้า'), ' ', h('label', { class: 'switch' }, printMobile, 'พิมพ์ใบ Mobile Ordering')));
   };
@@ -1078,7 +1078,7 @@ function payDialog() {
       method === 'promptpay' && st.settings.payment.promptpay_enabled ? h('div', { style: { textAlign: 'center' } }, h('img', { src: '/api/qr.svg?d=' + encodeURIComponent(qrPayload(Math.min(rem, toSatang(amt.value) || rem))), style: { width: '200px' }, alt: 'PromptPay QR' }),
         h('div', { class: 'small muted' }, 'แสดงบนจอลูกค้าด้วย · ตรวจสอบยอดเงินเข้าก่อนกดยืนยัน'),
         h('button', { class: 'btn block', style: { marginTop: '.5em' }, onclick: () => printPayQr(Math.min(rem, toSatang(amt.value) || rem), false) }, '🖨 พิมพ์ QR ชำระเงิน'),
-        h('button', { class: 'btn ok block big', style: { marginTop: '.5em' }, onclick: () => slipDialog(Math.min(rem, toSatang(amt.value) || rem), async (sl) => { slip = sl; const r = await confirmPay(); if (r !== false) payM.close(); else slip = null; }) }, '📷 สแกนสลิปลูกค้า (ตรวจสลิป)')) : null,
+        h('button', { class: 'btn ok block big', style: { marginTop: '.5em' }, onclick: () => openSlip() }, slipCfg().required ? '📷 สแกนสลิปลูกค้า (ต้องตรวจก่อนรับเงิน)' : '📷 สแกนสลิปลูกค้า (ตรวจสลิป)')) : null,
       keypad(amt, { decimal: true }),
       h('div', { class: 'row', style: { marginTop: '.6em' } }, h('button', { class: 'btn block', onclick: addPay }, '+ เพิ่มช่องทางนี้ (แบ่งจ่าย)')));
     if (method === 'promptpay' && st.settings.payment.promptpay_enabled) printPayQr(rem, true);
@@ -1091,6 +1091,8 @@ function payDialog() {
     const v = toSatang(amt.value); const rem = remaining();
     if (!(v > 0)) return toast('กรุณาใส่จำนวนเงิน', 'warn');
     if (method !== 'cash' && v > rem) return toast('ช่องทางนี้รับได้ไม่เกินยอดคงเหลือ', 'warn');
+    // a PromptPay part of a split bill is checked on its own
+    if (method === 'promptpay' && slipCfg().required) return slipDialog(v, (sl) => { pays.push({ method, amount: v, ...slipFields(sl) }); if (sl.skip) skipBy = sl.approver; fillAmt(); drawLeft(); drawRight(); }, { auto: true });
     pays.push(method === 'cash' ? { method, amount: Math.min(v, rem), received: v } : { method, amount: v });
     fillAmt(); drawLeft(); drawRight();
   };
@@ -1099,23 +1101,31 @@ function payDialog() {
   fillAmt();
   drawLeft(); drawRight();
   const idem = st.cart.idem; // same key on retry → never double charged
-  let slip = null; // { code, bank_name, ref } — the customer's transfer slip, checked at the counter
+  let slip = null; // { code, bank_name, ref, pass } — the customer's transfer slip, checked at the counter
+  let skipBy = null; // manager who let a PromptPay payment through without a slip check
+  const openSlip = () => { const rem = remaining(); slipDialog(Math.min(rem, toSatang(amt.value) || rem), async (sl) => { slip = sl; if (sl.skip) skipBy = sl.approver; const r = await confirmPay(); if (r !== false) payM.close(); else slip = null; }, { auto: true }); };
   const confirmPay = async () => {
       const list = pays.slice();
       if (paid() < t.total) {
         const v = toSatang(amt.value); const rem = remaining();
         if (!(v > 0)) { toast(method === 'cash' ? 'กรุณาใส่จำนวนเงินที่รับมา' : 'กรุณาใส่จำนวนเงิน', 'warn'); return false; }
         if (method === 'cash') { if (v < rem) { toast('รับเงินไม่พอ', 'warn'); return false; } list.push({ method, amount: rem, received: v }); }
-        else { if (v < rem) { toast('ยอดไม่ครบ กรุณาเพิ่มช่องทางชำระ', 'warn'); return false; } list.push({ method, amount: rem, ...(slip && method === 'promptpay' ? { ...(slip.code ? { slip_qr: slip.code } : slip.ref ? { slip_ref: slip.ref } : {}), ...(slip.file ? { slip_file: slip.file } : {}) } : {}) }); }
+        else {
+          if (v < rem) { toast('ยอดไม่ครบ กรุณาเพิ่มช่องทางชำระ', 'warn'); return false; }
+          if (method === 'promptpay' && slipCfg().required && !slip) { openSlip(); return false; } // no slip yet: the scan page opens by itself
+          list.push({ method, amount: rem, ...(method === 'promptpay' ? slipFields(slip) : {}) });
+        }
       }
       const payload = { idempotency_key: idem, order_id: st.cart.order_id, cart: cartPayload(), payments: list.map((p) => ({ ...p, amount: p.amount, received: p.received })),
-        print: { receipt: printReceipt.checked, queue: printQueue.checked, merchant: printMerchant.checked, mobile_qr: printMobile.checked }, approver: st.cart.approver };
+        print: { receipt: printReceipt.checked, queue: printQueue.checked, merchant: printMerchant.checked, mobile_qr: printMobile.checked }, approver: st.cart.approver,
+        ...(skipBy ? { slip_skip: true, slip_approver: skipBy } : {}) };
       try {
         const o = await api.post('/orders/checkout', payload);
         done(o);
       } catch (e) {
         if (e.code === 'already_paid') { toast('บิลนี้ชำระแล้ว', 'warn'); st.cart = newCart(); saveCart(); renderCart(); return; }
-        if (e.code === 'slip_used' || e.code === 'bad_slip') { errToast(e); return false; }
+        if (['slip_used', 'bad_slip', 'slip_pass'].includes(e.code)) { errToast(e); slip = null; return false; }
+        if (e.code === 'slip_required') { slip = null; openSlip(); return false; }
         throw e;
       }
   };
@@ -1123,60 +1133,85 @@ function payDialog() {
     { label: 'ยกเลิก', onClick: () => {} },
     { label: 'ยืนยันรับเงิน', class: 'ok big', onClick: confirmPay }] });
 }
-// the customer's transfer slip: scan the small QR on it (scanner gun or camera) → real bank slip, not used before → cashier checks the amount → paid
-function slipDialog(amount, onOk) {
-  const inp = h('input', { class: 'input', placeholder: 'ยิงเครื่องสแกนที่ QR บนสลิป (หรือวางโค้ด)', autocomplete: 'off', style: { fontSize: '1.1em' } });
+// the customer's transfer slip, checked the way the shop chose (AI reads a photo · Slip2Go asks the bank · free QR check).
+// A pass carries a signed token for that slip + amount, which checkout needs when the shop makes slip checks compulsory.
+const slipCfg = () => { const P = (st.settings && st.settings.payment) || {}; return { required: !!P.slip_required, method: P.slip_method || 'ai' }; };
+const slipFields = (sl) => (!sl ? {} : sl.skip ? {} : { ...(sl.code ? { slip_qr: sl.code } : sl.ref ? { slip_ref: sl.ref } : {}), ...(sl.file ? { slip_file: sl.file } : {}), ...(sl.pass ? { slip_pass: sl.pass } : {}) });
+function slipDialog(amount, onOk, { auto = false } = {}) {
+  const cfg = slipCfg();
+  const inp = h('input', { class: 'input', placeholder: 'ยิงเครื่องสแกนที่ QR บนสลิป (ภาษาไทยก็อ่านได้)', autocomplete: 'off', autocapitalize: 'off', spellcheck: false, style: { fontSize: '1.1em', flex: '1', minWidth: '0' } });
   const out = h('div', { class: 'slip-out' });
-  let busy = false;
-  const check = async (raw) => {
-    const code = fromThaiKeys(String(raw || '').trim()).replace(/\s+/g, '');
-    if (!code || busy) return;
-    busy = true; out.replaceChildren(h('div', { class: 'muted' }, 'กำลังตรวจสลิป…'));
-    try {
-      const r = await api.post('/payments/slip-check', { code });
-      const okBtn = h('button', { class: 'btn ok big block', onclick: async () => { okBtn.disabled = true; dlg.close(); await onOk({ code, bank_name: r.bank_name, ref: r.ref }); } }, `✓ ยอดตรง ${baht(amount)} ฿ — ชำระเสร็จ`);
-      out.replaceChildren(h('div', { class: 'slip-ok' }, h('div', { class: 'big' }, '✅ สลิปธนาคารจริง'), h('div', {}, `ธนาคาร${r.bank_name} · เลขอ้างอิง ${r.ref}`), h('div', { class: 'small' }, 'ยังไม่เคยใช้กับบิลอื่น')),
-        h('div', { class: 'slip-amt' }, 'ตรวจยอดในสลิปให้เป็น ', h('b', {}, baht(amount) + ' ฿'), ' และโอนเข้าบัญชีร้าน'), okBtn);
-      setTimeout(() => okBtn.focus(), 50); // Enter = confirm
-    } catch (e) {
-      out.replaceChildren(h('div', { class: 'slip-bad' }, h('div', { class: 'big' }, e.code === 'slip_used' ? '⛔ สลิปนี้ใช้แล้ว' : '❌ ไม่ใช่สลิปธนาคาร'), h('div', {}, e.message)));
-      inp.value = ''; inp.focus();
-    } finally { busy = false; }
-  };
-  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); check(inp.value); } });
-  // photo → AI reads amount / receiver / ref within 5 s; passes → paid
-  const aiSlip = () => captureSlip(async (image) => {
-    let n = 5;
-    const sec = h('b', {}, '5');
-    out.replaceChildren(h('div', { class: 'slip-wait' }, h('div', { class: 'sp' }), h('div', {}, '🤖 AI กำลังตรวจสลิป… ', sec, ' วินาที')));
-    const tick = setInterval(() => { n = Math.max(0, n - 1); sec.textContent = String(n); }, 1000);
-    const ctl = new AbortController(); const kill = setTimeout(() => ctl.abort(), 6500);
-    let r;
-    try { r = await api.post('/payments/slip-read', { image, amount }, { signal: ctl.signal }); }
-    catch (e) { r = { verdict: 'error', reasons: [e.name === 'AbortError' ? 'AI ตอบไม่ทันเวลา' : e.message], warnings: [] }; }
-    finally { clearInterval(tick); clearTimeout(kill); }
+  let busy = false, finished = false;
+  const finish = (sl) => { if (finished) return; finished = true; dlg.close(); onOk(sl); };
+  const by = { ai: '🤖 AI', slip2go: '🏦 Slip2Go', qr: '🆓 ตรวจ QR' }[cfg.method] || '';
+  // one place shows any result (QR scan or photo)
+  const show = (r) => {
     const R = r.read || {};
     const facts = h('div', { class: 'slip-facts' }, R.amount ? h('div', {}, 'ยอดในสลิป ', h('b', {}, (Number(R.amount) || 0).toFixed(2) + ' ฿'), ` · บิล ${baht(amount)} ฿`) : null,
       R.receiver_name || R.receiver_account ? h('div', {}, `ผู้รับ: ${[R.receiver_name, R.receiver_account].filter(Boolean).join(' · ')}`) : null,
       r.qr ? h('div', {}, `QR สลิปจริง: ธนาคาร${r.qr.bank_name} · ${r.qr.ref}`) : null, r.ms ? h('div', { class: 'small' }, `ตรวจเสร็จใน ${(r.ms / 1000).toFixed(1)} วินาที`) : null);
-    const warn = (r.warnings || []).length ? h('div', { class: 'slip-warn' }, r.warnings.map((w) => h('div', {}, '⚠️ ' + w))) : null;
-    const again = h('button', { class: 'btn block', onclick: aiSlip }, '📸 ถ่ายใหม่');
+    const warn = (r.warnings || []).length ? h('div', { class: 'slip-warn' }, r.warnings.map((w) => h('div', {}, '⚠️ ' + w))) : '';
+    const again = h('button', { class: 'btn block', onclick: photo }, '📸 ถ่ายใหม่');
+    // required checks need the slip's reference: a pass without it can't be accepted at checkout
+    if (r.verdict === 'pass' && cfg.required && !r.pass) r = { ...r, verdict: 'fail', reasons: ['อ่านเลขอ้างอิงของสลิปไม่ได้ — ถ่ายให้เห็น QR และเลขที่รายการชัด ๆ'] };
     if (r.verdict === 'pass') {
-      out.replaceChildren(h('div', { class: 'slip-ok' }, h('div', { class: 'big' }, '✅ ตรวจผ่าน — ยอดตรง โอนเข้าร้าน'), facts), warn || '', h('div', { class: 'muted small' }, 'กำลังปิดบิล…'));
-      setTimeout(async () => { dlg.close(); await onOk({ code: r.qr ? r.qr.code : null, ref: r.ref, file: r.file, bank_name: r.qr ? r.qr.bank_name : 'AI' }); }, 900);
+      out.replaceChildren(h('div', { class: 'slip-ok' }, h('div', { class: 'big' }, cfg.method === 'qr' ? '✅ สลิปธนาคารจริง ไม่ซ้ำ' : '✅ ตรวจผ่าน — ยอดตรง โอนเข้าร้าน'), facts), warn, h('div', { class: 'muted small' }, 'กำลังปิดบิล…'));
+      setTimeout(() => finish({ code: r.qr ? r.qr.code : null, ref: r.ref, file: r.file, pass: r.pass, bank_name: r.qr ? r.qr.bank_name : by }), cfg.method === 'qr' ? 1400 : 900);
+    } else if (r.verdict === 'need_photo') {
+      out.replaceChildren(h('div', { class: 'slip-wait' }, h('div', {}, '📸 ถ่ายรูปสลิปให้ AI ตรวจยอดเงิน…')));
+      photo();
     } else if (r.verdict === 'fail') {
-      out.replaceChildren(h('div', { class: 'slip-bad' }, h('div', { class: 'big' }, '❌ ไม่ผ่าน'), ...(r.reasons || []).map((x) => h('div', {}, '• ' + x)), facts), warn || '', again);
+      out.replaceChildren(h('div', { class: 'slip-bad' }, h('div', { class: 'big' }, '❌ ไม่ผ่าน'), ...(r.reasons || []).map((x) => h('div', {}, '• ' + x)), facts), warn, again);
     } else {
-      out.replaceChildren(h('div', { class: 'slip-bad' }, h('div', { class: 'big' }, r.verdict === 'timeout' ? '⏱ AI ตรวจไม่ทันใน 5 วินาที' : '⚠️ AI ตรวจไม่ได้'), ...(r.reasons || []).map((x) => h('div', {}, x)),
-        h('div', {}, 'ตรวจยอดในสลิปด้วยตา แล้วกด "ยืนยันรับเงิน" ในหน้าชำระเงิน — หรือถ่ายใหม่')), again);
+      out.replaceChildren(h('div', { class: 'slip-bad' }, h('div', { class: 'big' }, r.verdict === 'timeout' ? '⏱ ตรวจไม่ทันเวลา' : '⚠️ ตรวจไม่ได้'), ...(r.reasons || []).map((x) => h('div', {}, x)),
+        h('div', {}, cfg.required ? 'ลองใหม่ หรือให้ผู้จัดการกด "ข้ามการตรวจ"' : 'ตรวจยอดในสลิปด้วยตา แล้วกด "ยืนยันรับเงิน" ในหน้าชำระเงิน — หรือถ่ายใหม่')), again);
     }
+    inp.value = ''; if (r.verdict !== 'pass') setTimeout(() => inp.focus(), 30);
+  };
+  const check = async (raw) => {
+    const code = fromThaiKeys(String(raw || '').trim()).replace(/\s+/g, '');
+    if (!code || busy) return;
+    busy = true; out.replaceChildren(h('div', { class: 'slip-wait' }, h('div', { class: 'sp' }), h('div', {}, `${by} กำลังตรวจสลิป…`)));
+    try { show(await api.post('/payments/slip-verify', { code, amount })); }
+    catch (e) {
+      out.replaceChildren(h('div', { class: 'slip-bad' }, h('div', { class: 'big' }, e.code === 'slip_used' ? '⛔ สลิปนี้ใช้แล้ว' : e.code === 'bad_slip' ? '❌ ไม่ใช่สลิปธนาคาร' : '⚠️ ตรวจไม่ได้'), h('div', {}, e.message)));
+      inp.value = ''; inp.focus();
+    } finally { busy = false; }
+  };
+  const onKey = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); check(inp.value); return; }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const ch = keyFromCode(e);
+    if (ch) { e.preventDefault(); inp.value += ch; }
+  };
+  inp.addEventListener('keydown', onKey);
+  // keys typed while focus is elsewhere in the dialog (a scan right after it opens) still land in the box
+  const stray = (e) => { if (e.target === inp || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) return; if (keyFromCode(e) || e.key === 'Enter') { inp.focus(); onKey(e); } };
+  document.addEventListener('keydown', stray, true);
+  // photo → the chosen checker reads amount / receiver / ref; passes → paid
+  const photo = () => captureSlip(async (image) => {
+    let n = 5;
+    const sec = h('b', {}, '5');
+    out.replaceChildren(h('div', { class: 'slip-wait' }, h('div', { class: 'sp' }), h('div', {}, `${cfg.method === 'slip2go' ? '🏦 Slip2Go' : '🤖 AI'} กำลังตรวจสลิป… `, sec, ' วินาที')));
+    const tick = setInterval(() => { n = Math.max(0, n - 1); sec.textContent = String(n); }, 1000);
+    const ctl = new AbortController(); const kill = setTimeout(() => ctl.abort(), 8000);
+    let r;
+    try { r = await api.post('/payments/slip-read', { image, amount }, { signal: ctl.signal }); }
+    catch (e) { r = { verdict: 'error', reasons: [e.name === 'AbortError' ? 'ตอบไม่ทันเวลา' : e.message], warnings: [] }; }
+    finally { clearInterval(tick); clearTimeout(kill); }
+    show(r);
   });
+  const skip = cfg.required ? h('button', { class: 'btn ghost block', style: { marginTop: '.5em' }, onclick: async () => { const ap = await approverDialog('void_bill'); if (ap) finish({ skip: true, approver: ap }); } }, '🔑 ข้ามการตรวจ (ผู้จัดการใส่ PIN)') : null;
+  const photoBtn = cfg.method !== 'qr' ? h('button', { class: 'btn ok block big', style: { marginTop: '.5em' }, onclick: () => photo() }, cfg.method === 'slip2go' ? '📸 ถ่ายรูปสลิปให้ Slip2Go ตรวจ' : '📸 ถ่ายรูปสลิปให้ AI ตรวจยอด (ไม่เกิน 5 วินาที)') : null;
   const dlg = modal('📷 ตรวจสลิปโอนเงิน', h('div', {}, h('style', {}, BARCODECAM_CSS + SLIP_CSS),
-    h('p', { class: 'muted', style: { marginTop: 0 } }, `ยอดบิล ${baht(amount)} ฿ — สแกน QR เล็ก ๆ บนสลิปของลูกค้า (ไม่ใช่ QR พร้อมเพย์ของร้าน)`),
-    h('div', { class: 'row', style: { gap: '8px' } }, inp, h('button', { class: 'btn', onclick: () => check(inp.value) }, 'ตรวจ')),
-    h('button', { class: 'btn ok block big', style: { marginTop: '.5em' }, onclick: () => aiSlip() }, '📸 ถ่ายรูปสลิปให้ AI ตรวจยอด (ไม่เกิน 5 วินาที)'),
-    h('button', { class: 'btn block', style: { marginTop: '.5em' }, onclick: () => scanWithCamera((c) => { inp.value = c; check(c); }, { title: '📷 สแกน QR บนสลิป' }) }, '📷 สแกน QR บนสลิปอย่างเดียว (ไม่ตรวจยอด)'), out),
-  { actions: [{ label: 'ปิด', onClick: () => {} }] });
+    h('p', { class: 'muted', style: { marginTop: 0 } }, `ยอดบิล `, h('b', {}, baht(amount) + ' ฿'), ` — สแกน QR เล็ก ๆ บนสลิปของลูกค้า (ไม่ใช่ QR พร้อมเพย์ของร้าน) · ตรวจโดย ${by}`, cfg.required ? ' · 🔒 ต้องตรวจก่อนรับเงิน' : ''),
+    h('div', { style: { display: 'flex', gap: '8px' } }, inp, h('button', { class: 'btn', onclick: () => check(inp.value) }, 'ตรวจ')),
+    photoBtn,
+    h('button', { class: 'btn block', style: { marginTop: '.5em' }, onclick: () => scanWithCamera((c) => { inp.value = c; check(c); }, { title: '📷 สแกน QR บนสลิป' }) }, '📷 สแกน QR บนสลิปด้วยกล้อง'), skip, out),
+  { onClose: () => document.removeEventListener('keydown', stray, true), actions: [{ label: 'ปิด', onClick: () => {} }] });
+  setTimeout(() => inp.focus(), 60);
+  // opened by itself (slip checks required): AI mode goes straight to the camera; others wait for the scanner
+  if (auto && cfg.method === 'ai') setTimeout(() => { if (!finished) photo(); }, 250);
 }
 // camera → one photo of the slip, shrunk for a quick upload (longest side 1100 px, JPEG)
 function captureSlip(onImage) {

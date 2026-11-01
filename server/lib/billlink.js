@@ -83,3 +83,15 @@ export async function liveFromToken(tok) {
   const want = crypto.createHmac('sha256', await secret()).update('live:' + rid).digest('hex').slice(0, 32);
   return want.length === sig.length && crypto.timingSafeEqual(Buffer.from(want), Buffer.from(sig)) ? rid : null;
 }
+
+// a slip that passed the check at the counter: <ref>.<amount>.<expiry36>.<sig> — the PromptPay payment must carry it when the shop requires slip checks
+export async function slipPass(ref, amount, minutes = 30) {
+  const exp = Math.floor(Date.now() / 1000 + minutes * 60).toString(36), body = `${ref}.${Math.round(amount)}.${exp}`;
+  return `${body}.${crypto.createHmac('sha256', await secret()).update('slip:' + body).digest('hex').slice(0, 20)}`;
+}
+export async function slipPassCheck(tok, amount) {
+  const m = /^([0-9A-Za-z]{4,60})\.(\d+)\.([0-9a-z]+)\.([0-9a-f]{20})$/.exec(String(tok || ''));
+  if (!m || Number(m[2]) !== Math.round(amount) || parseInt(m[3], 36) * 1000 < Date.now()) return null;
+  const want = Buffer.from(crypto.createHmac('sha256', await secret()).update(`slip:${m[1]}.${m[2]}.${m[3]}`).digest('hex').slice(0, 20));
+  return want.length === m[4].length && crypto.timingSafeEqual(want, Buffer.from(m[4])) ? m[1] : null;
+}

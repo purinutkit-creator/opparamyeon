@@ -111,10 +111,26 @@ export async function paymentsPage() {
       h('button', { class: 'btn', onclick: async () => { testOut.textContent = 'กำลังทดสอบ…'; const r = await api.post('/payments/providers/beam/test').catch((e) => ({ message: e.message })); testOut.textContent = (r.ok ? '✅ ' : '⚠️ ') + r.message; } }, 'ทดสอบการเชื่อมต่อ'),
       h('button', { class: 'btn ghost', onclick: async () => { if (confirm('ลบคีย์ Beam ทั้งหมด?')) { await api.put('/payments/providers/beam', { clear: true }); reload(); } } }, 'ลบคีย์'), testOut),
     keys.from_env ? h('p', { class: 'small muted' }, 'ขณะนี้ใช้คีย์จาก Environment ของเซิร์ฟเวอร์') : null);
+  // ---- checking the customer's slip at the counter ----
+  const sk = await api.get('/payments/slip2go');
+  const sc = form([{ k: 'slip_required', label: '🔒 บังคับสแกนสลิปทุกครั้งที่รับพร้อมเพย์ (ข้ามได้เฉพาะผู้จัดการใส่ PIN)', type: 'bool' },
+    { k: 'slip_method', label: 'ให้อะไรตรวจสลิป', type: 'select', options: [['ai', '🤖 AI อ่านรูปสลิป (Claude)'], ['slip2go', '🏦 Slip2Go ตรวจกับธนาคาร'], ['qr', '🆓 ตรวจ QR ฟรี (ไม่เช็คยอด)']] },
+    { k: 'slip2go_base', label: 'ที่อยู่ API ของ Slip2Go' }], { slip_required: !!s.payment.slip_required, slip_method: s.payment.slip_method || 'ai', slip2go_base: s.payment.slip2go_base || 'https://connect.slip2go.com' });
+  const s2 = form([{ k: 'api_key', label: 'Slip2Go API Key (Secret Key)', type: 'password', placeholder: sk.key_set ? `บันทึกแล้ว (${sk.key_hint || 'จาก Environment'}) — เว้นว่างเพื่อใช้ค่าเดิม` : 'วาง Secret Key จาก Slip2Go' }], {});
+  const s2out = h('span', { class: 'small' });
+  const slipCard = card(h('h3', {}, '🧾 ตรวจสลิปลูกค้าที่เคาน์เตอร์'), sc,
+    h('p', { class: 'small muted' }, 'เมื่อบังคับ: เลือกพร้อมเพย์แล้วหน้าสแกนสลิปจะเปิดขึ้นเอง · ปุ่ม "ยืนยันรับเงิน" กดได้เมื่อสลิปผ่านเท่านั้น · เครื่องสแกนอ่านได้แม้แป้นพิมพ์เป็นภาษาไทย'),
+    saveBtn('บันทึก', () => saveKey('payment', sc.value())),
+    h('div', { class: 'card', style: { background: 'var(--surface2)', margin: '.8em 0' } }, h('h4', {}, '🏦 Slip2Go API Key'),
+      h('p', { class: 'small muted' }, 'สมัครที่ slip2go.com → Dashboard → API Key (คัดลอก Secret Key มาวาง) · ถ้าเปิด IP Whitelist ไว้ ต้องเพิ่ม IP ของเซิร์ฟเวอร์ร้าน · คีย์เก็บที่เซิร์ฟเวอร์เท่านั้น'), s2,
+      h('div', { class: 'row' }, saveBtn('บันทึกคีย์', async () => { const v = s2.value(); if (v.api_key) await api.put('/payments/slip2go', v); }),
+        h('button', { class: 'btn', onclick: async () => { s2out.textContent = 'กำลังทดสอบ…'; const r = await api.post('/payments/slip2go/test').catch((e) => ({ message: e.message })); s2out.textContent = (r.ok ? '✅ ' : '⚠️ ') + r.message; } }, 'ทดสอบการเชื่อมต่อ'),
+        h('button', { class: 'btn ghost', onclick: async () => { if (confirm('ลบ Slip2Go API Key?')) { await api.put('/payments/slip2go', { clear: true }); reload(); } } }, 'ลบคีย์'), s2out)));
   const beam = form([{ k: 'enabled', label: 'เปิดใช้ Beam Checkout', type: 'bool' }, { k: 'mode', label: 'โหมด', type: 'select', options: [['playground', 'ทดสอบ (playground)'], ['live', 'ใช้งานจริง']] }], beamCfg);
   return page('การรับชำระเงิน',
     card(h('h3', {}, 'พร้อมเพย์ของร้าน'), pp, h('p', { class: 'small', style: { color: 'var(--warn)' } }, '⚠️ การตั้งเลขพร้อมเพย์อย่างเดียวไม่ทำให้ระบบรู้ว่าได้รับเงินจริง — การกด "โอนแล้ว" หรือส่งสลิปของลูกค้าจะไม่เปลี่ยนเป็นชำระแล้ว จนกว่าพนักงานตรวจสอบยอดเงินเข้าและกดยืนยัน'),
       saveBtn('บันทึก', () => saveKey('payment', pp.value()))),
+    slipCard,
     card(h('h3', {}, 'Payment Gateway: Beam Checkout'), beam,
       keysBox,
       h('p', {}, 'Webhook URL สำหรับตั้งใน Beam Lighthouse: ', h('code', {}, location.origin + '/api/webhooks/beam')),

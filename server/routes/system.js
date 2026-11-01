@@ -305,6 +305,7 @@ export function publicSettings(s) {
   const out = Object.fromEntries(PUBLIC_KEYS.map((k) => [k, s[k]]));
   out.members = { ...s.members, otp_webhook_url: undefined };
   out.payment = { promptpay_enabled: !!s.payment.promptpay_id, promptpay_id: s.payment.promptpay_id, promptpay_name: s.payment.promptpay_name, slip_upload: s.payment.slip_upload,
+    slip_required: !!s.payment.slip_required, slip_method: s.payment.slip_method || 'ai',
     beam: !!(s.payment.providers.beam && s.payment.providers.beam.enabled), mock: !!s.payment.mock_enabled };
   out.sale = { payment_methods: s.sale.payment_methods, count_unit: s.sale.count_unit || 'ชาม', tax_rate: s.sale.tax_rate, tax_inclusive: s.sale.tax_inclusive, packaging_fee: s.sale.packaging_fee,
     packaging_mode: s.sale.packaging_mode, kitchen_send: s.sale.kitchen_send, auto_lock_minutes: s.sale.auto_lock_minutes, max_discount_pct: s.sale.max_discount_pct };
@@ -369,6 +370,11 @@ r.put('/settings/:key', staffAuth('settings'), ah(async (req, res) => {
   const before = (await getSettings())[key];
   let v = req.body.value;
   if (key === 'payment' && v && v.providers) for (const p of Object.values(v.providers)) { delete p.api_key; delete p.secret; } // secrets live in env vars only
+  if (key === 'payment' && v) {
+    if (v.slip_method !== undefined && !['ai', 'slip2go', 'qr'].includes(v.slip_method)) throw bad('วิธีตรวจสลิปไม่ถูกต้อง');
+    if (v.slip_required !== undefined) v.slip_required = !!v.slip_required;
+    if (v.slip2go_base !== undefined) { const b = String(v.slip2go_base || '').trim().replace(/\/+$/, ''); if (b && !/^https:\/\/[\w.-]+(:\d+)?(\/[\w./-]*)?$/.test(b)) throw bad('ที่อยู่ Slip2Go ต้องขึ้นต้นด้วย https://'); v.slip2go_base = b || 'https://connect.slip2go.com'; }
+  }
   if (key === 'lock' && v) { // screen lock: 15 s … 8 h, warning 0–60 s, lock (PIN) or sign out
     v.enabled = !!v.enabled; v.seconds = Math.max(15, Math.min(8 * 3600, Math.round(Number(v.seconds) || 300)));
     v.warn = Math.max(0, Math.min(60, Math.round(Number(v.warn ?? 10)))); v.action = v.action === 'logout' ? 'logout' : 'lock'; v.keep_with_bill = !!v.keep_with_bill;

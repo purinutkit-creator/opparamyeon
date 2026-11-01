@@ -406,7 +406,7 @@ export async function payOrder({ orderId, payments, staff, terminalId, shiftId, 
         const sq = parseSlipQr(p.slip_qr);
         if (!sq) throw bad('QR นี้ไม่ใช่สลิปโอนเงินของธนาคาร', 'bad_slip');
         slipRef = sq;
-      } else if (p.slip_ref && /^[0-9A-Za-z]{6,40}$/.test(String(p.slip_ref))) slipRef = { bank: '', bank_name: 'อ่านโดย AI', ref: String(p.slip_ref) }; // read from the slip photo
+      } else if (p.slip_ref && /^[0-9A-Za-z]{6,40}$/.test(String(p.slip_ref))) slipRef = { bank: '', bank_name: ({ slip2go: 'Slip2Go', qr: 'QR' })[p.slip_by] || 'อ่านโดย AI', ref: String(p.slip_ref) }; // read from the slip photo
       const slipFile = /^\/files\/[\w-]+$/.test(String(p.slip_file || '')) ? p.slip_file : null;
       rows.push({ method: p.method, amount: amt, received: rec, ref: slipRef ? `สลิป ${slipRef.bank_name} ${slipRef.ref}` : p.ref || null, slip: slipFile, slipRef });
       paid += amt; received += rec;

@@ -6,7 +6,7 @@ import { staffAuth, staffForAction, can, requirePerm } from '../lib/auth.js';
 import { saveOrder, payOrder, checkout, voidOrder, refundItems, orderFull, getOrder, sendKitchen, freeTableIfIdle, idemRetry } from '../lib/orders.js';
 import { enqueue, orderDocData, reprint, retry, feedMerchantRoll } from '../lib/print.js';
 import { cookerStatus, finishTicket, finishOrder, voidOrderJobs } from '../lib/cookers.js';
-import { billFromToken, shiftToken, shiftFromToken } from '../lib/billlink.js';
+import { billFromToken, shiftToken, shiftFromToken, slipPass, slipPassCheck } from '../lib/billlink.js';
 import { joinShiftCrew, verifyOnDuty, clockIn, printAttendance, selfieOf, needSelfie } from '../lib/crew.js';
 import { notifyShiftClose } from '../lib/line.js';
 import { MERCHANT_CLOSE } from '../lib/templates.js';
@@ -41,6 +41,44 @@ r.post('/payments/slip-check', staffAuth('sell'), ah(async (req, res) => {
   if (used) return res.status(409).json({ error: `สลิปนี้ใช้ไปแล้วกับบิล ${used.bill_no} (${new Date(used.created_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' })})`, code: 'slip_used', used });
   res.json({ ok: true, ...sq });
 }));
+// a passing check hands the POS a signed pass for that slip + amount; checkout asks for it when slip checks are required
+const okRef = (x) => /^[0-9A-Za-z]{6,40}$/.test(String(x || ''));
+const withPass = async (v, ref, amount) => ({ ...v, pass: v.verdict === 'pass' && okRef(ref) && amount > 0 ? await slipPass(ref, amount) : null });
+const usedRow = (ref) => (ref ? db.get('SELECT bill_no FROM slips WHERE ref = ?', [ref]) : null);
+async function slip2goVerdict(fn, { expected, qr }) {
+  const { slip2goKey, Slip2GoError } = await import('../lib/slip2go.js');
+  const key = await slip2goKey();
+  if (!key) throw bad('ยังไม่ได้ใส่ Slip2Go API Key — ใส่ได้ที่ จัดการร้าน → การรับชำระเงิน', 'no_key');
+  let d;
+  try { d = await fn(key); } catch (e) {
+    return { verdict: e.name === 'TimeoutError' ? 'timeout' : 'error', reasons: [e instanceof Slip2GoError ? e.message : 'เชื่อมต่อ Slip2Go ไม่ได้ — ลองใหม่ หรือข้ามโดยผู้จัดการ'], warnings: [] };
+  }
+  if (!d.found) return { verdict: 'fail', reasons: ['Slip2Go ไม่พบรายการโอนนี้กับธนาคาร' + (d.message ? ` (${d.message})` : '')], warnings: [], read: d };
+  const ref = d.ref || (qr && qr.ref) || '';
+  const P = (await getSettings()).payment || {};
+  const v = slipVerdict({ ...d, is_slip: true, looks_edited: false }, { expected, shopName: P.promptpay_name, shopId: P.promptpay_id, used: await usedRow(ref), qr: qr || true });
+  return { ...v, read: d, ref };
+}
+// the cashier scanned the slip's QR (scanner or camera): checked the way the shop chose
+r.post('/payments/slip-verify', staffAuth('sell'), ah(async (req, res) => {
+  const code = String((req.body || {}).code || '').trim(), expected = Math.round(Number(req.body.amount) || 0);
+  const sq = parseSlipQr(code);
+  if (!sq) throw bad('QR นี้ไม่ใช่สลิปโอนเงินของธนาคาร — สแกน QR เล็ก ๆ บนสลิปของลูกค้า (ไม่ใช่ QR พร้อมเพย์ของร้าน)', 'bad_slip');
+  const method = ((await getSettings()).payment || {}).slip_method || 'ai';
+  const qr = { bank_name: sq.bank_name, ref: sq.ref, code };
+  if (method === 'slip2go') {
+    const { slip2goByQr } = await import('../lib/slip2go.js');
+    const v = await slip2goVerdict((key) => slip2goByQr(code, key), { expected, qr });
+    return res.json({ ...(await withPass(v, v.ref, expected)), qr, method });
+  }
+  const used = await usedRow(sq.ref);
+  if (method === 'qr') {
+    const v = used ? { verdict: 'fail', reasons: [`สลิปนี้ใช้ไปแล้วกับบิล ${used.bill_no}`], warnings: [] } : { verdict: 'pass', reasons: [], warnings: ['ตรวจแค่ว่าเป็นสลิปจริง — ยอดเงินให้ดูจากสลิปเอง'] };
+    return res.json({ ...(await withPass(v, sq.ref, expected)), ref: sq.ref, qr, method });
+  }
+  // AI reads the amount from a photo: the QR alone isn't enough
+  res.json({ verdict: used ? 'fail' : 'need_photo', reasons: used ? [`สลิปนี้ใช้ไปแล้วกับบิล ${used.bill_no}`] : ['ถ่ายรูปสลิปให้ AI ตรวจยอดเงิน'], warnings: [], ref: sq.ref, qr, method });
+}));
 // slip photo → AI reads amount / receiver / ref (≤ 5 s) while the server reads the slip's QR; compared with the bill
 const normName = (t) => String(t || '').toLowerCase().replace(/(นางสาว|นาง|นาย|น\.ส\.|ด\.ช\.|ด\.ญ\.|บจก\.?|บริษัท|จำกัด|หจก\.?|mr\.?|mrs\.?|ms\.?|miss)\s*/g, ' ').replace(/[^\p{L}\p{M}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim(); // \p{M}: Thai vowel/tone marks are part of the name
 export function slipVerdict(read, { expected, shopName, shopId, used, qr }) {
@@ -70,6 +108,13 @@ r.post('/payments/slip-read', staffAuth('sell'), ah(async (req, res) => {
   if (!m) throw bad('รูปสลิปไม่ถูกต้อง');
   if (m[2].length > 4_000_000) throw bad('รูปใหญ่เกินไป');
   const expected = Math.round(Number(req.body.amount) || 0);
+  if ((((await getSettings()).payment || {}).slip_method) === 'slip2go') {
+    const buf = Buffer.from(m[2], 'base64');
+    const { saveFile } = await import('./system.js');
+    const { slip2goByImage } = await import('../lib/slip2go.js');
+    const [v, fid] = await Promise.all([slip2goVerdict((key) => slip2goByImage(buf, m[1], key), { expected, qr: null }), saveFile(buf, 'slip.jpg', m[1]).catch(() => null)]);
+    return res.json({ ...(await withPass(v, v.ref, expected)), file: fid ? '/files/' + fid : null, method: 'slip2go', ms: Date.now() - t0 });
+  }
   const { aiKeys, readSlipAI, AiError } = await import('../lib/productai.js');
   const keys = await aiKeys();
   if (!keys.anthropic) throw bad('ยังไม่ได้ตั้ง Claude API Key — ใส่ได้ที่ จัดการร้าน → ผู้ช่วยเพิ่มสินค้า → ตั้งค่า AI');
@@ -89,7 +134,7 @@ r.post('/payments/slip-read', staffAuth('sell'), ah(async (req, res) => {
   if (err) return res.json({ verdict: err.code === 'timeout' ? 'timeout' : 'error', reasons: [err.message], warnings: [], qr: qr ? { bank_name: qr.bank_name, ref: qr.ref, code: qr.code } : null, used: used ? used.bill_no : null, ref, file, ms });
   const P = (await getSettings()).payment || {};
   const v = slipVerdict(read, { expected, shopName: P.promptpay_name, shopId: P.promptpay_id, used, qr });
-  res.json({ ...v, read, qr: qr ? { bank_name: qr.bank_name, ref: qr.ref, code: qr.code } : null, ref, file, ms });
+  res.json({ ...(await withPass(v, ref, expected)), read, qr: qr ? { bank_name: qr.bank_name, ref: qr.ref, code: qr.code } : null, ref, file, ms, method: 'ai' });
 }));
 r.get('/public/bill/:token/qr.png', ah(async (req, res) => {
   const billNo = await billFromToken(req.params.token);
@@ -135,11 +180,31 @@ r.post('/orders/save', staffAuth('sell'), ah(async (req, res) => {
   res.json(await orderFull(out.order.id));
 }));
 
+// shop requires a checked slip for every PromptPay payment: each carries the pass from the check (or a manager skips it with their PIN)
+async function requireSlips(req, payments) {
+  const P = (await getSettings()).payment || {};
+  if (!P.slip_required) return;
+  for (const p of payments || []) {
+    if (p.method !== 'promptpay' || !(Math.round(Number(p.amount)) > 0)) continue;
+    const ref = p.slip_pass ? await slipPassCheck(p.slip_pass, Number(p.amount)) : null;
+    if (ref) {
+      if (p.slip_qr) { const sq = parseSlipQr(p.slip_qr); if (!sq || sq.ref !== ref) delete p.slip_qr; }
+      if (!p.slip_qr) { p.slip_ref = ref; p.slip_by = P.slip_method; }
+      continue;
+    }
+    if (p.slip_pass) throw bad('ผลตรวจสลิปหมดอายุหรือไม่ตรงกับยอดนี้ — สแกนสลิปใหม่', 'slip_pass');
+    if (!req.body.slip_skip) throw bad('ต้องสแกนสลิปของลูกค้าก่อนรับเงินพร้อมเพย์', 'slip_required');
+    const by = await staffForAction({ staff: req.staff, body: { approver: req.body.slip_approver } }, 'void_bill');
+    await audit(by.id, 'slip_skip', 'payment', null, null, { amount: p.amount, for: req.staff.id }, req.body.slip_skip_reason || null);
+    delete p.slip_qr; delete p.slip_ref;
+  }
+}
 r.post('/orders/checkout', staffAuth('sell'), ah(async (req, res) => {
   const sh = await needShift(req);
   const { order_id, cart, payments, idempotency_key, print } = req.body || {};
   if (!idempotency_key) throw bad('missing idempotency_key');
   if (cart && cart.discount && cart.discount.value && req.body.approver) { await staffForAction(req, 'discount'); cart._approved_discount = true; }
+  await requireSlips(req, payments);
   const out = await idemRetry(() => (cart
     ? checkout({ orderId: order_id, cart, payments, staff: req.staff, terminalId: req.terminalId, shiftId: sh.id, idempotencyKey: idempotency_key, print: print || {} })
     : payOrder({ orderId: order_id, payments, staff: req.staff, terminalId: req.terminalId, shiftId: sh.id, idempotencyKey: idempotency_key, print: print || {} })));

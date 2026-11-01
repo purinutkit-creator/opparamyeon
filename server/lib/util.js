@@ -51,6 +51,8 @@ export const DEFAULT_SETTINGS = {
   fonts: { global: 'Sarabun', pos: '', display: '', member: '', mobile: '', admin: '', reports: '', receipt: '', kitchen: '', fallback: 'Sarabun, Noto Sans Thai, sans-serif',
     size: 16, weight: 400, line_height: 1.4, letter_spacing: 0 },
   payment: { promptpay_id: '', promptpay_name: '', promptpay_type: 'phone', slip_upload: true,
+    // checking the customer's transfer slip at the counter: required for every PromptPay payment? checked by 'ai' | 'slip2go' | 'qr' (QR only, no amount)
+    slip_required: false, slip_method: 'ai', slip2go_base: 'https://connect.slip2go.com',
     providers: { beam: { enabled: false, mode: 'playground', merchant_id: '' } }, mock_enabled: false },
   mobile: { enabled: true, pickup_enabled: true, table_enabled: true, pickup_phone_required: false, pay_online: false, pay_cashier: true,
     qr_hours: 3, single_order: false, allow_table_change: false, pickup_kitchen: 'after_payment', table_kitchen: 'immediately',
