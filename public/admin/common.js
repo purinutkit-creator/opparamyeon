@@ -86,3 +86,38 @@ export function barChart(points, { fmt = (v) => v, label = (p) => p.x, height = 
 export function saveBtn(label, fn) {
   return h('button', { class: 'btn primary', onclick: async (e) => { e.target.disabled = true; try { await fn(); toast('บันทึกแล้ว', 'ok'); } catch (er) { errToast(er); } finally { e.target.disabled = false; } } }, label);
 }
+
+// How to get the API keys for the product search (Claude / Google through Serper), with boxes to save them right here
+export function keyHelp({ conf = {}, onSaved = null, open = false } = {}) {
+  const step = (...t) => h('li', {}, ...t);
+  const a = (href, t) => h('a', { href, target: '_blank', rel: 'noopener' }, t || href.replace(/^https:\/\//, ''));
+  const box = (title, ok, steps, note) => h('div', { class: 'kh-box' }, h('div', { class: 'kh-head' }, h('b', {}, title), h('span', { class: 'badge ' + (ok ? 'ok' : 'warn') }, ok ? '✓ ใส่คีย์แล้ว' : 'ยังไม่มีคีย์')), h('ol', {}, steps), note ? h('p', { class: 'small muted' }, note) : null);
+  const claude = h('input', { class: 'input', type: 'password', autocomplete: 'off', placeholder: conf.ai ? `บันทึกแล้ว (${(conf.hints || {}).anthropic || ''}) — ใส่ใหม่เพื่อเปลี่ยน` : 'วาง Claude API Key (sk-ant-…)' });
+  const serper = h('input', { class: 'input', type: 'password', autocomplete: 'off', placeholder: conf.serper ? `บันทึกแล้ว (${(conf.hints || {}).serper || ''}) — ใส่ใหม่เพื่อเปลี่ยน` : 'วาง Serper API Key' });
+  const save = async (e) => {
+    const body = {};
+    if (claude.value.trim()) { if (!/^sk-ant-/.test(claude.value.trim())) return toast('Claude API Key ต้องขึ้นต้นด้วย sk-ant-', 'warn'); body.anthropic_api_key = claude.value.trim(); }
+    if (serper.value.trim()) body.serper_api_key = serper.value.trim();
+    if (!Object.keys(body).length) return toast('วางคีย์ก่อนกดบันทึก', 'warn');
+    e.target.disabled = true;
+    try { await api.put('/assistant/config', body); claude.value = ''; serper.value = ''; toast('บันทึกคีย์แล้ว', 'ok'); if (onSaved) await onSaved(); } catch (er) { errToast(er); } finally { e.target.disabled = false; }
+  };
+  return h('details', { class: 'kh', open },
+    h('summary', {}, '🔑 วิธีเอา API Key (Google / Claude)'),
+    h('style', {}, `.kh { border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; background: var(--surface2); margin: 10px 0; }
+      .kh summary { cursor: pointer; font-weight: 800; } .kh-box { margin-top: 12px; } .kh-head { display: flex; gap: 10px; align-items: center; }
+      .kh ol { margin: 6px 0 0; padding-left: 1.4em; display: grid; gap: 4px; } .kh a { font-weight: 700; } .kh code { background: var(--surface); padding: 1px 6px; border-radius: 6px; }
+      .kh-save { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; margin-top: 12px; } @media (max-width: 720px) { .kh-save { grid-template-columns: 1fr; } }`),
+    box('🔎 Serper API Key — ค้นจาก Google (ฟรี 2,500 ครั้ง)', conf.serper, [
+      step('เปิด ', a('https://serper.dev'), ' แล้วกด ', h('b', {}, 'Sign up'), ' (ใช้บัญชี Google สมัครได้เลย ไม่ต้องใส่บัตร)'),
+      step('สมัครเสร็จจะได้เครดิตฟรี 2,500 ครั้ง — ค้นข้อมูลสินค้า 1 ครั้งใช้ 3 ครั้ง (ประมาณ 800 สินค้า)'),
+      step('ไปที่เมนู ', h('b', {}, 'API Key'), ' (', a('https://serper.dev/api-key'), ') แล้วกดคัดลอกคีย์'),
+      step('วางในช่อง "Serper API Key" ด้านล่าง แล้วกดบันทึก')]),
+    box('🤖 Claude API Key — ให้ AI เขียนคำอธิบาย / ค้นเว็บเอง (จ่ายตามใช้งาน)', conf.ai, [
+      step('เปิด ', a('https://console.anthropic.com'), ' แล้วสมัคร / เข้าสู่ระบบ (ใช้อีเมลหรือบัญชี Google)'),
+      step('เติมเครดิตก่อนใช้งาน: ', h('b', {}, 'Settings → Billing'), ' → ', h('b', {}, 'Buy credits'), ' (ขั้นต่ำประมาณ $5 ใช้บัตรเครดิต/เดบิต)'),
+      step('ไปที่ ', h('b', {}, 'Settings → API Keys'), ' (', a('https://console.anthropic.com/settings/keys'), ') กด ', h('b', {}, 'Create Key'), ' ตั้งชื่อ เช่น ', h('code', {}, 'Oppa POS')),
+      step('คัดลอกคีย์ที่ขึ้นต้นด้วย ', h('code', {}, 'sk-ant-'), ' ทันที (เว็บแสดงให้ดูครั้งเดียว) แล้ววางในช่อง "Claude API Key" ด้านล่าง กดบันทึก')],
+      'คีย์ทั้งสองเก็บไว้ที่เซิร์ฟเวอร์ของร้านเท่านั้น ไม่แสดงกลับในเบราว์เซอร์ · ค่าใช้จ่าย Claude ดู/ตั้งวงเงินได้ที่ Settings → Limits ในเว็บเดียวกัน'),
+    can('settings') ? h('div', { class: 'kh-save' }, serper, claude, h('button', { class: 'btn primary', type: 'button', onclick: save }, '💾 บันทึกคีย์')) : h('p', { class: 'small muted' }, 'ให้เจ้าของร้าน (สิทธิ์ตั้งค่า) เป็นคนใส่คีย์'));
+}

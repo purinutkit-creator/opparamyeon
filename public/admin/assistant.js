@@ -3,7 +3,7 @@
 // Staff always type the price and pick the category themselves before saving.
 import { h, toast, errToast, modal } from '/shared/ui.js';
 import { baht, toSatang } from '/shared/core.js';
-import { api, page, card, upload, can, form } from './common.js';
+import { api, page, card, upload, can, form, keyHelp } from './common.js';
 
 // ---------- barcode from a photo ----------
 const FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf'];
@@ -120,7 +120,8 @@ export async function assistantPage() {
       { k: 'pexels_api_key', label: 'Pexels API Key (ฟรี) — รูปโปรโมทคุณภาพสูง', type: 'password', placeholder: conf.pexels ? `บันทึกแล้ว (${conf.hints.pexels})` : 'จาก pexels.com/api', wide: true },
       { k: 'serper_api_key', label: 'Serper API Key (ฟรี 2,500 ครั้ง) — ค้นรูปสินค้า และค้นสรรพคุณ/ข้อมูลสินค้าจาก Google', type: 'password', placeholder: conf.serper ? `บันทึกแล้ว (${conf.hints.serper})` : 'จาก serper.dev', wide: true }], {});
     modal('⚙️ ตัวเลือกเพิ่มเติม (ไม่บังคับ)', h('div', {}, f,
-      h('p', { class: 'small muted' }, 'ทั้งหมดนี้ไม่บังคับ — ไม่ใส่อะไรเลย ระบบก็อ่านชื่อจากรูปและค้นหาชื่อ/รูปจากเว็บได้ · คีย์เก็บไว้ที่เซิร์ฟเวอร์เท่านั้น · Claude (ถ้าใส่) ช่วยระบุสินค้าที่ไม่มีตัวหนังสือชัด ๆ ค่าใช้ประมาณ 1 บาทต่อรูป')),
+      h('p', { class: 'small muted' }, 'ทั้งหมดนี้ไม่บังคับ — ไม่ใส่อะไรเลย ระบบก็อ่านชื่อจากรูปและค้นหาชื่อ/รูปจากเว็บได้ · คีย์เก็บไว้ที่เซิร์ฟเวอร์เท่านั้น · Claude (ถ้าใส่) ช่วยระบุสินค้าที่ไม่มีตัวหนังสือชัด ๆ ค่าใช้ประมาณ 1 บาทต่อรูป'),
+      keyHelp({ conf, onSaved: async () => { conf = await api.get('/assistant/config'); draw(); } })),
     { wide: true, actions: [{ label: 'ลบคีย์ทั้งหมด', class: 'ghost', onClick: async () => { if (!confirm('ลบคีย์ AI และแหล่งรูปทั้งหมด?')) return false; await api.put('/assistant/config', { clear: ['anthropic_api_key', 'pexels_api_key', 'serper_api_key'] }); conf = await api.get('/assistant/config'); draw(); } },
       { label: 'บันทึก', class: 'primary', onClick: async () => { await api.put('/assistant/config', f.value()); conf = await api.get('/assistant/config'); toast('บันทึกแล้ว', 'ok'); draw(); } }] });
   };

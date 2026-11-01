@@ -79,5 +79,18 @@ test('ค้นสรรพคุณจาก Google (Serper): ไม่มี A
   assert.equal(ai[0].tools, undefined, 'ไม่ใช้ web search ของ AI');
   assert.match(JSON.stringify(ai[0].messages), /ซุปกระดูกหมูข้น/, 'ใช้ข้อความจาก Google');
   assert.equal(r.body.sources[0].url.startsWith('https://example.com/r/'), true);
+  // the shop picks the search: Google only (no AI even with a Claude key) · Claude searches the web itself
+  const n1 = calls.length;
+  r = await S.call('POST', '/api/products/research', { name: 'Nissin', engine: 'google' }, { token: owner });
+  assert.equal(r.body.engine, 'google'); assert.equal(r.body.spice_unknown, true);
+  assert.equal(calls.slice(n1).filter((c) => c.path !== '/search').length, 0, 'Google อย่างเดียว ไม่เรียก AI');
+  const n2 = calls.length;
+  r = await S.call('POST', '/api/products/research', { name: 'Samyang Buldak Carbonara', engine: 'claude' }, { token: owner });
+  assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.engine, 'claude');
+  assert.ok(calls.slice(n2).some((c) => c.tools && c.tools[0].type === 'web_search_20260209'), 'Claude ค้นเว็บเอง');
+  assert.equal(calls.slice(n2).filter((c) => c.path === '/search').length, 0, 'ไม่ใช้ Google');
+  await S.call('PUT', '/api/assistant/config', { clear: ['anthropic_api_key'] }, { token: owner });
+  r = await S.call('POST', '/api/products/research', { name: 'Nissin', engine: 'google_ai' }, { token: owner });
+  assert.equal(r.status, 400); assert.match(r.body.error, /Claude API Key/);
   await S.call('PUT', '/api/assistant/config', { clear: ['anthropic_api_key', 'serper_api_key'] }, { token: owner });
 });

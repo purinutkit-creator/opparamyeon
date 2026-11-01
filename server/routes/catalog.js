@@ -365,7 +365,8 @@ r.post('/products/research', staffAuth('manage_menu'), ah(async (req, res) => {
   if (barcode) { const info = await lookupBarcode(barcode).catch(() => null); if (info && info.found) barcodeInfo = [...(info.names || []), info.brand, info.quantity].filter(Boolean).join(' / ').slice(0, 400); }
   const cat = b.category_id ? await db.get('SELECT name FROM categories WHERE id = ?', [String(b.category_id)]) : null;
   try {
-    const out = await researchProduct({ apiKey: keys.anthropic, serperKey: keys.serper, name: name || barcode, barcode, note: String(b.note || '').slice(0, 300), category: cat ? cat.name : '', barcodeInfo });
+    const engine = ['google', 'google_ai', 'claude'].includes(b.engine) ? b.engine : 'auto';
+    const out = await researchProduct({ apiKey: keys.anthropic, serperKey: keys.serper, engine, name: name || barcode, barcode, note: String(b.note || '').slice(0, 300), category: cat ? cat.name : '', barcodeInfo });
     await audit(req.staff.id, 'product_research', 'product', b.product_id || null, null, { name, found: out.found, engine: out.engine });
     res.json(out);
   } catch (e) { if (e instanceof AiError) throw bad(e.message); throw e; }

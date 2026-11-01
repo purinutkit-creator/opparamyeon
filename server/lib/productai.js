@@ -136,15 +136,20 @@ function optionsFromGoogle(name, g) {
   const facts = g.kg ? Object.entries(g.kg.attributes).slice(0, 8).map(([label, value]) => ({ label, value: String(value) })) : [];
   return { found: g.results.length > 0, summary_th: g.kg ? `${g.kg.title} — ${g.kg.description}`.slice(0, 200) : `ผลการค้นหา Google สำหรับ "${name}"`, descriptions, highlights: bits, spice_level: 0, spice_reason: 'ยังไม่ได้ประเมิน (ไม่มี AI) — ตั้งเองได้ในฟอร์ม', facts, spice_unknown: true };
 }
-export async function researchProduct({ apiKey, serperKey = '', name, barcode = '', note = '', category = '', barcodeInfo = '' }) {
-  // Google first when the shop set a Serper key: Claude (if any) only writes the options from Google's results
-  if (serperKey) {
+// engine: 'google' (Google only) · 'google_ai' (Google, then Claude writes the options) · 'claude' (Claude searches the web) · 'auto'
+export async function researchProduct({ apiKey, serperKey = '', engine = 'auto', name, barcode = '', note = '', category = '', barcodeInfo = '' }) {
+  if (engine === 'auto') engine = serperKey ? (apiKey ? 'google_ai' : 'google') : 'claude';
+  if (engine === 'google') apiKey = '';
+  if (engine !== 'claude') {
+    if (!serperKey) throw new AiError('ค้นจาก Google ต้องมี Serper API Key — ดู "วิธีเอา API Key" ในหน้าต่างค้นหา');
+    if (engine === 'google_ai' && !apiKey) throw new AiError('ให้ AI เขียนต้องมี Claude API Key — ดู "วิธีเอา API Key" หรือเลือก "Google อย่างเดียว"');
     const g = await googleProduct(name, serperKey);
     const google = g.results.map((r) => ({ title: r.title, url: r.url, snippet: r.snippet }));
     if (!apiKey) return { ...optionsFromGoogle(name, g), engine: 'google', google, sources: google.slice(0, 8).map(({ title, url }) => ({ title, url })) };
     const out = await formatOptions(new Anthropic({ apiKey, baseURL: process.env.ANTHROPIC_BASE_URL || undefined, timeout: 120000, maxRetries: 1 }), { name, barcode, notes: googleNotes(g) || 'Google found nothing for this product.', from: 'Google search results (title, snippet, link)' });
     return { ...out, engine: 'google', google, sources: google.slice(0, 8).map(({ title, url }) => ({ title, url })) };
   }
+  if (!apiKey) throw new AiError('ให้ Claude ค้นเว็บต้องมี Claude API Key — ดู "วิธีเอา API Key" ในหน้าต่างค้นหา');
   return { ...(await claudeResearch({ apiKey, name, barcode, note, category, barcodeInfo })), engine: 'claude' };
 }
 async function claudeResearch({ apiKey, name, barcode = '', note = '', category = '', barcodeInfo = '' }) {

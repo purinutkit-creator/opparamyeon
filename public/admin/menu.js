@@ -1,6 +1,7 @@
 import { h, toast, errToast, modal, confirmBox, fmtTime } from '/shared/ui.js';
 import { baht, toSatang, fromThaiKeys } from '/shared/core.js';
-import { api, can, page, card, form, table, saveBtn, upload } from './common.js';
+import { api, can, page, card, form, table, saveBtn, upload, keyHelp } from './common.js';
+import { store } from '/shared/api.js';
 import { drawStaffCard, printCards } from '/shared/staffcard.js';
 import { scanWithCamera, BARCODECAM_CSS } from '/shared/barcodecam.js';
 import { isLinkedHere, printDocument } from '/shared/printers.js';
@@ -221,12 +222,31 @@ const RESEARCH_CSS = `
   .rs-facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: .95em; }
   .rs-facts b { color: var(--muted); }
   .rs-src a { display: block; font-size: .85em; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rs-eng { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; } @media (max-width: 720px) { .rs-eng { grid-template-columns: 1fr; } }
+  .rs-e { text-align: left; display: grid; gap: 3px; padding: 10px 12px; border-radius: 14px; border: 2px solid var(--line); background: var(--surface); cursor: pointer; font: inherit; color: inherit; }
+  .rs-e.on { border-color: var(--brand); background: var(--brand-soft); } .rs-e.off { opacity: .7; }
+  .rs-e small { color: var(--muted); line-height: 1.3; } .rs-e .rs-k { font-size: .78em; font-weight: 800; color: var(--muted); }
   .rs-g { display: grid; gap: 8px; max-height: 340px; overflow: auto; padding-right: 4px; }
   .rs-gi { padding: 10px 12px; border-radius: 12px; background: var(--surface2); display: grid; gap: 3px; }
   .rs-gi a { font-weight: 800; color: #1a0dab; text-decoration: none; } .rs-gi a:hover { text-decoration: underline; }
   .rs-gi small { color: #188038; } .rs-gi p { margin: 2px 0 4px; font-size: .92em; line-height: 1.45; } .rs-gi .btn { justify-self: start; }
 `;
-function researchDialog(f, p) {
+// which search: Google + AI writes · Google only · Claude searches the web itself (remembered on this device)
+const ENGINES = [['google_ai', '🔎 Google + AI เขียนให้', 'ค้น Google แล้วให้ Claude สรุปเป็นคำอธิบาย/สรรพคุณ/ความเผ็ด', ['serper', 'ai']],
+  ['google', '🔎 Google อย่างเดียว', 'ใช้ข้อความจากผลค้น Google ตรง ๆ (ไม่ใช้ AI)', ['serper']],
+  ['claude', '🤖 Claude AI ค้นเว็บเอง', 'Claude ค้นหาจากหลายเว็บแล้วสรุปให้', ['ai']]];
+async function researchDialog(f, p) {
+  let conf = await api.get('/assistant/config').catch(() => ({}));
+  const has = (e) => ENGINES.find((x) => x[0] === e)[3].every((k) => conf[k]);
+  let engine = store.get('research_engine') || '';
+  if (!engine || !has(engine)) engine = (ENGINES.find((x) => has(x[0])) || ENGINES[0])[0];
+  const engBox = h('div', { class: 'rs-eng' });
+  const drawEng = () => engBox.replaceChildren(...ENGINES.map(([id, t, sub, need]) => h('button', { type: 'button', class: 'rs-e' + (engine === id ? ' on' : '') + (has(id) ? '' : ' off'), onclick: () => { engine = id; store.set('research_engine', id); drawEng(); if (!has(id)) help.open = true; } },
+    h('b', {}, t), h('small', {}, sub), h('span', { class: 'rs-k' }, need.map((k) => (conf[k] ? '✓ ' : '✗ ') + (k === 'ai' ? 'Claude key' : 'Serper key')).join(' · ')))));
+  drawEng();
+  // keys saved from the help panel: refresh the ✓/✗ and pick a search that now works
+  const refresh = async () => { conf = await api.get('/assistant/config'); if (!has(engine)) engine = (ENGINES.find((x) => has(x[0])) || ENGINES[0])[0]; drawEng(); const fresh = keyHelp({ conf, onSaved: refresh }); help.replaceWith(fresh); help = fresh; };
+  let help = keyHelp({ conf, open: !ENGINES.some((x) => has(x[0])), onSaved: refresh });
   const cur = f.value();
   const q = h('input', { class: 'input', value: cur.name || '', placeholder: 'ชื่อสินค้าที่จะค้นหา' });
   const bc = h('input', { class: 'input', value: String(cur.barcodes || '').split(',')[0].trim(), placeholder: 'บาร์โค้ด (ถ้ามี)' });
@@ -266,7 +286,8 @@ function researchDialog(f, p) {
     data = null; picked = null; chosen = new Set(); spice = null;
     out.replaceChildren(h('div', { class: 'rs-load' }, h('div', { class: 'sp' }), h('b', {}, 'กำลังค้นหาข้อมูล…'), h('span', { class: 'small' }, 'ค้นจาก Google แล้วสรุปเป็นตัวเลือก — ใช้เวลาประมาณ 10–40 วินาที')));
     try {
-      data = await api.post('/products/research', { name: q.value, barcode: bc.value, note: note.value, category_id: cur.category_id || null, product_id: p ? p.id : null });
+      if (!has(engine)) { help.open = true; throw new Error('ยังไม่มีคีย์สำหรับวิธีค้นหานี้ — ดู "วิธีเอา API Key" ด้านบน'); }
+      data = await api.post('/products/research', { engine, name: q.value, barcode: bc.value, note: note.value, category_id: cur.category_id || null, product_id: p ? p.id : null });
       picked = (data.descriptions || []).length ? 0 : null;
       draw();
     } catch (er) { out.replaceChildren(h('div', { class: 'rs-load' }, h('b', {}, '❌ ' + (er.message || 'ค้นหาไม่สำเร็จ')), h('span', { class: 'small' }, 'แก้ชื่อสินค้าแล้วลองใหม่ได้'))); }
@@ -284,10 +305,11 @@ function researchDialog(f, p) {
     toast('ใส่ข้อมูลในฟอร์มแล้ว — ตรวจแล้วกด "บันทึก"', 'ok', 4000);
   };
   modal('🔍 ค้นหาข้อมูลสินค้า', h('div', {}, h('style', {}, RESEARCH_CSS),
+    h('div', { class: 'small muted', style: { fontWeight: 800, marginBottom: '6px' } }, 'ค้นด้วย'), engBox, help,
     h('div', { class: 'form-grid' }, h('label', { class: 'field', style: { gridColumn: '1 / -1' } }, 'ค้นหา', q), h('label', { class: 'field' }, 'บาร์โค้ด', bc), h('label', { class: 'field' }, 'หมายเหตุ', note)),
     h('button', { class: 'btn primary', style: { marginTop: '8px' }, onclick: search }, '🔍 ค้นหา'), out),
   { wide: true, actions: [{ label: 'ยกเลิก', onClick: () => {} }, { label: '✓ ใช้ข้อมูลที่เลือก', class: 'primary', onClick: apply }] });
-  if (q.value || bc.value) search();
+  if ((q.value || bc.value) && has(engine)) search();
 }
 // delete menu items (asks first); sold items stay in old bills and reports, everything else is removed for good
 async function deleteProducts(ids, cat, reload) {
