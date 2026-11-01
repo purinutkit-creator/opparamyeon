@@ -192,7 +192,7 @@ test('LINE: เจ้าของ/พนักงาน · ใบเสร็จ
   const rc = JSON.stringify(pushes[0].body.messages[0]);
   assert.ok(rc.includes('a=report') && rc.includes('a=top'), 'ปุ่มยอดขายล่าสุด / สินค้าขายดี');
   assert.ok(/"type":"image"/.test(rc), 'มีรูปสินค้าในบิล');
-  assert.ok(rc.includes('https://shop.test/assets/icon-192.png') || rc.includes('https://shop.test/api/public/thumb/'), 'รูปเป็นลิงก์ https ที่ LINE เปิดได้');
+  assert.match(rc, /https:\/\/shop\.test\/api\/public\/pthumb\/p_r001\.png\?v=/, 'รูปเป็นลิงก์ https ที่ LINE เปิดได้');
   // best sellers: owner only
   await hook([{ type: 'postback', replyToken: 'rt-top', source: { type: 'user', userId: 'Uowner' }, postback: { data: 'a=top' } }]); await wait(200);
   const topMsg = lastTo('/v2/bot/message/reply').body.messages[0];
@@ -262,6 +262,16 @@ test('LINE: เจ้าของ/พนักงาน · ใบเสร็จ
   const th = await fetch(S.base + `/api/public/thumb/${up.id}.png`);
   assert.equal(th.status, 200); assert.equal(th.headers.get('content-type'), 'image/png');
   const dim = PNG.sync.read(Buffer.from(await th.arrayBuffer())); assert.deepEqual([dim.width, dim.height], [160, 160]);
+  // a product whose picture is WebP (common for pictures taken from the web) → still a PNG thumbnail
+  const sharp = (await import('sharp')).default;
+  const webp = await sharp({ create: { width: 320, height: 240, channels: 3, background: '#d02020' } }).webp().toBuffer();
+  const fd2 = new FormData(); fd2.append('file', new Blob([webp], { type: 'image/webp' }), 'n.webp'); fd2.append('kind', 'image');
+  const up2 = (await S.call('POST', '/api/files', fd2, { token: owner })).body;
+  await db.run('UPDATE products SET image = ? WHERE id = ?', [up2.url, 'p_r002']);
+  const pt = await fetch(S.base + '/api/public/pthumb/p_r002.png');
+  assert.equal(pt.status, 200); assert.equal(pt.headers.get('content-type'), 'image/png');
+  const pd = PNG.sync.read(Buffer.from(await pt.arrayBuffer())); assert.deepEqual([pd.width, pd.height], [160, 160]); assert.ok(pd.data[0] > 150 && pd.data[1] < 80, 'สีจากรูปจริง');
+  assert.equal((await fetch(S.base + '/api/public/pthumb/nope.png', { redirect: 'manual' })).status, 302);
   const miss = await fetch(S.base + '/api/public/thumb/nope.png', { redirect: 'manual' });
   assert.equal(miss.status, 302); assert.match(miss.headers.get('location'), /icon-192\.png/);
 });

@@ -42,33 +42,57 @@ r.post('/files', staffAuth(), upload.single('file'), ah(async (req, res) => {
   const fid = await saveFile(f.buffer, f.originalname, f.mimetype);
   res.json({ id: fid, url: '/files/' + fid, mime: f.mimetype, size: f.size });
 }));
-// small PNG of a product picture for LINE cards (LINE shows only JPEG/PNG); anything else → the shop icon
+// small square PNG of a picture for LINE cards (LINE shows only JPEG/PNG): sharp reads WebP/AVIF/GIF/JPEG/PNG,
+// the built-in decoder is the fallback for JPEG/PNG; null when it can't be read
+export async function thumbPng(buf, mime = '', N = 160) {
+  try {
+    const sharp = (await import('sharp')).default;
+    return await sharp(buf, { animated: false }).rotate().resize(N, N, { fit: 'cover' }).flatten({ background: '#ffffff' }).png().toBuffer();
+  } catch { /* no sharp or not an image it reads */ }
+  const { decodeImage } = await import('../lib/imgmatch.js');
+  const img = decodeImage(buf, mime);
+  if (!img) return null;
+  const side = Math.min(img.width, img.height), ox = (img.width - side) / 2, oy = (img.height - side) / 2;
+  const { PNG } = await import('pngjs');
+  const out = new PNG({ width: N, height: N });
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const sx = Math.min(img.width - 1, Math.floor(ox + (x + 0.5) * side / N)), sy = Math.min(img.height - 1, Math.floor(oy + (y + 0.5) * side / N));
+    const i = (sy * img.width + sx) * 4, o = (y * N + x) * 4, a = img.data[i + 3] / 255;
+    out.data[o] = img.data[i] * a + 255 * (1 - a); out.data[o + 1] = img.data[i + 1] * a + 255 * (1 - a); out.data[o + 2] = img.data[i + 2] * a + 255 * (1 - a); out.data[o + 3] = 255;
+  }
+  return PNG.sync.write(out);
+}
 const thumbs = new Map();
+const keepThumb = (k, v) => { if (thumbs.size > 300) thumbs.delete(thumbs.keys().next().value); thumbs.set(k, v); };
+async function fileBuf(fid) {
+  const f = await db.get('SELECT mime, data, path FROM files WHERE id = ?', [fid]);
+  if (!f) return null;
+  const buf = f.data ? Buffer.from(f.data, 'base64') : fs.existsSync(f.path || '') ? fs.readFileSync(f.path) : null;
+  return buf ? { buf, mime: f.mime } : null;
+}
+const sendPng = (res, png) => { res.set('Content-Type', 'image/png'); res.set('Cache-Control', 'public, max-age=86400'); res.send(png); };
 r.get('/public/thumb/:id.png', ah(async (req, res) => {
   const fid = String(req.params.id);
-  let png = thumbs.get(fid);
-  if (!png) {
-    const f = await db.get('SELECT mime, data, path FROM files WHERE id = ?', [fid]);
-    const buf = f ? (f.data ? Buffer.from(f.data, 'base64') : fs.existsSync(f.path || '') ? fs.readFileSync(f.path) : null) : null;
-    const { decodeImage } = await import('../lib/imgmatch.js');
-    const img = buf ? decodeImage(buf, f.mime) : null;
-    if (!img) return res.redirect(302, '/assets/icon-192.png');
-    // square crop from the middle, 160 px
-    const N = 160, side = Math.min(img.width, img.height), ox = (img.width - side) / 2, oy = (img.height - side) / 2;
-    const { PNG } = await import('pngjs');
-    const out = new PNG({ width: N, height: N });
-    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-      const sx = Math.min(img.width - 1, Math.floor(ox + (x + 0.5) * side / N)), sy = Math.min(img.height - 1, Math.floor(oy + (y + 0.5) * side / N));
-      const i = (sy * img.width + sx) * 4, o = (y * N + x) * 4;
-      const a = img.data[i + 3] / 255; // transparent parts on white
-      out.data[o] = img.data[i] * a + 255 * (1 - a); out.data[o + 1] = img.data[i + 1] * a + 255 * (1 - a); out.data[o + 2] = img.data[i + 2] * a + 255 * (1 - a); out.data[o + 3] = 255;
-    }
-    png = PNG.sync.write(out);
-    if (thumbs.size > 300) thumbs.delete(thumbs.keys().next().value);
-    thumbs.set(fid, png);
+  let png = thumbs.get('f:' + fid);
+  if (!png) { const f = await fileBuf(fid); png = f && await thumbPng(f.buf, f.mime); if (!png) return res.redirect(302, '/assets/icon-192.png'); keepThumb('f:' + fid, png); }
+  sendPng(res, png);
+}));
+// a product's picture as a thumbnail: its own uploaded file, or the outside picture link it was given (fetched safely)
+r.get('/public/pthumb/:pid.png', ah(async (req, res) => {
+  const p = await db.get('SELECT image FROM products WHERE id = ?', [String(req.params.pid)]);
+  const image = String((p && p.image) || '');
+  const key = 'p:' + image;
+  let png = thumbs.get(key);
+  if (!png && image) {
+    let src = null;
+    const m = /^\/files\/([\w-]+)/.exec(image);
+    if (m) src = await fileBuf(m[1]);
+    else if (/^https?:\/\//i.test(image)) { const { fetchImage } = await import('../lib/productlookup.js'); src = await fetchImage(image).catch(() => null); }
+    png = src && await thumbPng(src.buf, src.mime);
+    if (png) keepThumb(key, png);
   }
-  res.set('Content-Type', 'image/png'); res.set('Cache-Control', 'public, max-age=86400');
-  res.send(png);
+  if (!png) return res.redirect(302, '/assets/icon-192.png');
+  sendPng(res, png);
 }));
 export async function serveFile(req, res) {
   const f = await db.get('SELECT * FROM files WHERE id = ?', [req.params.id]);

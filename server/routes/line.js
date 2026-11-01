@@ -27,7 +27,7 @@ async function topSellers(rec) {
   const rows = await db.all(`SELECT i.product_id, MAX(i.name) AS name, SUM(i.qty - i.void_qty - i.refunded_qty) AS qty, SUM(i.line_total) AS amount FROM order_items i JOIN orders o ON o.id = i.order_id
     WHERE o.paid_business_date = ? AND o.status = 'paid' GROUP BY i.product_id ORDER BY qty DESC, amount DESC LIMIT 5`, [day]);
   const items = [];
-  for (const x of rows.filter((r) => Number(r.qty) > 0)) { const p = x.product_id ? await db.get('SELECT image FROM products WHERE id = ?', [x.product_id]) : null; items.push({ name: x.name, qty: Number(x.qty), amount: Number(x.amount), image: thumbOf(p && p.image) }); }
+  for (const x of rows.filter((r) => Number(r.qty) > 0)) { const p = x.product_id ? await db.get('SELECT image FROM products WHERE id = ?', [x.product_id]) : null; items.push({ name: x.name, qty: Number(x.qty), amount: Number(x.amount), image: thumbOf(x.product_id, p && p.image) }); }
   return topMessage(items, { live: rec ? await liveUrl(rec.id) : '', store: s.store.name, day });
 }
 // a reply that did not go through (network blip, token used up) is retried once, then sent as a push to the same chat

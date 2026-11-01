@@ -293,12 +293,12 @@ export async function linkMenus(c = null) {
 const B = (satang) => (Number(satang || 0) / 100).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const tm = (iso) => (iso ? new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) + ' น.' : '');
 const row2 = (l, r, o = {}) => ({ type: 'box', layout: 'horizontal', spacing: 'md', contents: [txt(l, { size: 'sm', color: '#555555', flex: 5, ...o.l }), txt(r, { size: 'sm', align: 'end', flex: 3, ...o.r })] });
-// a product picture LINE can show: our own pictures as PNG thumbnails, outside JPEG/PNG links as they are, else the shop icon
-export const thumbOf = (image) => {
-  const m = /^\/files\/([\w-]+)/.exec(String(image || ''));
-  if (m) return abs(`/api/public/thumb/${m[1]}.png`);
-  if (/^https:\/\/\S+\.(png|jpe?g)(\?\S*)?$/i.test(String(image || ''))) return image;
-  return abs('/assets/icon-192.png');
+// a product picture LINE can show: a PNG thumbnail made on the server from whatever the product has (uploaded file of any
+// common type, or an outside picture link); ?v= changes with the picture so LINE doesn't keep showing an old one
+export const thumbOf = (productId, image) => {
+  if (!productId) return abs('/assets/icon-192.png');
+  const v = crypto.createHash('sha1').update(String(image || '')).digest('hex').slice(0, 8);
+  return abs(`/api/public/pthumb/${encodeURIComponent(productId)}.png?v=${v}`);
 };
 const pic = (url, size = '44px') => (url ? { type: 'box', layout: 'vertical', width: size, height: size, flex: 0, cornerRadius: '8px', backgroundColor: '#F4EFEC',
   contents: [{ type: 'image', url, size: 'full', aspectMode: 'cover', aspectRatio: '1:1' }] } : null);
@@ -343,7 +343,7 @@ export async function notifySale(orderId) {
   const t = await billToken(o.bill_no);
   const url = abs('/b/#' + t), qr = abs(`/api/public/bill/${encodeURIComponent(t)}/qr.png`);
   const images = {};
-  for (const i of o.items) if (i.product_id && !(i.product_id in images)) { const p = await db.get('SELECT image FROM products WHERE id = ?', [i.product_id]); images[i.product_id] = thumbOf(p && p.image); }
+  for (const i of o.items) if (i.product_id && !(i.product_id in images)) { const p = await db.get('SELECT image FROM products WHERE id = ?', [i.product_id]); images[i.product_id] = thumbOf(i.product_id, p && p.image); }
   return lineTo('sale', saleMessage(o, { url, qr, images, methods: Object.fromEntries((s.sale.payment_methods || []).map((m) => [m.id, m.name])), store: s.store.name }));
 }
 const hm = (iso) => new Date(iso).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' });
