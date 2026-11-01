@@ -205,6 +205,83 @@ function sortDialog(cat, reload) {
     { label: 'ปิด', onClick: () => { reload(); } },
     { label: '💾 บันทึกลำดับ', class: 'primary', onClick: async () => { await save(); reload(); } }] });
 }
+// search the web about this product and pick what to use (filled into the form; nothing is saved until "บันทึก")
+const RESEARCH_CSS = `
+  .rs-load { display: grid; place-items: center; gap: 10px; padding: 40px 10px; color: var(--muted); text-align: center; }
+  .rs-load .sp { width: 44px; height: 44px; border-radius: 50%; border: 4px solid var(--surface2); border-top-color: var(--brand); animation: rsspin .9s linear infinite; }
+  @keyframes rsspin { to { transform: rotate(360deg); } }
+  .rs-sec { margin-top: 14px; } .rs-sec h4 { margin: 0 0 8px; }
+  .rs-opt { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; padding: 10px 12px; border: 2px solid var(--line); border-radius: 14px; margin-bottom: 8px; cursor: pointer; transition: border-color .15s, background .15s; }
+  .rs-opt.on { border-color: var(--brand); background: var(--brand-soft); }
+  .rs-opt small { color: var(--muted); font-weight: 800; display: block; margin-bottom: 2px; }
+  .rs-opt textarea { width: 100%; box-sizing: border-box; border: 0; background: transparent; font: inherit; resize: vertical; min-height: 3.2em; color: inherit; }
+  .rs-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .rs-chip { display: inline-flex; gap: 6px; align-items: center; padding: 6px 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-weight: 700; }
+  .rs-chip.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .rs-facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: .95em; }
+  .rs-facts b { color: var(--muted); }
+  .rs-src a { display: block; font-size: .85em; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+`;
+function researchDialog(f, p) {
+  const cur = f.value();
+  const q = h('input', { class: 'input', value: cur.name || '', placeholder: 'ชื่อสินค้าที่จะค้นหา' });
+  const bc = h('input', { class: 'input', value: String(cur.barcodes || '').split(',')[0].trim(), placeholder: 'บาร์โค้ด (ถ้ามี)' });
+  const note = h('input', { class: 'input', placeholder: 'เพิ่มเติม เช่น รสชาติ ขนาด (ไม่บังคับ)' });
+  const out = h('div');
+  let picked = null, chosen = new Set(), spice = null, addFacts = false, data = null;
+  const draw = () => {
+    if (!data) return;
+    const descs = data.descriptions || [];
+    out.replaceChildren(
+      h('div', { class: 'small', style: { padding: '8px 12px', borderRadius: '12px', background: data.found ? 'var(--ok-soft)' : 'var(--warn-soft)', color: data.found ? 'var(--ok)' : 'var(--warn)', fontWeight: 700 } },
+        (data.found ? '✓ พบข้อมูล: ' : '⚠️ ไม่พบสินค้านี้ตรง ๆ — ข้อมูลด้านล่างเป็นแบบทั่วไป ตรวจก่อนใช้: ') + (data.summary_th || '')),
+      h('div', { class: 'rs-sec' }, h('h4', {}, '📝 เลือกคำอธิบาย (แก้ข้อความได้)'),
+        ...descs.map((d, i) => { const ta = h('textarea', { rows: 2, oninput: () => { d.text = ta.value; } }, d.text);
+          // a click anywhere on the card (the text too) picks it; the radio again un-picks it; no redraw, so typing keeps its place
+          const card = h('div', { class: 'rs-opt' + (picked === i ? ' on' : ''), onclick: (e) => {
+            const off = e.target.type === 'radio' && picked === i;
+            picked = off ? null : i;
+            out.querySelectorAll('.rs-opt').forEach((c, k) => { c.classList.toggle('on', k === picked); c.querySelector('input').checked = k === picked; });
+          } }, h('input', { type: 'radio', name: 'rsdesc', checked: picked === i }), h('div', {}, h('small', {}, d.style), ta));
+          return card; })),
+      (data.highlights || []).length ? h('div', { class: 'rs-sec' }, h('h4', {}, '✅ เลือกสรรพคุณ / จุดเด่น (เลือกได้หลายข้อ)'),
+        h('div', { class: 'rs-chips' }, data.highlights.map((t) => h('span', { class: 'rs-chip' + (chosen.has(t) ? ' on' : ''), onclick: () => { chosen.has(t) ? chosen.delete(t) : chosen.add(t); draw(); } }, (chosen.has(t) ? '✓ ' : '+ ') + t)))) : null,
+      h('div', { class: 'rs-sec' }, h('h4', {}, '🌶️ ความเผ็ดที่แนะนำ'),
+        h('label', { class: 'rs-chip' + (spice !== null ? ' on' : ''), onclick: () => { spice = spice === null ? data.spice_level : null; draw(); } },
+          (spice !== null ? '✓ ' : '+ ') + (data.spice_level ? '🌶️'.repeat(data.spice_level) + ` ระดับ ${data.spice_level}/5` : 'ไม่เผ็ด')),
+        data.spice_reason ? h('div', { class: 'small muted', style: { marginTop: '4px' } }, data.spice_reason) : null),
+      (data.facts || []).length ? h('div', { class: 'rs-sec' }, h('h4', {}, 'ℹ️ ข้อมูลที่พบ'), h('div', { class: 'rs-facts' }, data.facts.flatMap((x) => [h('b', {}, x.label), h('span', {}, x.value)])),
+        h('label', { class: 'switch', style: { marginTop: '6px' } }, h('input', { type: 'checkbox', checked: addFacts, onchange: (e) => { addFacts = e.target.checked; } }), 'ต่อท้ายข้อมูลนี้ในคำอธิบายด้วย')) : null,
+      (data.sources || []).length ? h('div', { class: 'rs-sec rs-src' }, h('h4', {}, '🔗 แหล่งข้อมูล'), data.sources.map((x) => h('a', { href: x.url, target: '_blank', rel: 'noopener' }, x.title))) : null);
+  };
+  const search = async (e) => {
+    const btn = e && e.currentTarget; if (btn) btn.disabled = true;
+    data = null; picked = null; chosen = new Set(); spice = null;
+    out.replaceChildren(h('div', { class: 'rs-load' }, h('div', { class: 'sp' }), h('b', {}, 'กำลังค้นหาข้อมูลจากเว็บ…'), h('span', { class: 'small' }, 'ใช้เวลาประมาณ 20–60 วินาที')));
+    try {
+      data = await api.post('/products/research', { name: q.value, barcode: bc.value, note: note.value, category_id: cur.category_id || null, product_id: p ? p.id : null });
+      picked = (data.descriptions || []).length ? 0 : null;
+      draw();
+    } catch (er) { out.replaceChildren(h('div', { class: 'rs-load' }, h('b', {}, '❌ ' + (er.message || 'ค้นหาไม่สำเร็จ')), h('span', { class: 'small' }, 'แก้ชื่อสินค้าแล้วลองใหม่ได้'))); }
+    finally { if (btn) btn.disabled = false; }
+  };
+  const apply = () => {
+    if (!data) return false;
+    const I = f.inputs;
+    let desc = picked !== null ? data.descriptions[picked].text.trim() : null;
+    if (addFacts && (data.facts || []).length) desc = [desc ?? I.description.value.trim(), data.facts.map((x) => `${x.label}: ${x.value}`).join(' · ')].filter(Boolean).join('\n');
+    if (desc !== null) I.description.value = desc;
+    if (chosen.size) { const have = I.highlights.value.split('\n').map((x) => x.trim()).filter(Boolean); I.highlights.value = [...new Set([...have, ...chosen])].join('\n'); }
+    if (spice !== null) I.spice_level.value = String(spice);
+    if (desc === null && !chosen.size && spice === null) { toast('ยังไม่ได้เลือกอะไร', 'warn'); return false; }
+    toast('ใส่ข้อมูลในฟอร์มแล้ว — ตรวจแล้วกด "บันทึก"', 'ok', 4000);
+  };
+  modal('🔍 ค้นหาข้อมูลสินค้า', h('div', {}, h('style', {}, RESEARCH_CSS),
+    h('div', { class: 'form-grid' }, h('label', { class: 'field', style: { gridColumn: '1 / -1' } }, 'ค้นหา', q), h('label', { class: 'field' }, 'บาร์โค้ด', bc), h('label', { class: 'field' }, 'หมายเหตุ', note)),
+    h('button', { class: 'btn primary', style: { marginTop: '8px' }, onclick: search }, '🔍 ค้นหา'), out),
+  { wide: true, actions: [{ label: 'ยกเลิก', onClick: () => {} }, { label: '✓ ใช้ข้อมูลที่เลือก', class: 'primary', onClick: apply }] });
+  if (q.value || bc.value) search();
+}
 // delete menu items (asks first); sold items stay in old bills and reports, everything else is removed for good
 async function deleteProducts(ids, cat, reload) {
   const names = ids.map((id) => (cat.products.find((p) => p.id === id) || {}).name).filter(Boolean);
@@ -241,6 +318,9 @@ function productDialog(p, cat, ingredients, reload) {
     { k: 'active', label: 'เปิดขาย', type: 'bool' }, { k: 'sold_out', label: 'สินค้าหมด', type: 'bool' }, { k: 'mobile', label: 'แสดงใน Mobile Ordering', type: 'bool' },
       { k: 'big_options', label: '✨ Add-on พิเศษ: ตัวเลือกปุ่มใหญ่ กดง่าย (หน้าขาย POS)', type: 'bool' }, { k: 'sort', label: 'ลำดับแสดง', type: 'number' },
   ], v);
+  // "ค้นหาข้อมูลสินค้านี้": right under the description box
+  const descLabel = f.inputs.description && f.inputs.description.parentElement;
+  if (descLabel) descLabel.append(h('button', { type: 'button', class: 'btn sm', style: { marginTop: '6px', alignSelf: 'flex-start' }, onclick: () => researchDialog(f, p) }, '🔍 ค้นหาข้อมูลสินค้านี้ (คำอธิบาย สรรพคุณ ความเผ็ด)'));
   const recipe = (p && p.recipe ? p.recipe : []).map((r) => ({ ...r }));
   const rbox = h('div');
   const drawRecipe = () => rbox.replaceChildren(h('h4', {}, 'สูตรวัตถุดิบ (ตัดสต็อกตามสูตรเมื่อขาย)'), ...recipe.map((r, i) => {

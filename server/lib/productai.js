@@ -77,6 +77,86 @@ export async function identifyWithClaude({ apiKey, imageBase64, mediaType, text,
   try { return JSON.parse(block.text); } catch { throw new AiError('อ่านคำตอบของ AI ไม่ได้ — ลองใหม่'); }
 }
 
+// ---------- product info search: Claude searches the web, then writes options the admin picks from ----------
+// Two calls: web search adds citations, which can't be combined with a JSON output format in the same request.
+const INFO_SCHEMA = {
+  type: 'object',
+  properties: {
+    found: { type: 'boolean', description: 'true when the research identified this specific product' },
+    summary_th: { type: 'string', description: 'one Thai sentence: what this product is (brand, line, flavor, size)' },
+    descriptions: { type: 'array', description: '4 Thai product descriptions in different styles for the shop to choose from', items: { type: 'object', properties: {
+      style: { type: 'string', description: 'style name in Thai, e.g. สั้นกระชับ, ชวนกิน, ให้ข้อมูล, สำหรับจอลูกค้า' }, text: { type: 'string', description: 'the description, 1-3 sentences, Thai' } }, required: ['style', 'text'], additionalProperties: false } },
+    highlights: { type: 'array', items: { type: 'string' }, description: '6-10 short Thai selling points / features (one line each, under 40 characters), only things supported by the research' },
+    spice_level: { type: 'integer', description: 'spiciness 0 (not spicy) to 5 (extremely spicy) for this product as sold' },
+    spice_reason: { type: 'string', description: 'short Thai reason for the spice level, e.g. Scoville rating or how the brand labels it; empty if not spicy' },
+    facts: { type: 'array', description: 'useful facts found: brand, country, net weight, main ingredients, allergens, calories, halal, how to cook', items: { type: 'object', properties: {
+      label: { type: 'string', description: 'Thai label' }, value: { type: 'string', description: 'Thai value' } }, required: ['label', 'value'], additionalProperties: false } },
+  },
+  required: ['found', 'summary_th', 'descriptions', 'highlights', 'spice_level', 'spice_reason', 'facts'],
+  additionalProperties: false,
+};
+const aiError = (e) => {
+  if (e instanceof Anthropic.AuthenticationError) return new AiError('API Key ของ Claude ไม่ถูกต้อง — ตรวจสอบที่ ตั้งค่า AI');
+  if (e instanceof Anthropic.PermissionDeniedError) return new AiError('API Key นี้ไม่มีสิทธิ์ใช้งานโมเดลหรือการค้นหาเว็บ');
+  if (e instanceof Anthropic.RateLimitError) return new AiError('ใช้งาน AI ถี่เกินไป — รอสักครู่แล้วลองใหม่');
+  if (e instanceof Anthropic.BadRequestError) return new AiError('AI รับคำขอนี้ไม่ได้: ' + e.message);
+  if (e instanceof Anthropic.APIConnectionError) return new AiError('เชื่อมต่อ AI ไม่ได้ — ตรวจสอบอินเทอร์เน็ตของเซิร์ฟเวอร์');
+  if (e instanceof Anthropic.APIError) return new AiError(`AI ขัดข้อง (${e.status}) — ลองใหม่อีกครั้ง`);
+  return e;
+};
+export async function researchProduct({ apiKey, name, barcode = '', note = '', category = '', barcodeInfo = '' }) {
+  const client = new Anthropic({ apiKey, baseURL: process.env.ANTHROPIC_BASE_URL || undefined, timeout: 180000, maxRetries: 1 });
+  const ask = [
+    'A Korean ramyeon shop in Thailand wants accurate information about a product on its menu, to write the product description, selling points and spice level shown to customers.',
+    `Product name in the shop: ${name}`, barcode ? `Barcode: ${barcode}` : '', category ? `Shop category: ${category}` : '', note ? `Staff note: ${note}` : '', barcodeInfo ? `Barcode database result: ${barcodeInfo}` : '',
+    'Search the web (official brand pages, retailers, reviews) for this exact product. Collect: what it is, flavor, how spicy (Scoville if known), net weight, main ingredients, allergens, country of origin, notable features, and how people describe it.',
+    'Write your findings as notes in Thai. Say plainly what you could not confirm. Do not invent facts.',
+  ].filter(Boolean).join('\n');
+  // 1) research with web search (resume when the server-side loop pauses)
+  const messages = [{ role: 'user', content: ask }];
+  const sources = new Map();
+  let notes = '';
+  try {
+    for (let turn = 0; turn < 4; turn++) {
+      const res = await client.beta.messages.create({
+        model: AI_MODEL, max_tokens: 16000,
+        betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
+        output_config: { effort: 'medium' },
+        tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 6, user_location: { type: 'approximate', country: 'TH', timezone: 'Asia/Bangkok' } }],
+        messages,
+      });
+      if (res.stop_reason === 'refusal') throw new AiError('AI ค้นหาข้อมูลสินค้านี้ไม่ได้ — ลองแก้ชื่อสินค้าแล้วค้นใหม่');
+      for (const b of res.content) {
+        if (b.type === 'web_search_tool_result' && Array.isArray(b.content)) for (const x of b.content) if (x.type === 'web_search_result' && x.url && !sources.has(x.url)) sources.set(x.url, { title: x.title || x.url, url: x.url });
+        if (b.type === 'text') notes += b.text;
+      }
+      if (res.stop_reason !== 'pause_turn') break;
+      messages.push({ role: 'assistant', content: res.content }); // the server resumes the search where it stopped
+    }
+  } catch (e) { throw aiError(e); }
+  if (!notes.trim()) throw new AiError('AI ไม่ได้ส่งผลการค้นหากลับมา — ลองใหม่');
+  // 2) options in a fixed shape
+  let res;
+  try {
+    res = await client.beta.messages.create({
+      model: AI_MODEL, max_tokens: 8000,
+      betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
+      output_config: { effort: 'low', format: { type: 'json_schema', schema: INFO_SCHEMA } },
+      messages: [{ role: 'user', content: [
+        `Product in the shop: ${name}${barcode ? ` (barcode ${barcode})` : ''}`,
+        'Research notes from a web search:', notes.slice(0, 20000),
+        'From these notes only, write options for the shop: 4 Thai descriptions in different styles (natural Thai a Thai shop would print on a menu, no prices, no made-up claims), 6-10 short Thai selling points, the spice level 0-5 with a reason, and the facts found. If the notes say the product could not be found, set found to false and keep the options generic to the kind of product.',
+      ].join('\n') }],
+    });
+  } catch (e) { throw aiError(e); }
+  if (res.stop_reason === 'refusal') throw new AiError('AI เขียนข้อมูลสินค้านี้ไม่ได้ — ลองใหม่');
+  const block = res.content.find((b) => b.type === 'text');
+  let out;
+  try { out = JSON.parse(block && block.text); } catch { throw new AiError('อ่านคำตอบของ AI ไม่ได้ — ลองใหม่'); }
+  out.spice_level = Math.max(0, Math.min(5, Math.round(Number(out.spice_level) || 0)));
+  return { ...out, sources: [...sources.values()].slice(0, 8) };
+}
+
 // ---------- image sources ----------
 async function getJson(url, { headers = {}, method = 'GET', body, ms = 8000 } = {}) {
   const ctl = new AbortController();

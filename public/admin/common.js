@@ -30,6 +30,7 @@ export function form(fields, value = {}) {
     inputs[f.k] = inp;
     return h('label', { class: 'field', style: f.wide ? { gridColumn: '1 / -1' } : {} }, f.label, inp, f.hint ? h('span', { class: 'hint' }, f.hint) : null);
   }));
+  el.inputs = inputs; // to fill fields from code (e.g. the product info search)
   el.value = () => Object.fromEntries(fields.map((f) => {
     const i = inputs[f.k];
     if (f.type === 'bool') return [f.k, i.checked];

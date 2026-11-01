@@ -5,7 +5,7 @@ import { enqueue, publicPrinter } from '../lib/print.js';
 import { STOCK_REPORT } from '../lib/templates.js';
 import { adjustStock } from '../lib/stock.js';
 import { lookupBarcode, suggestCategory, fetchImage } from '../lib/productlookup.js';
-import { aiKeys, identifyWithClaude, findImages, basicNames, mineNames, nameVariants, AiError, AI_MODEL } from '../lib/productai.js';
+import { aiKeys, identifyWithClaude, researchProduct, findImages, basicNames, mineNames, nameVariants, AiError, AI_MODEL } from '../lib/productai.js';
 import { saveFile } from './system.js';
 import { labelCfg, labelRowDots } from '../../public/shared/labels.js';
 import { isEan13, ean13Check } from '../../public/shared/core.js';
@@ -351,6 +351,24 @@ r.post('/products/lookup', staffAuth('manage_menu'), ah(async (req, res) => {
   const cats = await db.all('SELECT id, name FROM categories WHERE active = 1 ORDER BY sort, name');
   const taken = await db.get('SELECT id FROM products WHERE code = ?', [code]);
   res.json({ barcode: code, ...info, suggested_category_id: info.found ? suggestCategory(info, cats) : null, suggested_code: taken ? '' : code });
+}));
+// "ค้นหาข้อมูลสินค้านี้" in the product form: web search → description / highlights / spice options to pick from
+r.post('/products/research', staffAuth('manage_menu'), ah(async (req, res) => {
+  rateLimit('research:' + req.staff.id, 20, 600000);
+  const b = req.body || {};
+  const name = String(b.name || '').trim().slice(0, 200);
+  const barcode = /^[0-9A-Za-z-]{4,32}$/.test(String(b.barcode || '').trim()) ? String(b.barcode).trim() : '';
+  if (!name && !barcode) throw bad('ใส่ชื่อสินค้าก่อนค้นหา');
+  const keys = await aiKeys();
+  if (!keys.anthropic) throw bad('ยังไม่ได้ตั้ง API Key ของ Claude — ใส่ได้ที่ จัดการร้าน → ผู้ช่วยเพิ่มสินค้า → ตั้งค่า AI');
+  let barcodeInfo = '';
+  if (barcode) { const info = await lookupBarcode(barcode).catch(() => null); if (info && info.found) barcodeInfo = [...(info.names || []), info.brand, info.quantity].filter(Boolean).join(' / ').slice(0, 400); }
+  const cat = b.category_id ? await db.get('SELECT name FROM categories WHERE id = ?', [String(b.category_id)]) : null;
+  try {
+    const out = await researchProduct({ apiKey: keys.anthropic, name: name || barcode, barcode, note: String(b.note || '').slice(0, 300), category: cat ? cat.name : '', barcodeInfo });
+    await audit(req.staff.id, 'product_research', 'product', b.product_id || null, null, { name, found: out.found });
+    res.json(out);
+  } catch (e) { if (e instanceof AiError) throw bad(e.message); throw e; }
 }));
 r.post('/products/import-image', staffAuth('manage_menu'), ah(async (req, res) => {
   let img;
