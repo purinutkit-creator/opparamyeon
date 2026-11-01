@@ -45,6 +45,7 @@ async function boot() {
   try { await api.get('/display/me'); } catch (e) { if (e.status === 403) { store.del('display_token'); return pairing(); } }
   applyTheme(); renderAll();
   sock = await socket({ kind: 'display', token: store.get('display_token') });
+  startPrinting().catch((e) => console.warn('[display print]', e.message)); // a printer linked to this machine prints its jobs here
   sock.on('connect', () => { net(true); checkVersion(); });
   setInterval(checkVersion, 3 * 60e3);
   sock.on('disconnect', () => net(false));
@@ -68,19 +69,69 @@ async function checkVersion() {
   } catch { /* offline */ }
 }
 // 7 quick taps anywhere (not on a button/keypad) → ask, then leave the pairing and go back to the pairing code
-let taps = [], tapHint = null, tapHintTimer = null;
+let taps = [], tapHint = null, tapHintTimer = null, tapDecide = null;
+// quick taps anywhere (not on a button/keypad): when they stop, 10+ = this display's settings (printer), 7–9 = leave the pairing
 function tapToLeave(e) {
-  if (preview || !store.get('display_token') || prompt || document.querySelector('.leave-ask')) return;
-  if (e.target.closest('button, input, a, .keypad, .overlay')) return;
+  if (preview || !store.get('display_token') || prompt || document.querySelector('.leave-ask, .dset')) return;
+  if (e.target.closest('button, input, a, select, .keypad, .overlay')) return;
   const t = Date.now();
-  taps = taps.filter((x) => t - x < 3000); taps.push(t);
-  const left = 7 - taps.length;
-  if (left <= 0) { taps = []; hideTapHint(); return askLeave(); }
-  if (taps.length >= 4) {
+  taps = taps.filter((x) => t - x < 4000); taps.push(t);
+  const n = taps.length;
+  clearTimeout(tapDecide);
+  if (n >= 10) { taps = []; hideTapHint(); return openSettings(); }
+  if (n >= 4) {
     if (!tapHint) { tapHint = h('div', { class: 'tap-hint' }); document.body.append(tapHint); }
-    tapHint.textContent = `แตะอีก ${left} ครั้ง เพื่อออกจากการเชื่อมต่อ`;
-    clearTimeout(tapHintTimer); tapHintTimer = setTimeout(() => { taps = []; hideTapHint(); }, 3000);
+    tapHint.textContent = n < 7 ? `แตะต่อ: 7 ครั้ง = ออกจากการเชื่อมต่อ · 10 ครั้ง = ตั้งค่าเครื่องนี้ (${n})` : `แตะอีก ${10 - n} ครั้ง = ตั้งค่าเครื่องนี้ · หยุดแตะ = ออกจากการเชื่อมต่อ`;
+    clearTimeout(tapHintTimer); tapHintTimer = setTimeout(() => { taps = []; hideTapHint(); }, 4000);
   }
+  // stopped tapping at 7–9 → ask to leave
+  tapDecide = setTimeout(() => { if (taps.length >= 7 && taps.length < 10) { taps = []; hideTapHint(); askLeave(); } }, 900);
+}
+// ---------- this display's own settings (10 taps): a printer beside the customer display prints here ----------
+let host = null;
+const hostId = async () => { try { return 'display:' + (await api.get('/display/me')).pairing_id; } catch { return 'display'; } };
+async function startPrinting() {
+  if (host || preview) return;
+  const P = await import('/shared/printers.js');
+  const printers = await api.get('/printers').catch(() => []);
+  if (!printers.some((p) => p.active && P.isLinkedHere(p.id))) return; // nothing linked to this machine
+  host = new P.PrintHost({ api, sock, terminalId: await hostId(), settings: { sound: { enabled: false, docs: 'none', on: 'printed' } }, device: 'display', onChange: () => { if ($('.dset')) drawSettings(); } });
+  await host.start();
+}
+let drawSettings = () => {};
+async function openSettings() {
+  if ($('.dset')) return;
+  const P = await import('/shared/printers.js');
+  const sup = P.support();
+  const list = h('div', { class: 'dset-list' });
+  const logBox = h('div', { class: 'dset-log' });
+  let printers = [];
+  drawSettings = () => {
+    list.replaceChildren(...(printers.length ? printers.filter((p) => p.active).map((p) => {
+      const here = P.isLinkedHere(p.id), link = P.linkOf(p.id);
+      return h('div', { class: 'dset-pr' + (here ? ' on' : '') },
+        h('div', {}, h('b', {}, p.name), h('small', {}, `${p.paper || 80} มม. · ${(p.roles || []).join(', ') || '-'}${here ? ` · ✓ เชื่อมกับเครื่องนี้ (${(link && (link.name || link.conn)) || ''})` : ''}`)),
+        h('div', { class: 'dset-btns' },
+          here ? h('button', { onclick: async () => { try { await P.testPrint(p); say('🖨 ส่งพิมพ์ทดสอบแล้ว'); } catch (e) { say('❌ ' + e.message); } } }, 'พิมพ์ทดสอบ') : null,
+          here ? h('button', { onclick: () => { P.unpairPrinter(p.id); drawSettings(); say('ยกเลิกการเชื่อมแล้ว'); } }, 'ยกเลิกการเชื่อม')
+            : h('button', { class: 'pri', onclick: async () => { try { await P.pairPrinter(p); say(`✓ เชื่อม ${p.name} กับเครื่องนี้แล้ว`); drawSettings(); host = null; startPrinting(); } catch (e) { say('❌ ' + e.message); } } }, '🔗 เชื่อมกับเครื่องนี้')));
+    }) : [h('div', { class: 'dset-empty' }, 'ยังไม่มีเครื่องพิมพ์ในระบบ — เพิ่มที่ จัดการร้าน → เครื่องพิมพ์')]));
+    logBox.replaceChildren(...((host && host.log) || []).slice(0, 6).map((l) => h('div', {}, `${l.at.toLocaleTimeString('th-TH')} · ${l.printer} · ${l.doc} · ${l.status === 'printed' || l.status === 'sent' ? '✓' : '✗ ' + (l.note || l.status)}`)));
+  };
+  const note = h('div', { class: 'dset-say' });
+  const say = (t) => { note.textContent = t; };
+  const close = () => { box.remove(); };
+  const box = h('div', { class: 'dset' }, h('div', { class: 'dset-card' },
+    h('div', { class: 'dset-head' }, h('h2', {}, '⚙️ ตั้งค่าเครื่องจอลูกค้า'), h('button', { class: 'dset-x', onclick: close }, '✕')),
+    h('h3', {}, '🖨 เครื่องพิมพ์ที่ต่อกับเครื่องนี้'),
+    h('p', { class: 'dset-hint' }, 'เชื่อมเครื่องพิมพ์ที่เสียบ/จับคู่อยู่กับเครื่องจอลูกค้านี้ แล้วงานพิมพ์ของเครื่องพิมพ์นั้นจะพิมพ์ออกที่นี่ (เปิดหน้าจอลูกค้าค้างไว้) · ' +
+      `รองรับ: ${[sup.usb && 'USB', sup.serial && 'Serial', sup.bluetooth && 'Bluetooth', sup.bridge && 'แอป Android'].filter(Boolean).join(' / ') || 'ผ่านโปรแกรมช่วยพิมพ์ (agent) เท่านั้น'}`),
+    list, note, h('h3', {}, 'งานพิมพ์ล่าสุด'), logBox,
+    h('div', { class: 'dset-foot' }, h('span', {}, `จอลูกค้า v${VERSION}`), h('button', { onclick: () => location.reload() }, '⟳ โหลดใหม่'), h('button', { class: 'bad', onclick: () => { close(); askLeave(); } }, '🔌 ออกจากการเชื่อมต่อ'))));
+  document.body.append(box);
+  say('กำลังโหลดรายชื่อเครื่องพิมพ์…');
+  try { printers = await api.get('/printers'); say(''); } catch (e) { say('❌ โหลดรายชื่อเครื่องพิมพ์ไม่ได้: ' + e.message); }
+  drawSettings();
 }
 function hideTapHint() { clearTimeout(tapHintTimer); if (tapHint) { tapHint.remove(); tapHint = null; } }
 function askLeave() {
@@ -181,7 +232,8 @@ const spiceRow = (n, delay = 0.35) => h('div', { class: 'sc-spice' + (n ? '' : '
   h('b', {}, spiceWord(n) + (n ? ` ${n}/5` : '')));
 // the item just added: a big card on the left side (picture, price, description, spice) until the next one
 function renderLatest() {
-  const lt = state.phase === 'cart' && state.latest ? state.latest : null;
+  const lt = state.phase === 'cart' && state.latest && settings.display.latest_card !== false ? state.latest : null;
+  const details = settings.display.product_details !== false;
   const host = $('.disp.active .promo');
   const old = $('#latestcard');
   if (!lt || !host) { if (old && !old.classList.contains('out')) { old.classList.add('out'); setTimeout(() => old.remove(), 400); } latestAt = 0; return; }
@@ -194,15 +246,15 @@ function renderLatest() {
       h('h2', {}, lt.name),
       lt.options && lt.options.length ? h('div', { class: 'lc-opts' }, lt.options.map((o) => h('span', {}, o))) : null,
       h('div', { class: 'sc-price' }, baht(lt.price), h('small', {}, ' ฿')),
-      originRow(lt.country),
-      spiceRow(lt.spice),
-      lt.description ? h('p', { class: 'sc-desc' }, lt.description) : null,
-      lt.highlights && lt.highlights.length ? h('ul', { class: 'sc-hl' }, lt.highlights.map((x, i) => h('li', { style: `animation-delay:${0.4 + i * 0.1}s` }, h('b', {}, '✓'), x))) : null)));
+      details ? originRow(lt.country) : null,
+      details ? spiceRow(lt.spice) : null,
+      details && lt.description ? h('p', { class: 'sc-desc' }, lt.description) : null,
+      details && lt.highlights && lt.highlights.length ? h('ul', { class: 'sc-hl' }, lt.highlights.map((x, i) => h('li', { style: `animation-delay:${0.4 + i * 0.1}s` }, h('b', {}, '✓'), x))) : null)));
   host.append(el);
 }
 // 👁 on the POS: the product's details as a full-screen popup over the whole display (closes by itself)
 function renderShowcase() {
-  const sc = state.showcase && state.phase !== 'pay' && state.phase !== 'done' && Date.now() - state.showcase.at < 15000 ? state.showcase : null;
+  const sc = state.showcase && settings.display.product_details !== false && state.phase !== 'pay' && state.phase !== 'done' && Date.now() - state.showcase.at < 15000 ? state.showcase : null;
   const old = $('#showcase');
   if (!sc) { if (old && !old.classList.contains('out')) { old.classList.add('out'); setTimeout(() => old.remove(), 450); } return; }
   if (old && sc.at === showcaseAt) return;

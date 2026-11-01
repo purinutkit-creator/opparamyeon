@@ -486,6 +486,19 @@
   .it .p .q { min-width: 0; height: auto; padding: .3em .8em; border-radius: 99px; font-style: normal; font-size: clamp(12px, 2.3vh, 26px); line-height: 1.1; box-shadow: none; }
   .it.new .th { animation: thin .6s cubic-bezier(.2,1.4,.4,1) both; }
   @keyframes thin { from { transform: scale(.4) rotate(-12deg); opacity: 0; } }
+  /* 10 quick taps → this display's settings */
+  .dset { position: fixed; inset: 0; z-index: 96; display: grid; place-items: center; background: rgb(0 0 0 / .65); animation: m-fade .25s ease-out; }
+  .dset-card { width: min(94vw, 760px); max-height: 92vh; overflow: auto; padding: 22px 24px; border-radius: 22px; background: #fff; color: #1d1410; display: grid; gap: 10px; font-size: 16px; }
+  .dset-head { display: flex; align-items: center; justify-content: space-between; } .dset-head h2 { margin: 0; font-family: var(--hf); }
+  .dset h3 { margin: 8px 0 0; font-size: 1.05em; } .dset-hint { margin: 0; color: #6b5a52; font-size: .92em; }
+  .dset button { font: inherit; font-weight: 700; padding: 10px 14px; border-radius: 12px; border: 1px solid #e6dcd6; background: #f6f0ec; cursor: pointer; color: inherit; }
+  .dset button.pri { background: #e23a1f; color: #fff; border-color: #e23a1f; } .dset button.bad { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
+  .dset-x { width: 44px; height: 44px; padding: 0 !important; }
+  .dset-list { display: grid; gap: 8px; } .dset-pr { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 12px 14px; border-radius: 14px; border: 1px solid #eee3dc; }
+  .dset-pr.on { border-color: #16a34a; background: #f0fdf4; } .dset-pr small { display: block; color: #6b5a52; }
+  .dset-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; } .dset-say { min-height: 1.2em; font-weight: 700; color: #0f766e; }
+  .dset-log { font-size: .85em; color: #6b5a52; display: grid; gap: 2px; } .dset-empty { color: #6b5a52; }
+  .dset-foot { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 8px; } .dset-foot span { margin-right: auto; color: #9a8a82; font-size: .85em; }
   /* 7 quick taps → leave the pairing */
   .tap-hint { position: fixed; left: 50%; bottom: 5vh; transform: translateX(-50%); z-index: 90; padding: .7em 1.4em; border-radius: 99px; background: rgb(0 0 0 / .78); color: #fff;
     font-weight: 800; font-size: clamp(14px, 2.4vh, 26px); pointer-events: none; animation: m-fade .2s ease-out; }

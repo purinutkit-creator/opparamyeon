@@ -132,6 +132,7 @@ export async function createApp(opts = {}) {
         const p = await displayFromToken(a.token);
         if (!p) { sock.emit('display:revoked', {}); return sock.disconnect(true); }
         sock.join('display:' + p.terminal_id); sock.join('display'); sock.join('displaytoken:' + p.id);
+        sock.on('print:watch', (ids) => { for (const pid of [].concat(ids || []).slice(0, 20)) sock.join('print:' + pid); }); // a printer beside the display
         const st = lastCart.get(p.terminal_id);
         if (st) sock.emit('display:state', st);
         const open = await db.get("SELECT * FROM member_prompts WHERE terminal_id = ? AND status = 'open' AND expires_at > ?", [p.terminal_id, now()]);

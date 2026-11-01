@@ -128,6 +128,7 @@ export async function displayPage() {
   const f = form([{ k: 'layout', label: 'รูปแบบขณะขาย', type: 'select', options: [['split', 'แบ่งพื้นที่ โปรโมชั่น + รายการสินค้า'], ['full', 'เต็มจอรายการสินค้า']] },
     { k: 'fit', label: 'สัดส่วนภาพ', type: 'select', options: [['cover', 'เต็มพื้นที่ (ครอบตัด)'], ['contain', 'แสดงทั้งภาพ']] }, { k: 'image_seconds', label: 'เวลาแสดงรูป (วินาที)', type: 'number' },
     { k: 'video_muted', label: 'ปิดเสียงวิดีโอ', type: 'bool' }, { k: 'video_volume', label: 'ระดับเสียงวิดีโอ (0-1)', type: 'number', step: '0.1' }, { k: 'show_qr', label: 'แสดง QR ชำระเงิน', type: 'bool' },
+    { k: 'latest_card', label: '🆕 การ์ดสินค้าที่เพิ่มล่าสุด (ฝั่งซ้ายตอนแบ่งครึ่งจอ)', type: 'bool' }, { k: 'product_details', label: '📝 แสดงรายละเอียดสินค้า (คำอธิบาย สรรพคุณ ความเผ็ด ประเทศ และป๊อปอัป 👁)', type: 'bool' },
     { k: 'bg', label: 'สีพื้นหลัง', type: 'color' }, { k: 'color', label: 'สีตัวอักษร', type: 'color' }, { k: 'accent', label: 'สีเน้น', type: 'color' }, { k: 'logo', label: 'โลโก้', type: 'image' },
     { k: 'welcome', label: 'ข้อความต้อนรับ', wide: true }, { k: 'thanks', label: 'ข้อความขอบคุณ', wide: true }, { k: 'pairing_minutes', label: 'รหัสจับคู่หมดอายุ (นาที)', type: 'number' },
     { k: 'member_prompt_seconds', label: 'หน้ากรอกสมาชิกปิดอัตโนมัติ (วินาที)', type: 'number' }], d);

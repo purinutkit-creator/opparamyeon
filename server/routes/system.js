@@ -127,7 +127,17 @@ r.get('/qr-matrix', ah(async (req, res) => {
 }));
 
 // ---------- printers ----------
-r.get('/printers', staffAuth(), ah(async (req, res) => res.json((await db.all('SELECT * FROM printers ORDER BY name')).map(publicPrinter))));
+// a customer display with a printer beside it: its display key may list printers and print their jobs (nothing else)
+const staffOrDisplay = () => async (req, res, next) => {
+  const tok = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const { displayFromToken } = await import('./display.js');
+  const d = tok ? await displayFromToken(tok).catch(() => null) : null;
+  if (!d) return staffAuth()(req, res, next);
+  req.staff = { id: 'display:' + d.id, name: 'จอลูกค้า', perms: [], display: true };
+  req.terminalId = 'display:' + d.id;
+  next();
+};
+r.get('/printers', staffOrDisplay(), ah(async (req, res) => res.json((await db.all('SELECT * FROM printers ORDER BY name')).map(publicPrinter))));
 const PR = ['name', 'conn', 'address', 'port', 'paper', 'margin', 'copies', 'roles', 'station_ids', 'cut_mode', 'feed_before', 'feed_after', 'buzzer', 'beep_count', 'render',
   'host_terminal_id', 'templates', 'can_confirm', 'active', 'options'];
 function normPrinter(b, cur = {}) {
@@ -167,19 +177,19 @@ r.delete('/printers/:id', staffAuth('manage_printers'), ah(async (req, res) => {
   res.json({ ok: true });
 }));
 // device reports the printer connection status (real hardware check happens on the device)
-r.post('/printers/:id/status', staffAuth(), ah(async (req, res) => {
+r.post('/printers/:id/status', staffOrDisplay(), ah(async (req, res) => {
   await db.run('UPDATE printers SET status = ?, status_at = ? WHERE id = ?', [String(req.body.status || '').slice(0, 200), now(), req.params.id]);
   emit('admin', 'print:changed', {});
   res.json({ ok: true });
 }));
 
 // ---------- print jobs ----------
-r.post('/print/claim', staffAuth(), ah(async (req, res) => {
+r.post('/print/claim', staffOrDisplay(), ah(async (req, res) => {
   const p = await db.get('SELECT * FROM printers WHERE id = ? AND active = 1', [req.body.printer_id]);
   if (!p) throw notFound('ไม่พบเครื่องพิมพ์');
   res.json(await claimNext(p.id, req.body.host || req.terminalId || req.staff.id));
 }));
-r.post('/print/jobs/:id/report', staffAuth(), ah(async (req, res) => res.json(await report(req.params.id, req.terminalId, req.body.status, req.body.error))));
+r.post('/print/jobs/:id/report', staffOrDisplay(), ah(async (req, res) => res.json(await report(req.params.id, req.terminalId, req.body.status, req.body.error))));
 r.post('/print/jobs/:id/retry', staffAuth('reprint'), ah(async (req, res) => { await retry(req.params.id); await audit(req.staff.id, 'print_retry', 'print_job', req.params.id); res.json({ ok: true }); }));
 r.post('/print/jobs/:id/reprint', staffAuth('reprint'), ah(async (req, res) => res.json({ id: await reprint(req.params.id, req.staff.id) })));
 r.post('/print/jobs/:id/cancel', staffAuth('reprint'), ah(async (req, res) => {

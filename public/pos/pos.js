@@ -690,7 +690,7 @@ function renderGrid() {
     onclick: (e) => { rememberTap(e.currentTarget); pickProduct(p); }, oncontextmenu: (e) => { e.preventDefault(); soldOutToggle(p); } },
     h('div', { class: 'img' + (p.image ? '' : ' noimg'), style: p.image ? { backgroundImage: `url(${p.image})` } : {} }, p.image ? null : h('img', { src: '/assets/bowl.svg', alt: '' }),
       inCart.get(p.id) ? h('span', { class: 'incart' }, '×' + inCart.get(p.id)) : null,
-      h('span', { class: 'eye' + (st.showcase && st.showcase.id === p.id ? ' on' : ''), title: 'โชว์รายละเอียดสินค้านี้บนจอลูกค้า', onclick: (e) => { e.stopPropagation(); showcase(p, true); } }, '👁'), p.sold_out ? h('span', { class: 'soldout' }, 'หมด')
+      st.settings.display && st.settings.display.product_details === false ? null : h('span', { class: 'eye' + (st.showcase && st.showcase.id === p.id ? ' on' : ''), title: 'โชว์รายละเอียดสินค้านี้บนจอลูกค้า', onclick: (e) => { e.stopPropagation(); showcase(p, true); } }, '👁'), p.sold_out ? h('span', { class: 'soldout' }, 'หมด')
         : p.track_stock && Number(p.stock) <= Number(p.low_stock || 0) ? h('span', { class: 'lowleft' }, `เหลือ ${Math.max(0, Math.round(p.stock * 100) / 100)}`) : null),
     h('div', { class: 'nm' }, p.name),
     h('div', { class: 'pr' }, h('span', { class: 'price' }, baht(p.price) + ' ฿'), p.bowl_count ? h('span', { class: 'unit' }, `${p.bowl_count} ${U()}`) : null, h('span', { class: 'plus' }, '+')))) : [h('div', { class: 'empty' }, 'ไม่พบสินค้า')]));
@@ -728,6 +728,7 @@ function noteLatest(p, l) {
     options: l ? (renamedLine(l.name, l.options || [], 'everywhere').options || []).map((o) => displayOption(o)).slice(0, 6) : [], country: countryOf(p), at: Date.now() };
 }
 function showcase(p, manual = false) {
+  if (st.settings.display && st.settings.display.product_details === false) return; // the shop turned product details off
   if (manual && st.showcase && st.showcase.id === p.id) { st.showcase = null; pushDisplay(); renderMenu(); return toast('ซ่อนรายละเอียดบนจอลูกค้าแล้ว', 'info', 1500); }
   st.showcase = { id: p.id, name: p.name, image: p.image || '', price: p.price, description: p.description || '', spice: Number(p.spice_level) || 0,
     highlights: String(p.highlights || '').split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 6), country: countryOf(p), at: Date.now() };
