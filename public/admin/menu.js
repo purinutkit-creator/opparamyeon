@@ -44,12 +44,13 @@ function cameraDialog(onPhoto) {
 // ---------------- menu ----------------
 export async function menuPage(set) {
   const cat = await api.get('/catalog?all=1');
+  SPICE.words = (await fetch('/api/settings/public').then((r) => r.json()).catch(() => ({}))).spice_words || SPICE.words;
   const ingredients = can('manage_stock') || can('manage_menu') ? await api.get('/ingredients') : [];
   let tab = 'products', filter = '', stFilter = '';
   const box = h('div');
   const reload = async () => { Object.assign(cat, await api.get('/catalog?all=1')); draw(); };
   const draw = () => {
-    const tabs = h('div', { class: 'tabs', style: { marginBottom: '1em' } }, [['products', 'สินค้า/เมนู'], ['categories', 'หมวดหมู่'], ['countries', '🌏 ประเทศ'], ['options', 'ตัวเลือก/ท็อปปิ้ง'], ['ingredients', 'วัตถุดิบ'], ['stations', 'จุดครัวและการแบ่งใบ'], ['import', '📥 นำเข้าจาก Google Sheet']].map(([k, t]) =>
+    const tabs = h('div', { class: 'tabs', style: { marginBottom: '1em' } }, [['products', 'สินค้า/เมนู'], ['categories', 'หมวดหมู่'], ['countries', '🌏 ประเทศ'], ['spice', '🌶️ ระดับความเผ็ด'], ['options', 'ตัวเลือก/ท็อปปิ้ง'], ['ingredients', 'วัตถุดิบ'], ['stations', 'จุดครัวและการแบ่งใบ'], ['import', '📥 นำเข้าจาก Google Sheet']].map(([k, t]) =>
       h('button', { class: 'tab' + (tab === k ? ' active' : ''), onclick: () => { tab = k; draw(); } }, t)));
     let body;
     if (tab === 'products') {
@@ -87,6 +88,8 @@ export async function menuPage(set) {
         h('button', { class: 'btn', onclick: () => sortDialog(cat, reload) }, '↕ จัดเรียงลำดับ'), stBulk, delBtn), list);
     } else if (tab === 'import') {
       body = importBox(reload);
+    } else if (tab === 'spice') {
+      body = spiceTab();
     } else if (tab === 'countries') {
       body = countriesTab(cat, reload);
     } else if (tab === 'categories') {
@@ -313,6 +316,19 @@ async function researchDialog(f, p) {
   { wide: true, actions: [{ label: 'ยกเลิก', onClick: () => {} }, { label: '✓ ใช้ข้อมูลที่เลือก', class: 'primary', onClick: apply }] });
   if ((q.value || bc.value) && has(engine)) search();
 }
+// ---------- 🌶️ what each number of chilies is called (customer display, website, product form) ----------
+const SPICE = { words: ['ไม่เผ็ด', 'เผ็ดน้อย', 'เผ็ดปานกลาง', 'เผ็ดมาก', 'เผ็ดมากๆ', 'เผ็ดที่สุด'] };
+function spiceTab() {
+  const ins = SPICE.words.map((w) => h('input', { class: 'input', value: w, maxlength: 30 }));
+  const chili = (n) => h('span', { style: { fontSize: '1.3em', letterSpacing: '-2px', minWidth: '7.5em', display: 'inline-block' } },
+    ...Array.from({ length: 5 }, (_, i) => h('span', { style: { opacity: i < n ? 1 : 0.18, filter: i < n ? '' : 'grayscale(1)' } }, '🌶️')));
+  return h('div', {},
+    h('p', { class: 'small muted' }, 'ตั้งชื่อของแต่ละระดับความเผ็ด (จำนวนพริก) — ใช้บนจอลูกค้า (การ์ดสินค้าที่เพิ่มล่าสุด / ป๊อปอัปรายละเอียด) เว็บไซต์ร้าน และช่องเลือกในฟอร์มสินค้า'),
+    h('div', { class: 'card', style: { display: 'grid', gap: '10px', maxWidth: '620px' } }, ins.map((inp, n) => h('div', { style: { display: 'grid', gridTemplateColumns: '8em 3em minmax(0, 1fr)', gap: '12px', alignItems: 'center' } }, chili(n), h('b', {}, `${n}/5`), inp))),
+    h('div', { class: 'row', style: { gap: '8px', marginTop: '10px' } },
+      saveBtn('💾 บันทึก', async () => { const v = await api.put('/settings/spice_words', { value: ins.map((i) => i.value) }); SPICE.words = v; v.forEach((w, i) => { ins[i].value = w; }); }),
+      h('button', { class: 'btn', onclick: () => { ['ไม่เผ็ด', 'เผ็ดน้อย', 'เผ็ดปานกลาง', 'เผ็ดมาก', 'เผ็ดมากๆ', 'เผ็ดที่สุด'].forEach((w, i) => { ins[i].value = w; }); } }, 'ค่าเริ่มต้น')));
+}
 // ---------- 🌏 countries: where products come from (name + flag), tick which products ----------
 const COUNTRY_PRESETS = [['kr', 'เกาหลีใต้', '🇰🇷'], ['jp', 'ญี่ปุ่น', '🇯🇵'], ['cn', 'จีน', '🇨🇳'], ['th', 'ไทย', '🇹🇭'], ['tw', 'ไต้หวัน', '🇹🇼'], ['hk', 'ฮ่องกง', '🇭🇰'],
   ['sg', 'สิงคโปร์', '🇸🇬'], ['my', 'มาเลเซีย', '🇲🇾'], ['id', 'อินโดนีเซีย', '🇮🇩'], ['vn', 'เวียดนาม', '🇻🇳'], ['ph', 'ฟิลิปปินส์', '🇵🇭'], ['us', 'สหรัฐอเมริกา', '🇺🇸'],
@@ -401,7 +417,7 @@ function productDialog(p, cat, ingredients, reload) {
     { k: 'description', label: 'คำอธิบาย / รายละเอียดสินค้า (แสดงบนจอลูกค้า)', type: 'textarea', wide: true }, { k: 'image', label: 'รูปภาพ', type: 'image' },
     { k: 'highlights', label: 'สรรพคุณ / จุดเด่น (บรรทัดละข้อ เช่น เส้นเหนียวนุ่ม, ซุปเข้มข้น)', type: 'textarea', wide: true },
     { k: 'country', label: '🌏 สินค้าจากประเทศ', type: 'select', options: [['', '— ไม่ระบุ —'], ...(cat.countries || []).map((c) => [c.id, `${/^(\/|https:)/.test(c.flag || '') ? '' : (c.flag || '') + ' '}${c.name}`])], hint: 'เพิ่ม/แก้รายชื่อประเทศได้ที่แท็บ 🌏 ประเทศ' },
-    { k: 'spice_level', label: '🌶️ ระดับความเผ็ด', type: 'select', options: [[0, 'ไม่เผ็ด'], [1, '🌶️ เผ็ดน้อย'], [2, '🌶️🌶️'], [3, '🌶️🌶️🌶️ เผ็ดกลาง'], [4, '🌶️🌶️🌶️🌶️'], [5, '🌶️🌶️🌶️🌶️🌶️ เผ็ดมาก']] },
+    { k: 'spice_level', label: '🌶️ ระดับความเผ็ด', type: 'select', options: [0, 1, 2, 3, 4, 5].map((n) => [n, `${'🌶️'.repeat(n)}${n ? ' ' : ''}${SPICE.words[n]}${n ? ` (${n}/5)` : ''}`]), hint: 'ตั้งชื่อแต่ละระดับได้ที่แท็บ 🌶️ ระดับความเผ็ด' },
     { k: 'show_details', label: '👁 แสดงรายละเอียดบนจอลูกค้าทุกครั้งที่เพิ่มลงบิล', type: 'bool' },
     { k: 'track_stock', label: 'นับสต็อกสินค้านี้', type: 'bool' }, { k: 'low_stock', label: 'แจ้งเตือนใกล้หมดเมื่อเหลือ', type: 'number' },
     { k: 'active', label: 'เปิดขาย', type: 'bool' }, { k: 'sold_out', label: 'สินค้าหมด', type: 'bool' }, { k: 'mobile', label: 'แสดงใน Mobile Ordering', type: 'bool' },

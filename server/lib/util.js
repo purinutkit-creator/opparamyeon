@@ -64,6 +64,8 @@ export const DEFAULT_SETTINGS = {
   labels: {},
   // where products come from: [{ id, name, flag }] — flag is an emoji or a picture link; set per product in the menu
   countries: [],
+  // what each spice level (0–5 chilies) is called on the customer display / website / product form
+  spice_words: ['ไม่เผ็ด', 'เผ็ดน้อย', 'เผ็ดปานกลาง', 'เผ็ดมาก', 'เผ็ดมากๆ', 'เผ็ดที่สุด'],
   // customer website (/web): shop info, hours, menu, map and links — edited in admin → เว็บไซต์ร้าน
   web: { enabled: true, tagline: 'มาม่าเกาหลีต้มสด ร้อน ๆ ทุกชาม', about: '', hero_image: '', announcement: '',
     hours: { 0: { open: '10:00', close: '21:00', closed: false }, 1: { open: '10:00', close: '21:00', closed: false }, 2: { open: '10:00', close: '21:00', closed: false },

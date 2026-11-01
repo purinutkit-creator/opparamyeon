@@ -171,13 +171,14 @@ function renderAll() {
 let showcaseAt = 0, showcaseTimer = null, latestAt = 0;
 // spice: 5 chilies lit up to the level, with words
 const SPICE_WORDS = ['ไม่เผ็ด', 'เผ็ดน้อย', 'เผ็ดปานกลาง', 'เผ็ดมาก', 'เผ็ดมากๆ', 'เผ็ดที่สุด'];
+const spiceWord = (n) => ((settings && settings.spice_words) || SPICE_WORDS)[Math.max(0, Math.min(5, n))] || SPICE_WORDS[Math.max(0, Math.min(5, n))];
 // "made in" badge: flag (emoji or picture) + country name
 const originRow = (c, delay = 0.3) => (c && c.name ? h('div', { class: 'origin', style: `animation-delay:${delay}s` },
   c.flag ? (/^(\/|https:)/.test(c.flag) ? h('img', { class: 'flag', src: c.flag, alt: '' }) : h('span', { class: 'flag' }, c.flag)) : h('span', { class: 'flag' }, '🌏'),
   h('span', {}, 'สินค้าจาก', h('b', {}, c.name))) : null);
 const spiceRow = (n, delay = 0.35) => h('div', { class: 'sc-spice' + (n ? '' : ' none') },
   h('span', { class: 'chili' }, Array.from({ length: 5 }, (_, i) => h('i', { class: i < n ? 'on' : '', style: `animation-delay:${delay + i * 0.08}s` }, '🌶️'))),
-  h('b', {}, SPICE_WORDS[Math.max(0, Math.min(5, n))] + (n ? ` ${n}/5` : '')));
+  h('b', {}, spiceWord(n) + (n ? ` ${n}/5` : '')));
 // the item just added: a big card on the left side (picture, price, description, spice) until the next one
 function renderLatest() {
   const lt = state.phase === 'cart' && state.latest ? state.latest : null;

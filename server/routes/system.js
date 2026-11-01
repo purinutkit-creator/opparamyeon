@@ -290,7 +290,7 @@ r.put('/fonts/:id', staffAuth('settings'), ah(async (req, res) => { await db.run
 r.delete('/fonts/:id', staffAuth('settings'), ah(async (req, res) => { await db.run('DELETE FROM fonts WHERE id = ?', [req.params.id]); res.json({ ok: true }); }));
 
 // ---------- settings ----------
-const PUBLIC_KEYS = ['store', 'display', 'fonts', 'queue', 'mobile', 'members', 'points', 'week_start', 'theme', 'lock'];
+const PUBLIC_KEYS = ['store', 'display', 'fonts', 'queue', 'mobile', 'members', 'points', 'week_start', 'theme', 'lock', 'spice_words'];
 export function publicSettings(s) {
   const out = Object.fromEntries(PUBLIC_KEYS.map((k) => [k, s[k]]));
   out.members = { ...s.members, otp_webhook_url: undefined };
@@ -349,7 +349,7 @@ r.get('/public/web', ah(async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.json({ enabled: true, version: VERSION, now: new Date().toISOString(), open: openState(w.hours),
     store: { name: s.store.name, branch: s.store.branch, address: s.store.address, phone: s.store.phone, logo: s.store.logo, line: s.store.contact_line },
-    web: w, theme: s.theme || {}, fonts: s.fonts, members: !!(s.members && s.members.enabled), menu });
+    web: w, theme: s.theme || {}, fonts: s.fonts, members: !!(s.members && s.members.enabled), spice_words: s.spice_words, menu });
 }));
 
 r.put('/settings/:key', staffAuth('settings'), ah(async (req, res) => {
@@ -373,6 +373,9 @@ r.put('/settings/:key', staffAuth('settings'), ah(async (req, res) => {
     v.selfie_when = ['every', 'first'].includes(v.selfie_when) ? v.selfie_when : (before && before.selfie_when) || 'every';
   }
   if (key === 'web' && v) Object.assign(v, cleanWeb({ ...(before || {}), ...v })); // a partial save keeps the rest
+  if (key === 'spice_words') { // exactly 6 names (levels 0–5); blank = the default name
+    v = DEFAULT_SETTINGS.spice_words.map((d, i) => String((Array.isArray(v) ? v[i] : '') || '').trim().slice(0, 30) || d);
+  }
   if (key === 'countries') { // [{ id, name, flag }]: short names, flag = emoji or a picture link
     const list = Array.isArray(v) ? v : [];
     const seen = new Set();

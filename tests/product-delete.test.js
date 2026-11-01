@@ -68,3 +68,11 @@ test('ประเทศของสินค้า: ตั้งรายชื
   const cashier = await S.login('0002', '2222');
   assert.equal((await S.call('POST', '/api/countries/kr/products', { ids }, { token: cashier })).status, 403);
 });
+
+test('ชื่อระดับความเผ็ด: ตั้งได้ 6 ระดับ ช่องว่าง = ค่าเริ่มต้น ส่งให้จอลูกค้า/เว็บ', async () => {
+  const r = await S.call('PUT', '/api/settings/spice_words', { value: ['ไม่เผ็ดเลย', '', 'เผ็ดกลางๆ', 'เผ็ดจัด', 'เผ็ดโคตร', 'เผ็ดระดับนรก', 'เกิน'] }, { token: owner });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, ['ไม่เผ็ดเลย', 'เผ็ดน้อย', 'เผ็ดกลางๆ', 'เผ็ดจัด', 'เผ็ดโคตร', 'เผ็ดระดับนรก']);
+  assert.deepEqual((await S.call('GET', '/api/settings/public')).body.spice_words, r.body);
+  assert.deepEqual((await S.call('GET', '/api/public/web')).body.spice_words, r.body);
+});
