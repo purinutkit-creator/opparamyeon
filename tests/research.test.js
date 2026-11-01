@@ -46,6 +46,7 @@ test('ค้นหาข้อมูลสินค้า: ค้นเว็บ
   const search = calls.filter((c) => c.tools && c.path !== '/search');
   assert.equal(search.length, 2, 'ค้นต่อหลัง pause_turn');
   assert.equal(search[0].tools[0].type, 'web_search_20260209');
+  assert.equal(search[0].tools[0].user_location, undefined, 'ไม่ส่งประเทศ (TH ไม่รองรับ)');
   assert.equal(search[1].messages.at(-1).role, 'assistant', 'ส่งคำตอบเดิมกลับไปให้ค้นต่อ ไม่เพิ่มข้อความผู้ใช้');
   const fmt = calls.at(-1);
   assert.equal(fmt.tools, undefined, 'ขั้นจัดรูปแบบไม่ใช้เครื่องมือ');

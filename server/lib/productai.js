@@ -99,7 +99,7 @@ const aiError = (e) => {
   if (e instanceof Anthropic.AuthenticationError) return new AiError('API Key ของ Claude ไม่ถูกต้อง — ตรวจสอบที่ ตั้งค่า AI');
   if (e instanceof Anthropic.PermissionDeniedError) return new AiError('API Key นี้ไม่มีสิทธิ์ใช้งานโมเดลหรือการค้นหาเว็บ');
   if (e instanceof Anthropic.RateLimitError) return new AiError('ใช้งาน AI ถี่เกินไป — รอสักครู่แล้วลองใหม่');
-  if (e instanceof Anthropic.BadRequestError) return new AiError('AI รับคำขอนี้ไม่ได้: ' + e.message);
+  if (e instanceof Anthropic.BadRequestError) return new AiError('AI รับคำขอนี้ไม่ได้ — ลองเลือก "Google + AI เขียนให้" แทน หรือแจ้งผู้ดูแลระบบ (' + String(e.message).slice(0, 160) + ')');
   if (e instanceof Anthropic.APIConnectionError) return new AiError('เชื่อมต่อ AI ไม่ได้ — ตรวจสอบอินเทอร์เน็ตของเซิร์ฟเวอร์');
   if (e instanceof Anthropic.APIError) return new AiError(`AI ขัดข้อง (${e.status}) — ลองใหม่อีกครั้ง`);
   return e;
@@ -170,7 +170,7 @@ async function claudeResearch({ apiKey, name, barcode = '', note = '', category 
         model: AI_MODEL, max_tokens: 16000,
         betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
         output_config: { effort: 'medium' },
-        tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 6, user_location: { type: 'approximate', country: 'TH', timezone: 'Asia/Bangkok' } }],
+        tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 6 }], // no user_location: web search rejects country TH (the prompt says the shop is in Thailand)
         messages,
       });
       if (res.stop_reason === 'refusal') throw new AiError('AI ค้นหาข้อมูลสินค้านี้ไม่ได้ — ลองแก้ชื่อสินค้าแล้วค้นใหม่');
