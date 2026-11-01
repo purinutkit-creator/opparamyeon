@@ -486,6 +486,9 @@
   .it .p .q { min-width: 0; height: auto; padding: .3em .8em; border-radius: 99px; font-style: normal; font-size: clamp(12px, 2.3vh, 26px); line-height: 1.1; box-shadow: none; }
   .it.new .th { animation: thin .6s cubic-bezier(.2,1.4,.4,1) both; }
   @keyframes thin { from { transform: scale(.4) rotate(-12deg); opacity: 0; } }
+  .fsbtn { position: fixed; left: 1.4vh; bottom: 1.4vh; z-index: 80; padding: .55em 1em; border-radius: 99px; border: 1px solid rgb(255 255 255 / .25); background: rgb(0 0 0 / .45); color: #fff;
+    font: inherit; font-weight: 800; font-size: clamp(12px, 1.8vh, 18px); opacity: .55; cursor: pointer; backdrop-filter: blur(6px); transition: opacity .2s; }
+  .fsbtn:hover, .fsbtn:focus { opacity: 1; } .fsbtn[hidden] { display: none; }
   /* 10 quick taps → this display's settings */
   .dset { position: fixed; inset: 0; z-index: 96; display: grid; place-items: center; background: rgb(0 0 0 / .65); animation: m-fade .25s ease-out; }
   .dset-card { width: min(94vw, 760px); max-height: 92vh; overflow: auto; padding: 22px 24px; border-radius: 22px; background: #fff; color: #1d1410; display: grid; gap: 10px; font-size: 16px; }

@@ -46,6 +46,7 @@ async function boot() {
   applyTheme(); renderAll();
   sock = await socket({ kind: 'display', token: store.get('display_token') });
   startPrinting().catch((e) => console.warn('[display print]', e.message)); // a printer linked to this machine prints its jobs here
+  fullscreenButton();
   sock.on('connect', () => { net(true); checkVersion(); });
   setInterval(checkVersion, 3 * 60e3);
   sock.on('disconnect', () => net(false));
@@ -127,12 +128,31 @@ async function openSettings() {
     h('p', { class: 'dset-hint' }, 'เชื่อมเครื่องพิมพ์ที่เสียบ/จับคู่อยู่กับเครื่องจอลูกค้านี้ แล้วงานพิมพ์ของเครื่องพิมพ์นั้นจะพิมพ์ออกที่นี่ (เปิดหน้าจอลูกค้าค้างไว้) · ' +
       `รองรับ: ${[sup.usb && 'USB', sup.serial && 'Serial', sup.bluetooth && 'Bluetooth', sup.bridge && 'แอป Android'].filter(Boolean).join(' / ') || 'ผ่านโปรแกรมช่วยพิมพ์ (agent) เท่านั้น'}`),
     list, note, h('h3', {}, 'งานพิมพ์ล่าสุด'), logBox,
-    h('div', { class: 'dset-foot' }, h('span', {}, `จอลูกค้า v${VERSION}`), h('button', { onclick: () => location.reload() }, '⟳ โหลดใหม่'), h('button', { class: 'bad', onclick: () => { close(); askLeave(); } }, '🔌 ออกจากการเชื่อมต่อ'))));
+    h('div', { class: 'dset-foot' }, h('span', {}, `จอลูกค้า v${VERSION}`), fsCan() ? h('button', { onclick: () => { close(); goFullscreen(); } }, '⛶ เต็มหน้าจอ') : null, h('button', { onclick: () => location.reload() }, '⟳ โหลดใหม่'), h('button', { class: 'bad', onclick: () => { close(); askLeave(); } }, '🔌 ออกจากการเชื่อมต่อ'))));
   document.body.append(box);
   say('กำลังโหลดรายชื่อเครื่องพิมพ์…');
   try { printers = await api.get('/printers'); say(''); } catch (e) { say('❌ โหลดรายชื่อเครื่องพิมพ์ไม่ได้: ' + e.message); }
   drawSettings();
 }
+// full screen: a small button on the display (hidden once full screen, or where the browser can't)
+const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
+const fsCan = () => !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+function goFullscreen() {
+  const el = document.documentElement;
+  const req = el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' }) : el.webkitRequestFullscreen && el.webkitRequestFullscreen();
+  if (req && req.catch) req.catch(() => {});
+  try { store.set('display_fullscreen', true); } catch { /* storage blocked */ }
+}
+function fullscreenButton() {
+  if (preview) return;
+  let btn = $('#fsbtn');
+  if (!btn) { btn = h('button', { id: 'fsbtn', class: 'fsbtn', title: 'เต็มหน้าจอ', onclick: (e) => { e.stopPropagation(); goFullscreen(); } }, '⛶ เต็มจอ'); document.body.append(btn); }
+  btn.hidden = !fsCan() || !!fsEl();
+}
+document.addEventListener('fullscreenchange', fullscreenButton);
+document.addEventListener('webkitfullscreenchange', fullscreenButton);
+// browsers only allow full screen after a touch: if the shop used it before, the first touch goes full screen again
+document.addEventListener('pointerdown', () => { if (store.get('display_fullscreen') && !fsEl() && fsCan() && !preview) goFullscreen(); }, { once: true });
 function hideTapHint() { clearTimeout(tapHintTimer); if (tapHint) { tapHint.remove(); tapHint = null; } }
 function askLeave() {
   let n = 10, timer = null;
