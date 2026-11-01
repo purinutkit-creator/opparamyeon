@@ -67,7 +67,7 @@ r.get('/import/template.csv', staffAuth('manage_menu'), ah(async (req, res) => {
 }));
 // current menu in the same format (edit in Google Sheets and import again)
 r.get('/import/export.csv', staffAuth('manage_menu'), ah(async (req, res) => {
-  const prods = await db.all('SELECT * FROM products ORDER BY sort, name');
+  const prods = await db.all('SELECT * FROM products WHERE COALESCE(deleted, 0) = 0 ORDER BY sort, name');
   const cats = Object.fromEntries((await db.all('SELECT id, name FROM categories')).map((c) => [c.id, c.name]));
   const sts = Object.fromEntries((await db.all('SELECT id, name FROM stations')).map((c) => [c.id, c.name]));
   const ogs = Object.fromEntries((await db.all('SELECT id, name FROM option_groups')).map((c) => [c.id, c.name]));

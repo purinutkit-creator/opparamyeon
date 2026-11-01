@@ -33,7 +33,7 @@ export function orderByCategory(prods, cats) {
 
 export async function catalog({ includeInactive = false, mobile = false, withCost = false } = {}) {
   const cats = await db.all(`SELECT * FROM categories ${includeInactive ? '' : 'WHERE active = 1'} ORDER BY sort, name`);
-  let prods = await db.all(`SELECT * FROM products ${includeInactive ? '' : 'WHERE active = 1'} ORDER BY sort, name`);
+  let prods = await db.all(`SELECT * FROM products ${includeInactive ? 'WHERE COALESCE(deleted, 0) = 0' : 'WHERE active = 1'} ORDER BY sort, name`);
   if (mobile) prods = prods.filter((p) => p.mobile);
   prods = orderByCategory(prods, cats);
   const bcs = await db.all('SELECT * FROM barcodes');
@@ -122,6 +122,32 @@ r.delete('/products/:id', staffAuth('manage_menu'), ah(async (req, res) => {
   await audit(req.staff.id, 'deactivate', 'product', req.params.id);
   changed();
   res.json({ ok: true });
+}));
+// Delete menu items no longer used. Never sold and no stock history → removed for good. Otherwise kept hidden
+// (old bills and reports still show them) with the code and barcodes freed so they can be used again.
+r.post('/products/delete', staffAuth('manage_menu'), ah(async (req, res) => {
+  const ids = [...new Set([].concat(req.body.ids || []).map(String))].slice(0, 500);
+  if (!ids.length) throw bad('ยังไม่ได้เลือกเมนู');
+  let removed = 0, archived = 0;
+  for (const pid of ids) {
+    const p = await db.get('SELECT id, code, name FROM products WHERE id = ? AND COALESCE(deleted, 0) = 0', [pid]);
+    if (!p) continue;
+    const used = await db.get('SELECT 1 AS x FROM order_items WHERE product_id = ? LIMIT 1', [pid])
+      || await db.get("SELECT 1 AS x FROM stock_moves WHERE item_type = 'product' AND item_id = ? LIMIT 1", [pid])
+      || await db.get('SELECT 1 AS x FROM rewards WHERE product_id = ? LIMIT 1', [pid]);
+    await db.run('DELETE FROM barcodes WHERE product_id = ?', [pid]);
+    await db.run("DELETE FROM shopping_list WHERE item_type = 'product' AND item_id = ?", [pid]);
+    if (used) {
+      await db.run('UPDATE products SET active = 0, deleted = 1, code = ? WHERE id = ?', [`${p.code}~ลบ${Date.now().toString(36)}${archived}`, pid]);
+      archived++;
+    } else {
+      await db.run('DELETE FROM products WHERE id = ?', [pid]);
+      removed++;
+    }
+    await audit(req.staff.id, 'delete', 'product', pid, { code: p.code, name: p.name }, { mode: used ? 'archived' : 'removed' });
+  }
+  changed();
+  res.json({ ok: true, removed, archived });
 }));
 r.post('/products/:id/sold-out', staffAuth('sell'), ah(async (req, res) => {
   await db.run('UPDATE products SET sold_out = ? WHERE id = ?', [req.body.sold_out ? 1 : 0, req.params.id]);

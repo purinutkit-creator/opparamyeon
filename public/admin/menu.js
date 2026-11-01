@@ -44,7 +44,7 @@ function cameraDialog(onPhoto) {
 export async function menuPage(set) {
   const cat = await api.get('/catalog?all=1');
   const ingredients = can('manage_stock') || can('manage_menu') ? await api.get('/ingredients') : [];
-  let tab = 'products', filter = '';
+  let tab = 'products', filter = '', stFilter = '';
   const box = h('div');
   const reload = async () => { Object.assign(cat, await api.get('/catalog?all=1')); draw(); };
   const draw = () => {
@@ -54,15 +54,25 @@ export async function menuPage(set) {
     if (tab === 'products') {
       const q = h('input', { class: 'input', placeholder: 'ค้นหา', value: filter, style: { maxWidth: '260px' } });
       q.addEventListener('input', () => { filter = q.value; drawList(); });
+      // status filter: "ปิดขายอยู่" finds the items nobody sells any more
+      const stSel = h('select', { class: 'input', style: { maxWidth: '170px' } }, [['', 'ทุกสถานะ'], ['on', 'ขายอยู่'], ['off', 'ปิดขายอยู่']].map(([v, t]) => h('option', { value: v, selected: v === stFilter }, t)));
+      stSel.addEventListener('change', () => { stFilter = stSel.value; drawList(); });
+      const picked = new Set();
+      const delBtn = h('button', { class: 'btn danger', style: { display: 'none' }, onclick: () => deleteProducts([...picked], cat, reload) });
+      const syncDel = () => { delBtn.style.display = picked.size ? '' : 'none'; delBtn.textContent = `🗑 ลบที่เลือก (${picked.size})`; };
+      const shown = () => cat.products.filter((p) => (!filter || p.name.includes(filter) || p.code.includes(filter) || p.barcodes.some((b) => b.includes(filter)))
+        && (!stFilter || (stFilter === 'on' ? p.active : !p.active)));
+      const all = h('input', { type: 'checkbox', title: 'เลือกทั้งหมดที่แสดง', onchange: () => { for (const p of shown()) all.checked ? picked.add(p.id) : picked.delete(p.id); syncDel(); drawList(); } });
       const list = h('div');
       const drawList = () => list.replaceChildren(table([
+        { t: all, f: (p) => h('input', { type: 'checkbox', checked: picked.has(p.id), onclick: (e) => e.stopPropagation(), onchange: (e) => { e.target.checked ? picked.add(p.id) : picked.delete(p.id); syncDel(); } }) },
         { t: '', f: (p) => (p.image ? h('img', { src: p.image, style: { width: '44px', height: '44px', objectFit: 'cover', borderRadius: '8px' } }) : '🍜') },
         { t: 'รหัส', k: 'code' }, { t: 'ชื่อ', k: 'name' }, { t: 'หมวด', f: (p) => (cat.categories.find((c) => c.id === p.category_id) || {}).name || '' },
         { t: 'ราคา', r: 1, f: (p) => baht(p.price) }, can('view_cost') ? { t: 'ต้นทุน', r: 1, f: (p) => (p.cost !== undefined ? baht(p.cost) : '') } : null, { t: 'ชาม', r: 1, k: 'bowl_count' },
         { t: 'สต็อก', r: 1, f: (p) => (p.track_stock ? p.stock : '-') }, { t: 'สถานะ', f: (p) => h('span', { class: 'badge ' + (!p.active ? 'bad' : p.sold_out ? 'warn' : 'ok') }, !p.active ? 'ปิดขาย' : p.sold_out ? 'หมด' : 'ขาย') }].filter(Boolean),
-      cat.products.filter((p) => !filter || p.name.includes(filter) || p.code.includes(filter) || p.barcodes.some((b) => b.includes(filter))), { onRow: (p) => productDialog(p, cat, ingredients, reload) }));
-      drawList();
-      body = h('div', {}, h('div', { class: 'bar' }, q, h('button', { class: 'btn primary', onclick: () => productDialog(null, cat, ingredients, reload) }, '+ เพิ่มเมนู')), list);
+      shown(), { onRow: (p) => productDialog(p, cat, ingredients, reload) }));
+      drawList(); syncDel();
+      body = h('div', {}, h('div', { class: 'bar' }, q, stSel, h('button', { class: 'btn primary', onclick: () => productDialog(null, cat, ingredients, reload) }, '+ เพิ่มเมนู'), delBtn), list);
     } else if (tab === 'import') {
       body = importBox(reload);
     } else if (tab === 'categories') {
@@ -90,6 +100,16 @@ export async function menuPage(set) {
   return page('เมนูและสินค้า', box);
 }
 const SORT_BY_OPTS = [['sort', 'ลำดับแสดงที่ตั้งในสินค้า'], ['code_asc', 'รหัสสินค้า น้อย → มาก'], ['code_desc', 'รหัสสินค้า มาก → น้อย'], ['name_asc', 'ชื่อสินค้า ก → ฮ / A → Z'], ['name_desc', 'ชื่อสินค้า ฮ → ก / Z → A']];
+// delete menu items (asks first); sold items stay in old bills and reports, everything else is removed for good
+async function deleteProducts(ids, cat, reload) {
+  const names = ids.map((id) => (cat.products.find((p) => p.id === id) || {}).name).filter(Boolean);
+  const list = names.slice(0, 8).join(', ') + (names.length > 8 ? ` และอีก ${names.length - 8} รายการ` : '');
+  if (!await confirmBox('ลบเมนู', `ลบ ${names.length} เมนูนี้ออกจากร้าน? ${list} — เมนูที่เคยขายแล้ว บิลเก่าและรายงานยังแสดงชื่อเดิมได้ · รหัสสินค้าและบาร์โค้ดของเมนูที่ลบจะใช้ซ้ำกับเมนูใหม่ได้`, 'ลบเมนู', true)) return false;
+  const r = await api.post('/products/delete', { ids });
+  toast(`ลบแล้ว ${r.removed + r.archived} เมนู`, 'ok');
+  reload();
+  return true;
+}
 function simpleList(path, rows, fields, reload, sub) {
   const open = (row) => {
     const f = form(fields, row || { active: true, sort: 0, bowls_per_ticket: 1, split_mode: 'order' });
@@ -129,7 +149,8 @@ function productDialog(p, cat, ingredients, reload) {
   const reason = h('input', { class: 'input', placeholder: 'เหตุผลการแก้ไข (บันทึกในประวัติ)' });
   modal(p ? 'แก้ไข ' + p.name : 'เพิ่มเมนู', h('div', {}, f, rbox, h('label', { class: 'field', style: { marginTop: '1em' } }, 'เหตุผล', reason),
     h('p', { class: 'small muted' }, 'บิลที่ขายแล้วเก็บชื่อ ราคา ต้นทุน และตัวเลือกเดิมไว้ การแก้ไขมีผลกับบิลใหม่เท่านั้น')), { wide: true, actions: [
-    p ? { label: 'ปิดการขาย', class: 'danger', onClick: async () => { await api.del('/products/' + p.id); reload(); } } : null,
+    p ? { label: '🗑 ลบเมนู', class: 'danger', onClick: async () => { const ok = await deleteProducts([p.id], cat, reload); if (!ok) return false; } } : null,
+    p && p.active ? { label: 'ปิดการขาย', onClick: async () => { await api.del('/products/' + p.id); reload(); } } : null,
     { label: 'บันทึก', class: 'primary', onClick: async () => {
       const val = f.value();
       val.barcodes = String(val.barcodes || '').split(',').map((x) => x.trim()).filter(Boolean);
