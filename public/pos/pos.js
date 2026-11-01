@@ -719,18 +719,20 @@ function addByCode(code) {
 let showcaseTimer = null;
 // the item just added: shown big on the customer display (picture, price, description, spice) until the next one
 // where the product comes from (shop's country list): { name, flag } or null
+// spice is left out for categories set not to show it (e.g. toppings)
+const spiceOf = (p) => { const c = ((st.catalog && st.catalog.categories) || []).find((x) => x.id === p.category_id); return c && Number(c.show_spice) === 0 ? null : Number(p.spice_level) || 0; };
 const countryOf = (p) => { const c = p && p.country && ((st.catalog && st.catalog.countries) || []).find((x) => x.id === p.country); return c ? { name: c.name, flag: c.flag || '' } : null; };
 function noteLatest(p, l) {
   if (!p) return;
   const each = l && l.qty ? Math.round(lineTotal(l) / l.qty) : p.price;
-  st.latest = { id: p.id, name: p.name, image: p.image || '', price: each, description: p.description || '', spice: Number(p.spice_level) || 0,
+  st.latest = { id: p.id, name: p.name, image: p.image || '', price: each, description: p.description || '', spice: spiceOf(p),
     highlights: String(p.highlights || '').split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 4),
     options: l ? (renamedLine(l.name, l.options || [], 'everywhere').options || []).map((o) => displayOption(o)).slice(0, 6) : [], country: countryOf(p), at: Date.now() };
 }
 function showcase(p, manual = false) {
   if (st.settings.display && st.settings.display.product_details === false) return; // the shop turned product details off
   if (manual && st.showcase && st.showcase.id === p.id) { st.showcase = null; pushDisplay(); renderMenu(); return toast('ซ่อนรายละเอียดบนจอลูกค้าแล้ว', 'info', 1500); }
-  st.showcase = { id: p.id, name: p.name, image: p.image || '', price: p.price, description: p.description || '', spice: Number(p.spice_level) || 0,
+  st.showcase = { id: p.id, name: p.name, image: p.image || '', price: p.price, description: p.description || '', spice: spiceOf(p),
     highlights: String(p.highlights || '').split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 6), country: countryOf(p), at: Date.now() };
   pushDisplay(); renderMenu();
   if (manual) toast(`👁 แสดง "${p.name}" บนจอลูกค้า (กด 👁 อีกครั้งเพื่อซ่อน)`, 'info', 2500);

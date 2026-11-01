@@ -16,6 +16,11 @@ export async function seed({ demo = process.env.SEED_DEMO !== 'false' } = {}) {
     await db.run('INSERT INTO templates(id, doc_type, name, data, is_default, updated_at) VALUES(?,?,?,?,1,?)', [id(), 'kitchen', 'ใบครัวแบบใหม่ (ตัวใหญ่)', S(DEFAULT_TEMPLATES.kitchen), now()]);
     await db.run("INSERT INTO settings(key, value) VALUES('seed_v11', 'true') ON CONFLICT(key) DO NOTHING");
   }
+  // v1.52: topping categories don't show a spice level (customer display / website)
+  if (!(await db.get("SELECT key FROM settings WHERE key = 'seed_v152'"))) {
+    for (const c of await db.all('SELECT id, name FROM categories')) if (/ท็อปปิ้ง|ทอปปิ้ง|topping/i.test(c.name || '')) await db.run('UPDATE categories SET show_spice = 0 WHERE id = ?', [c.id]);
+    await db.run("INSERT INTO settings(key, value) VALUES('seed_v152', 'true') ON CONFLICT(key) DO NOTHING");
+  }
   // v1.17: kitchen tickets get the big bowl number + cooker block under the queue number (custom elements are kept)
   if (!(await db.get("SELECT key FROM settings WHERE key = 'seed_v117'"))) {
     for (const t of await db.all('SELECT id, data FROM templates WHERE doc_type = ?', ['kitchen'])) {
@@ -103,7 +108,7 @@ export async function seed({ demo = process.env.SEED_DEMO !== 'false' } = {}) {
 
   const cats = [['c_ramyeon', 'มาม่าเกาหลี', '#ef4444'], ['c_topping', 'ท็อปปิ้ง', '#f59e0b'], ['c_drink', 'เครื่องดื่ม', '#3b82f6'], ['c_snack', 'ของทานเล่น', '#10b981'], ['c_set', 'เซตเมนู', '#8b5cf6']];
   let n = 0;
-  for (const [cid, name, color] of cats) await db.run('INSERT INTO categories(id, name, sort, active, color) VALUES(?,?,?,1,?)', [cid, name, ++n, color]);
+  for (const [cid, name, color] of cats) await db.run('INSERT INTO categories(id, name, sort, active, color, show_spice) VALUES(?,?,?,1,?,?)', [cid, name, ++n, color, /ท็อปปิ้ง|topping/i.test(name) ? 0 : 1]);
   for (const [sid, name, mode, per, sort] of [['st_ramyeon', 'ครัวมาม่า', 'bowl_group', 1, 1], ['st_topping', 'จุดท็อปปิ้ง', 'order', 1, 2], ['st_drink', 'จุดเครื่องดื่ม', 'order', 1, 3]])
     await db.run('INSERT INTO stations(id, name, split_mode, bowls_per_ticket, sort) VALUES(?,?,?,?,?)', [sid, name, mode, per, sort]);
   const ing = [['i_noodle', 'มาม่าเกาหลี (ซอง)', 'ซอง', 200, 20, 2500], ['i_egg', 'ไข่ไก่', 'ฟอง', 120, 20, 400], ['i_cheese', 'ชีสแผ่น', 'แผ่น', 100, 15, 800],

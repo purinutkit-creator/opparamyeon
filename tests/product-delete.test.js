@@ -76,3 +76,18 @@ test('ชื่อระดับความเผ็ด: ตั้งได้
   assert.deepEqual((await S.call('GET', '/api/settings/public')).body.spice_words, r.body);
   assert.deepEqual((await S.call('GET', '/api/public/web')).body.spice_words, r.body);
 });
+
+test('หมวดท็อปปิ้งไม่แสดงความเผ็ด: ค่าเริ่มของหมวดท็อปปิ้ง = ปิด, หมวดอื่นเปิด, ตั้งได้ต่อหมวด, เว็บไซต์ไม่ส่งความเผ็ด', async () => {
+  const cats = (await S.call('GET', '/api/categories', undefined, { token: owner })).body;
+  const top = cats.find((c) => /ท็อปปิ้ง/.test(c.name)), ram = cats.find((c) => c.id === 'c_ramyeon');
+  assert.equal(Number(top.show_spice), 0, 'หมวดท็อปปิ้งปิดความเผ็ดให้เอง');
+  assert.equal(Number(ram.show_spice), 1);
+  const web = (await S.call('GET', '/api/public/web')).body;
+  const tp = web.menu.products.find((p) => p.category_id === top.id);
+  if (tp) assert.equal(tp.spice, null, 'เว็บไม่ส่งความเผ็ดของท็อปปิ้ง');
+  await S.call('PUT', '/api/categories/' + ram.id, { show_spice: false }, { token: owner });
+  assert.equal(Number((await S.call('GET', '/api/categories', undefined, { token: owner })).body.find((c) => c.id === ram.id).show_spice), 0);
+  await S.call('PUT', '/api/categories/' + ram.id, { show_spice: true }, { token: owner });
+  const c = (await S.call('POST', '/api/categories', { name: 'หมวดใหม่', sort: 9, active: true }, { token: owner })).body;
+  assert.equal(Number((await S.call('GET', '/api/categories', undefined, { token: owner })).body.find((x) => x.id === c.id).show_spice), 1, 'หมวดใหม่เปิดเป็นค่าเริ่ม');
+});

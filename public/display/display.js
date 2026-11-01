@@ -247,9 +247,9 @@ const spiceWord = (n) => ((settings && settings.spice_words) || SPICE_WORDS)[Mat
 const originRow = (c, delay = 0.3) => (c && c.name ? h('div', { class: 'origin', style: `animation-delay:${delay}s` },
   c.flag ? (/^(\/|https:)/.test(c.flag) ? h('img', { class: 'flag', src: c.flag, alt: '' }) : h('span', { class: 'flag' }, c.flag)) : h('span', { class: 'flag' }, '🌏'),
   h('span', {}, 'สินค้าจาก', h('b', {}, c.name))) : null);
-const spiceRow = (n, delay = 0.35) => h('div', { class: 'sc-spice' + (n ? '' : ' none') },
+const spiceRow = (n, delay = 0.35) => (n === null || n === undefined ? null : h('div', { class: 'sc-spice' + (n ? '' : ' none') },
   h('span', { class: 'chili' }, Array.from({ length: 5 }, (_, i) => h('i', { class: i < n ? 'on' : '', style: `animation-delay:${delay + i * 0.08}s` }, '🌶️'))),
-  h('b', {}, spiceWord(n) + (n ? ` ${n}/5` : '')));
+  h('b', {}, spiceWord(n) + (n ? ` ${n}/5` : ''))));
 // the item just added: a big card on the left side (picture, price, description, spice) until the next one
 function renderLatest() {
   const lt = state.phase === 'cart' && state.latest && settings.display.latest_card !== false ? state.latest : null;

@@ -94,7 +94,7 @@ export async function menuPage(set) {
       body = countriesTab(cat, reload);
     } else if (tab === 'categories') {
       body = simpleList('categories', cat.categories, [{ k: 'name', label: 'ชื่อหมวด' }, { k: 'sort', label: 'ลำดับ', type: 'number' }, { k: 'color', label: 'สี', type: 'color' }, { k: 'active', label: 'แสดง', type: 'bool' },
-        { k: 'sort_by', label: 'เรียงสินค้าในหมวดนี้ตาม', type: 'select', options: SORT_BY_OPTS }], reload, (r) => (SORT_BY_OPTS.find(([v]) => v === (r.sort_by || 'sort')) || [])[1] || '');
+        { k: 'sort_by', label: 'เรียงสินค้าในหมวดนี้ตาม', type: 'select', options: SORT_BY_OPTS }, { k: 'show_spice', label: '🌶️ แสดงความเผ็ดของสินค้าในหมวดนี้ (จอลูกค้า / เว็บไซต์)', type: 'bool' }], reload, (r) => (SORT_BY_OPTS.find(([v]) => v === (r.sort_by || 'sort')) || [])[1] || '');
     } else if (tab === 'options') {
       body = h('div', {}, h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => optionGroupDialog(null, ingredients, reload) }, '+ เพิ่มกลุ่มตัวเลือก'),
         h('button', { class: 'btn', onclick: () => optionGroupDialog(null, ingredients, reload, { name: 'แบบไข่', min_select: 1, max_select: 1, display: 'quick',
@@ -398,7 +398,7 @@ async function deleteProducts(ids, cat, reload) {
 }
 function simpleList(path, rows, fields, reload, sub) {
   const open = (row) => {
-    const f = form(fields, row || { active: true, sort: 0, bowls_per_ticket: 1, split_mode: 'order' });
+    const f = form(fields, row ? { ...row, show_spice: row.show_spice === undefined || row.show_spice === null ? true : !!Number(row.show_spice) } : { active: true, sort: 0, bowls_per_ticket: 1, split_mode: 'order', show_spice: true });
     modal(row ? 'แก้ไข' : 'เพิ่ม', f, { actions: [row ? { label: 'ลบ', class: 'danger', onClick: async () => { if (await confirmBox('ลบ', 'ยืนยันการลบ?', 'ลบ', true)) { await api.del(`/${path}/${row.id}`); reload(); } else return false; } } : null,
       { label: 'บันทึก', class: 'primary', onClick: async () => { const v = f.value(); if (row) await api.put(`/${path}/${row.id}`, v); else await api.post('/' + path, v); toast('บันทึกแล้ว', 'ok'); reload(); } }].filter(Boolean) });
   };

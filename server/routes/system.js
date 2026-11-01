@@ -352,9 +352,10 @@ r.get('/public/web', ah(async (req, res) => {
   if (w.show_menu) {
     const c = await catalog({ mobile: true });
     const used = new Set(c.products.map((p) => p.category_id));
+    const noSpice = new Set(c.categories.filter((x) => Number(x.show_spice) === 0).map((x) => x.id));
     menu = { categories: c.categories.filter((x) => used.has(x.id)).map((x) => ({ id: x.id, name: x.name, color: x.color })),
       products: c.products.map((p) => ({ id: p.id, name: p.name, category_id: p.category_id, description: p.description || '', image: p.image || '', price: w.show_prices ? p.price : null,
-        highlights: String(p.highlights || '').split('\n').map((x) => x.trim()).filter(Boolean), spice: p.spice_level || 0, sold_out: !!p.sold_out })) };
+        highlights: String(p.highlights || '').split('\n').map((x) => x.trim()).filter(Boolean), spice: noSpice.has(p.category_id) ? null : p.spice_level || 0, sold_out: !!p.sold_out })) };
   }
   res.setHeader('Cache-Control', 'no-cache');
   res.json({ enabled: true, version: VERSION, now: new Date().toISOString(), open: openState(w.hours),

@@ -119,6 +119,7 @@ const MIGRATIONS = [
   ['products', 'spice_level', 'INTEGER DEFAULT 0'],
   ['products', 'show_details', 'INTEGER DEFAULT 0'],
   ['categories', 'sort_by', "TEXT DEFAULT 'sort'"],
+  ['categories', 'show_spice', 'INTEGER DEFAULT 1'],
   ['products', 'deleted', 'INTEGER DEFAULT 0'],
   ['products', 'country', "TEXT DEFAULT ''"],
   ['option_groups', 'display', "TEXT DEFAULT 'normal'"],

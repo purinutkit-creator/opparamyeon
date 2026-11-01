@@ -222,7 +222,7 @@ function crud(path, table, fields, perm, { normalize = (o) => o, afterChange = c
   }));
 }
 const bool = (v) => (v === false || v === 0 || v === '0' ? 0 : 1);
-crud('categories', 'categories', ['name', 'sort', 'active', 'color', 'sort_by'], 'manage_menu', { normalize: (o) => ({ ...o, sort: Number(o.sort) || 0, active: bool(o.active), sort_by: SORT_BY.includes(o.sort_by) ? o.sort_by : 'sort' }) });
+crud('categories', 'categories', ['name', 'sort', 'active', 'color', 'sort_by', 'show_spice'], 'manage_menu', { normalize: (o) => ({ ...o, sort: Number(o.sort) || 0, active: bool(o.active), sort_by: SORT_BY.includes(o.sort_by) ? o.sort_by : 'sort', show_spice: o.show_spice === undefined || o.show_spice === null ? 1 : bool(o.show_spice) }) });
 crud('stations', 'stations', ['name', 'split_mode', 'bowls_per_ticket', 'sort'], 'settings', {
   normalize: (o) => {
     if (o.split_mode && !['order', 'item', 'bowl', 'bowl_group'].includes(o.split_mode)) throw bad('รูปแบบใบครัวไม่ถูกต้อง');

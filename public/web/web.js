@@ -39,7 +39,7 @@ function sheet(p) {
       h('div', { class: 'im' + (p.image ? '' : ' none') }, h('img', { src: p.image || '/assets/bowl.svg', alt: p.name })),
       h('div', { class: 'bd' }, h('h3', {}, p.name),
         p.price != null ? h('div', { class: 'pr', style: { fontFamily: 'var(--head-font)', fontWeight: 800, color: 'var(--brand)', fontSize: '1.4em' } }, baht(p.price) + ' ฿') : null,
-        h('div', {}, 'ความเผ็ด ', chili(p.spice), ` ${(D.spice_words || [])[p.spice] || ''}${p.spice ? ` (${p.spice}/5)` : ''}`),
+        p.spice === null ? null : h('div', {}, 'ความเผ็ด ', chili(p.spice), ` ${(D.spice_words || [])[p.spice] || ''}${p.spice ? ` (${p.spice}/5)` : ''}`),
         p.sold_out ? h('div', { class: 'note' }, '⏳ หมดชั่วคราว') : null,
         p.description ? h('p', { class: 'about', style: { margin: 0 } }, p.description) : null,
         p.highlights.length ? h('ul', {}, p.highlights.map((x) => h('li', {}, x))) : null)));
