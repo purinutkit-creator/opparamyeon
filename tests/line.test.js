@@ -166,3 +166,58 @@ test('LINE: เช็กสต็อกด้วยรูปบาร์โค�
   await hook([{ type: 'postback', replyToken: 'rt-i3', source: { type: 'user', userId: 'Uowner' }, postback: { data: `a=show&t=product&i=${target.id}` } }]); await wait(150);
   assert.match(lastTo('/v2/bot/message/reply').body.messages[0].altText, new RegExp(target.name.slice(0, 6)));
 });
+
+test('LINE: เจ้าของ/พนักงาน · ใบเสร็จทุกบิลส่งเฉพาะเจ้าของ · ยอดขายวันนี้ดูได้เฉพาะเจ้าของ · ริชเมนูเจ้าของ 6 ช่อง', async () => {
+  // link a staff chat
+  const { code } = (await S.call('POST', '/api/line/link-code', { role: 'staff' }, { token: owner })).body;
+  await hook([{ type: 'message', replyToken: 'rs1', source: { type: 'user', userId: 'Ustaff' }, message: { type: 'text', text: code } }]); await wait(100);
+  assert.match(lastTo('/v2/bot/message/reply').body.messages[0].text, /พนักงาน/);
+  let st = (await S.call('GET', '/api/line/settings', undefined, { token: owner })).body;
+  assert.deepEqual(st.recipients.map((x) => [x.id, x.role]), [['Uowner', 'owner'], ['Ustaff', 'staff']], 'แชตเดิมที่ไม่มีสิทธิ์ระบุ = เจ้าของ');
+  // receipts on, low-stock alerts to staff only
+  let r = await S.call('PUT', '/api/line/settings', { enabled: true, notify_low: true, notify_close: true, notify_sale: true, to: { low: ['staff'], close: ['owner', 'staff'] }, recipients: ['Uowner', 'Ustaff'] }, { token: owner });
+  assert.equal(r.status, 200);
+  await S.call('POST', '/api/shifts/open', { opening_cash: 0 }, { token: owner, terminal: 'pos1' });
+  const n0 = sent.length;
+  const co = await S.call('POST', '/api/orders/checkout', { idempotency_key: key(), cart: { lines: [line('p_r001', 1, { options: (await import('./helpers.js')).ramyeonOpts })] }, payments: [{ method: 'cash', amount: 1e7, received: 1e7 }] }, { token: owner, terminal: 'pos1' });
+  assert.equal(co.status, 200, JSON.stringify(co.body)); await wait(300);
+  const pushes = sent.slice(n0).filter((x) => x.path === '/v2/bot/message/push' && /🧾/.test(x.body.messages[0].altText || ''));
+  assert.deepEqual(pushes.map((x) => x.body.to), ['Uowner'], 'ใบเสร็จไปเฉพาะเจ้าของ');
+  const bill = (await db.get('SELECT bill_no FROM orders WHERE paid_at IS NOT NULL ORDER BY paid_at DESC LIMIT 1')).bill_no;
+  assert.match(pushes[0].body.messages[0].altText, new RegExp(bill));
+  assert.ok(JSON.stringify(pushes[0].body).includes('มาม่าเกาหลีต้นตำรับ'));
+  // sales report: owner yes, staff no
+  await hook([{ type: 'postback', replyToken: 'rr1', source: { type: 'user', userId: 'Ustaff' }, postback: { data: 'a=report' } }]); await wait(150);
+  assert.match(lastTo('/v2/bot/message/reply').body.messages[0].text, /เฉพาะเจ้าของ/);
+  await hook([{ type: 'message', replyToken: 'rr2', source: { type: 'user', userId: 'Ustaff' }, message: { type: 'text', text: 'ยอดขาย' } }]); await wait(150);
+  assert.match(lastTo('/v2/bot/message/reply').body.messages[0].text, /เฉพาะเจ้าของ/);
+  await hook([{ type: 'postback', replyToken: 'rr3', source: { type: 'user', userId: 'Uowner' }, postback: { data: 'a=report' } }]); await wait(200);
+  const rep = lastTo('/v2/bot/message/reply').body.messages[0];
+  assert.equal(rep.type, 'flex'); assert.match(rep.altText, /ยอดขายวันนี้/); assert.ok(JSON.stringify(rep).includes(bill), 'มีบิลล่าสุด');
+  // staff still has the stock buttons
+  await hook([{ type: 'postback', replyToken: 'rr4', source: { type: 'user', userId: 'Ustaff' }, postback: { data: 'a=low' } }]); await wait(150);
+  assert.equal(lastTo('/v2/bot/message/reply').body.replyToken, 'rr4');
+  // low-stock alerts go to the roles set (here: staff only); receipts never to staff
+  const { lineTo } = await import('../server/lib/line.js');
+  const n1 = sent.length;
+  assert.equal(await lineTo('low', { type: 'text', text: 'low' }), 1);
+  assert.equal(await lineTo('sale', { type: 'text', text: 'sale' }), 1);
+  assert.deepEqual(sent.slice(n1).map((x) => [x.body.to, x.body.messages[0].text]), [['Ustaff', 'low'], ['Uowner', 'sale']]);
+  // rich menus: staff (default) + owner (6 buttons) linked to the owner's chat only
+  const png = 'data:image/png;base64,' + Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64');
+  const n2 = sent.length;
+  r = await S.call('POST', '/api/line/richmenu', { image: png, owner_image: png }, { token: owner });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const made = sent.slice(n2).filter((x) => x.path === '/v2/bot/richmenu').map((x) => x.body);
+  assert.equal(made.length, 2);
+  const ownerMenu = made.find((m) => m.name === 'Oppa owner');
+  assert.equal(ownerMenu.areas.length, 6); assert.equal(ownerMenu.size.height, 1686);
+  assert.deepEqual(ownerMenu.areas.slice(0, 3).map((a) => a.action.data), ['a=report', 'a=low', 'a=list']);
+  assert.ok(sent.slice(n2).some((x) => x.path === '/v2/bot/user/Uowner/richmenu/rm-1'), 'ลิงก์เมนูเจ้าของให้แชตเจ้าของ');
+  assert.ok(!sent.slice(n2).some((x) => x.path === '/v2/bot/user/Ustaff/richmenu/rm-1'), 'พนักงานใช้เมนูปกติ');
+  // QR of the bill link: valid token only
+  const { billToken } = await import('../server/lib/billlink.js');
+  const q = await fetch(S.base + `/api/public/bill/${encodeURIComponent(await billToken(bill))}/qr.png`);
+  assert.equal(q.status, 200); assert.equal(q.headers.get('content-type'), 'image/png');
+  assert.equal((await fetch(S.base + '/api/public/bill/B999.bad/qr.png')).status, 404);
+});

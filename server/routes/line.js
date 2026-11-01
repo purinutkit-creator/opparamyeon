@@ -6,7 +6,21 @@ import { staffAuth } from '../lib/auth.js';
 import { adjustStock } from '../lib/stock.js';
 import { decodeImage, readBarcode, similarProducts, aiMatch } from '../lib/imgmatch.js';
 import { addPickerMessage, addedMessage } from '../lib/line.js';
-import { lineContent, lineLoading, findProducts, stockCard, candidatesMessage, lineSecret, lineToken, verifyLineSignature, lineReply, lineCfg, lowItems, itemOf, openList, addToList, suggestQty, lowStockMessage, listMessage, tryLink, isRecipient, newLinkCode, setupRichMenu, lineToAll } from '../lib/line.js';
+import { lineContent, lineLoading, findProducts, stockCard, candidatesMessage, lineSecret, lineToken, verifyLineSignature, lineReply, lineCfg, lowItems, itemOf, openList, addToList, suggestQty, lowStockMessage, listMessage, tryLink, recipientOf, newLinkCode, setupRichMenus, linkMenus, lineToAll, roleOf, reportMessage, livePage } from '../lib/line.js';
+import { summary } from './reports.js';
+import { businessDateOf, getSettings } from '../lib/util.js';
+
+// today's sales for the owner's chat (button "ยอดขาย · Live View" or typing "ยอด")
+async function salesReport() {
+  const day = await businessDateOf();
+  const s = await getSettings();
+  const names = Object.fromEntries((s.sale.payment_methods || []).map((m) => [m.id, m.name]));
+  const sum = await summary(day, day, {}, { withCost: true });
+  sum.payments = sum.payments.map((p) => ({ ...p, name: names[p.method] || p.method }));
+  const recent = await db.all('SELECT bill_no, queue_no, total, paid_at FROM orders WHERE paid_business_date = ? AND paid_at IS NOT NULL ORDER BY paid_at DESC LIMIT 5', [day]);
+  return reportMessage(sum, { recent, live: livePage(), store: s.store.name });
+}
+const OWNER_ONLY = { type: 'text', text: '🔒 ยอดขายและรายงานดูได้เฉพาะเจ้าของร้าน\n\nพนักงานใช้ได้: ดูของใกล้หมด · เติมสต็อก · รายการที่ต้องซื้อ · เช็กสต็อกจากรูป/บาร์โค้ด' };
 
 const num = (v) => Math.round(Number(v || 0) * 100) / 100;
 export const lineWebhook = Router();
@@ -22,9 +36,13 @@ async function handle(ev) {
   const src = ev.source || {}, rt = ev.replyToken;
   if (ev.type === 'message' && ev.message && ev.message.type === 'text') {
     const linked = await tryLink(ev.message.text, src);
-    if (linked) return lineReply(rt, { type: 'text', text: `✅ เชื่อมต่อแล้ว (${linked}) — จะได้รับแจ้งเตือนสินค้าใกล้หมดและรายการที่ต้องซื้อตอนปิดรอบ\nกดเมนูด้านล่าง หรือพิมพ์ "สต็อก" / "ซื้อ"` });
-    if (!(await isRecipient(src))) return;
+    if (linked) return lineReply(rt, { type: 'text', text: linked.role === 'owner'
+      ? `✅ เชื่อมต่อแล้ว (${linked.name}) · สิทธิ์: เจ้าของร้าน 👑\nจะได้รับ: ใบเสร็จทุกบิล (ถ้าเปิดไว้) · ของใกล้หมด · สรุปตอนปิดรอบ\nกดเมนูด้านล่าง หรือพิมพ์ "ยอด" ดูยอดขายวันนี้ · "สต็อก" · "ซื้อ"`
+      : `✅ เชื่อมต่อแล้ว (${linked.name}) · สิทธิ์: พนักงาน\nใช้ได้: ดูของใกล้หมด · เติมสต็อก · รายการที่ต้องซื้อ\nกดเมนูด้านล่าง หรือพิมพ์ "สต็อก" / "ซื้อ"` });
+    const rec = await recipientOf(src);
+    if (!rec) return;
     const t = ev.message.text.trim();
+    if (/^(ยอด|ยอดขาย|รายงาน|sales|report)/i.test(t)) return lineReply(rt, roleOf(rec) === 'owner' ? await salesReport() : OWNER_ONLY);
     // a number typed right after "เติมสต็อก" = how many to add
     const pend = waiting.get(chatOf(src));
     if (pend && pend.until > Date.now() && /^\d{1,4}(\.\d+)?$/.test(t) && Number(t) > 0) { waiting.delete(chatOf(src)); return addNow(rt, pend.type, pend.id, Number(t), src); }
@@ -38,7 +56,7 @@ async function handle(ev) {
   }
   // a photo: barcode in it → that product; otherwise AI (if the shop set a key) or the closest product pictures
   if (ev.type === 'message' && ev.message && ev.message.type === 'image') {
-    if (!(await isRecipient(src))) return;
+    if (!(await recipientOf(src))) return;
     if (src.userId && !src.groupId) lineLoading(src.userId);
     const { buf, mime } = await lineContent(ev.message.id);
     const img = decodeImage(buf, mime);
@@ -54,9 +72,12 @@ async function handle(ev) {
     if (near.length) return lineReply(rt, [{ type: 'text', text: 'ไม่เห็นบาร์โค้ดในรูป — สินค้าที่หน้าตาคล้ายที่สุด 👇 กด "ใช่ตัวนี้" เพื่อดูสต็อก' }, candidatesMessage(await Promise.all(near.map(async (c) => ({ ...(await itemOf('product', c.id)), score: c.score }))), 'คล้ายกับ')]);
     return lineReply(rt, { type: 'text', text: 'ไม่พบสินค้าที่ตรงกับรูปนี้ 🙏\n\nลองใหม่:\n📷 ถ่ายบาร์โค้ดให้ชัด เต็มเฟรม ไม่เบลอ\n🔢 หรือพิมพ์เลขบาร์โค้ด / ชื่อสินค้า' });
   }
-  if (ev.type !== 'postback' || !(await isRecipient(src))) return;
+  if (ev.type !== 'postback') return;
+  const rec = await recipientOf(src);
+  if (!rec) return;
   const p = new URLSearchParams(ev.postback.data || '');
   const a = p.get('a'), who = 'line:' + (src.userId || src.groupId || '');
+  if (a === 'report') return lineReply(rt, roleOf(rec) === 'owner' ? await salesReport() : OWNER_ONLY);
   if (a === 'low') return lineReply(rt, lowStockMessage(await lowItems()));
   if (a === 'show') { const x = await itemOf(p.get('t'), p.get('i')); return x ? lineReply(rt, stockCard(x)) : null; }
   if (a === 'list') return lineReply(rt, listMessage(await openList(), await lowItems()));
@@ -102,7 +123,8 @@ r.get('/line/settings', staffAuth('settings'), ah(async (req, res) => {
   const base = process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '';
   const sec = await lineSecret(), tok = await lineToken();
   const hint = (v) => (v ? '…' + v.slice(-4) : '');
-  res.json({ enabled: c.enabled, notify_low: c.notify_low, notify_close: c.notify_close, recipients: c.recipients || [], webhook_url: base + '/api/line/webhook',
+  res.json({ enabled: c.enabled, notify_low: c.notify_low, notify_close: c.notify_close, notify_sale: !!c.notify_sale, to: c.to, recipients: (c.recipients || []).map((x) => ({ ...x, role: roleOf(x) })),
+    richmenus: c.richmenus || null, public_https: base.startsWith('https:'), webhook_url: base + '/api/line/webhook',
     has_secret: !!sec, has_token: !!tok, secret_hint: hint(sec), token_hint: hint(tok), bot: c.bot || null });
 }));
 r.put('/line/settings', staffAuth('settings'), ah(async (req, res) => {
@@ -122,23 +144,36 @@ r.put('/line/settings', staffAuth('settings'), ah(async (req, res) => {
   }
   if (secret) await setSecret('line.channel_secret', secret);
   const c = await lineCfg();
-  const recipients = Array.isArray(b.recipients) ? (c.recipients || []).filter((x) => b.recipients.includes(x.id)) : c.recipients;
-  await setSetting('line', { ...c, enabled: !!b.enabled, notify_low: !!b.notify_low, notify_close: !!b.notify_close, recipients, ...(bot ? { bot } : {}) });
+  // recipients kept (by id) with their role: owner = everything, staff = stock only
+  const roles = b.roles && typeof b.roles === 'object' ? b.roles : {};
+  const recipients = (Array.isArray(b.recipients) ? (c.recipients || []).filter((x) => b.recipients.includes(x.id)) : (c.recipients || []))
+    .map((x) => ({ ...x, role: roles[x.id] === 'staff' ? 'staff' : roles[x.id] === 'owner' ? 'owner' : roleOf(x) }));
+  const pick = (v, d) => (Array.isArray(v) ? ['owner', 'staff'].filter((r) => v.includes(r)) : d);
+  const to = { low: pick(b.to && b.to.low, (c.to || {}).low || ['owner', 'staff']), close: pick(b.to && b.to.close, (c.to || {}).close || ['owner', 'staff']) };
+  const next = { ...c, enabled: !!b.enabled, notify_low: !!b.notify_low, notify_close: !!b.notify_close, notify_sale: b.notify_sale === undefined ? !!c.notify_sale : !!b.notify_sale, to, recipients, ...(bot ? { bot } : {}) };
+  await setSetting('line', next);
+  const changedRole = recipients.some((x) => { const old = (c.recipients || []).find((y) => y.id === x.id); return old && roleOf(old) !== x.role; });
+  if (changedRole && (await lineToken())) linkMenus(next).catch(() => {});
   await audit(req.staff.id, 'settings', 'settings', 'line', null, { enabled: !!b.enabled, secret_changed: !!b.channel_secret, token_changed: !!b.channel_token });
   res.json({ ok: true });
 }));
-r.post('/line/link-code', staffAuth('settings'), ah(async (req, res) => res.json({ code: await newLinkCode() })));
+r.post('/line/link-code', staffAuth('settings'), ah(async (req, res) => res.json({ code: await newLinkCode((req.body || {}).role) })));
 r.post('/line/test', staffAuth('settings'), ah(async (req, res) => {
   const n = await lineToAll([{ type: 'text', text: '🔔 ทดสอบจากระบบ POS — ข้อความนี้แปลว่าการแจ้งเตือนสต็อกทาง LINE ใช้งานได้' }, lowStockMessage(await lowItems())]);
   if (!n) throw bad('ส่งไม่ได้ — ตรวจ token, เปิดใช้งาน และเชื่อมต่อแชตอย่างน้อย 1 แชต');
   res.json({ sent: n });
 }));
-r.post('/line/richmenu', staffAuth('settings'), ah(async (req, res) => {
-  const m = /^data:(image\/(?:png|jpeg));base64,([A-Za-z0-9+/=]+)$/.exec(String((req.body || {}).image || ''));
-  if (!m) throw bad('รูปริชเมนูไม่ถูกต้อง');
+const img = (v, label) => {
+  const m = /^data:(image\/(?:png|jpeg));base64,([A-Za-z0-9+/=]+)$/.exec(String(v || ''));
+  if (!m) throw bad('รูปริชเมนู' + label + 'ไม่ถูกต้อง');
   const buf = Buffer.from(m[2], 'base64');
-  if (buf.length > 1024 * 1024) throw bad('รูปริชเมนูต้องไม่เกิน 1MB');
-  res.json({ id: await setupRichMenu(buf, m[1]) });
+  if (buf.length > 1024 * 1024) throw bad('รูปริชเมนู' + label + 'ต้องไม่เกิน 1MB');
+  return { buf, mime: m[1] };
+};
+r.post('/line/richmenu', staffAuth('settings'), ah(async (req, res) => {
+  const b = req.body || {};
+  const ids = await setupRichMenus(img(b.image, 'พนักงาน'), b.owner_image ? img(b.owner_image, 'เจ้าของ') : null);
+  res.json({ id: ids.staff, ...ids });
 }));
 // shopping list (also on the stock page)
 r.get('/shopping', staffAuth(), ah(async (req, res) => res.json({ open: await openList(), bought: await db.all("SELECT * FROM shopping_list WHERE status = 'bought' ORDER BY done_at DESC LIMIT 30"), low: await lowItems() })));

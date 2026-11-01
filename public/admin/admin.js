@@ -22,7 +22,7 @@ const ROUTES = [
   ['ภาพรวม', [['dashboard', '📊 ยอดขายวันนี้', 'view_sales'], ['live', '🔴 Live View หน้าร้าน', 'view_sales'], ['bills', '🧾 ประวัติบิล', 'view_sales'], ['reports', '📈 รายงาน', 'view_sales']]],
   ['ร้าน', [['menu', '🍜 เมนูและสินค้า', 'manage_menu'], ['assistant', '✨ ผู้ช่วยเพิ่มสินค้า', 'manage_menu'], ['labels', '🏷️ พิมพ์บาร์โค้ดสินค้า', 'manage_menu'], ['stock', '📦 สต็อก', 'manage_stock'], ['tables', '🪑 โต๊ะ', 'manage_tables'], ['staff', '👥 พนักงานและสิทธิ์', 'manage_staff']]],
   ['สมาชิก', [['members', '⭐ สมาชิก', 'manage_members'], ['resets', '🔑 คำขอรีเซ็ตรหัส', 'member_reset'], ['tiers', '👑 Tier Member', 'settings'], ['rewards', '🎁 ของรางวัล', 'manage_members']]],
-  ['ตั้งค่า', [['settings', '⚙️ ตั้งค่าร้าน', 'settings'], ['lock', '🔒 ล็อกหน้าจอ (Inactive)', 'settings'], ['web', '🌐 เว็บไซต์ร้าน', 'settings'], ['line', '💬 LINE แจ้งเตือนสต็อก', 'settings'], ['theme', '🎨 ธีมและรูปแบบ', 'settings'], ['payments', '💳 การรับชำระเงิน', 'settings'], ['designer', '🖨️ ออกแบบเอกสาร', 'settings'], ['fonts', '🔤 ฟอนต์', 'settings'],
+  ['ตั้งค่า', [['settings', '⚙️ ตั้งค่าร้าน', 'settings'], ['lock', '🔒 ล็อกหน้าจอ (Inactive)', 'settings'], ['web', '🌐 เว็บไซต์ร้าน', 'settings'], ['line', '💬 LINE เจ้าของร้าน/สต็อก', 'settings'], ['theme', '🎨 ธีมและรูปแบบ', 'settings'], ['payments', '💳 การรับชำระเงิน', 'settings'], ['designer', '🖨️ ออกแบบเอกสาร', 'settings'], ['fonts', '🔤 ฟอนต์', 'settings'],
     ['display', '📺 จอลูกค้า', 'settings'], ['printers', '🖨️ เครื่องพิมพ์', 'manage_printers'], ['devices', '💻 เครื่องขาย/อุปกรณ์', 'settings'], ['audit', '📜 ประวัติการแก้ไข', 'settings']]],
 ];
 

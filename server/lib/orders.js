@@ -1,3 +1,4 @@
+import { notifySale } from './line.js';
 import { db, J, S } from '../db.js';
 import { id, now, getSettings, businessDateOf, nextCounter, bad, conflict, notFound, forbidden, emit, audit, token, addMinutes } from './util.js';
 import { can } from './auth.js';
@@ -452,6 +453,7 @@ export async function payOrder({ orderId, payments, staff, terminalId, shiftId, 
   });
   if (!result.duplicate) {
     const o = result.order;
+    notifySale(o.id).catch((e) => console.warn('[line sale]', e.message)); // LINE: receipt to the owners (never holds up the sale)
     emit('shop', 'orders:changed', { id: o.id, status: o.status });
     emit('admin', 'sales:changed', { id: o.id });
     if (o.mobile_session_id) emit('mobile:' + o.mobile_session_id, 'order:status', { id: o.id, status: o.status, prep_status: o.prep_status });

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import QRCode from 'qrcode';
 import { db, J, S } from '../db.js';
 import { ah, id, now, bad, notFound, conflict, emit, audit, getSettings, businessDateOf } from '../lib/util.js';
 import { staffAuth, staffForAction, can, requirePerm } from '../lib/auth.js';
@@ -31,6 +32,15 @@ r.get('/orders', staffAuth(), ah(async (req, res) => {
 }));
 // bill barcode on the merchant copy / receipt → look the bill up
 // bill details from the signed QR on the merchant slip: no login, only what is printed on a receipt
+// QR of the bill link (shown in the LINE receipt): only for a valid signed bill token
+r.get('/public/bill/:token/qr.png', ah(async (req, res) => {
+  const billNo = await billFromToken(req.params.token);
+  if (!billNo) throw notFound('ลิงก์บิลไม่ถูกต้อง');
+  const base = process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get('host')}`;
+  const png = await QRCode.toBuffer(`${base}/b/#${req.params.token}`, { type: 'png', width: 360, margin: 1, errorCorrectionLevel: 'M' });
+  res.set('Content-Type', 'image/png'); res.set('Cache-Control', 'public, max-age=86400');
+  res.send(png);
+}));
 r.get('/public/bill/:token', ah(async (req, res) => {
   const billNo = await billFromToken(req.params.token);
   if (!billNo) throw notFound('ลิงก์บิลไม่ถูกต้อง');

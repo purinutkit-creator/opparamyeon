@@ -7,7 +7,10 @@ import { id, now, getSettings, setSetting, getSecret, businessDateOf } from './u
 const API = () => process.env.LINE_API_BASE || 'https://api.line.me';
 const DATA_API = () => process.env.LINE_DATA_API_BASE || process.env.LINE_API_BASE || 'https://api-data.line.me';
 const BASE = () => process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '';
-export const LINE_DEFAULTS = { enabled: false, notify_low: true, notify_close: true, recipients: [] };
+// recipients: { id, type, name, role: 'owner' | 'staff' } — owners get everything, staff only stock (no sales figures)
+// to: which roles get each alert · sale receipts and sales reports go to owners only
+export const LINE_DEFAULTS = { enabled: false, notify_low: true, notify_close: true, notify_sale: false, recipients: [], to: { low: ['owner', 'staff'], close: ['owner', 'staff'] } };
+export const roleOf = (r) => (r && r.role === 'staff' ? 'staff' : 'owner');
 export async function lineCfg() { return { ...LINE_DEFAULTS, ...((await getSettings()).line || {}) }; }
 // keys typed in the shop website win; otherwise the server's environment (LINE_CHANNEL_SECRET / LINE_CHANNEL_ACCESS_TOKEN on Render)
 export const lineSecret = async () => (await getSecret('line.channel_secret')) || process.env.LINE_CHANNEL_SECRET || null;
@@ -37,6 +40,15 @@ export async function lineToAll(messages) {
   if (!c.enabled || !(await token())) return 0;
   let n = 0;
   for (const r of c.recipients || []) { try { await linePush(r.id, messages); n++; } catch (e) { console.warn('[line]', e.message); } }
+  return n;
+}
+// to the chats whose role gets this kind of message
+export async function lineTo(kind, messages) {
+  const c = await lineCfg();
+  if (!c.enabled || !(await token())) return 0;
+  const roles = kind === 'sale' || kind === 'report' ? ['owner'] : ((c.to || {})[kind] || ['owner', 'staff']);
+  let n = 0;
+  for (const r of (c.recipients || []).filter((x) => roles.includes(roleOf(x)))) { try { await linePush(r.id, messages); n++; } catch (e) { console.warn('[line]', e.message); } }
   return n;
 }
 export async function verifyLineSignature(raw, sig) {
@@ -209,36 +221,120 @@ export function notifyLow(type, itemId) {
 export async function flushLow() {
   const batch = [...pending.values()]; pending = new Map();
   const items = (await Promise.all(batch.map((b) => itemOf(b.type, b.itemId)))).filter((x) => x && Number(x.stock) <= Number(x.low_stock));
-  if (items.length) await lineToAll(lowStockMessage(items));
+  if (items.length) await lineTo('low', lowStockMessage(items));
 }
 // shift closed: what is running low and what to buy
 export async function notifyShiftClose(summary) {
   const c = await lineCfg();
   if (!c.enabled || !c.notify_close) return 0;
   const low = await lowItems(), list = await openList();
-  if (!low.length && !list.length) return lineToAll({ type: 'text', text: `✅ ปิดรอบแล้ว (${summary.terminal_name || ''}) — ไม่มีของใกล้หมด ไม่มีของต้องซื้อ` });
-  return lineToAll(listMessage(list, low, { title: '🛒 ปิดรอบแล้ว · ของที่ต้องซื้อ', sub: `${summary.terminal_name || ''} · ใกล้หมด ${low.length} รายการ · ในรายการซื้อ ${list.length}` }));
+  if (!low.length && !list.length) return lineTo('close', { type: 'text', text: `✅ ปิดรอบแล้ว (${summary.terminal_name || ''}) — ไม่มีของใกล้หมด ไม่มีของต้องซื้อ` });
+  return lineTo('close', listMessage(list, low, { title: '🛒 ปิดรอบแล้ว · ของที่ต้องซื้อ', sub: `${summary.terminal_name || ''} · ใกล้หมด ${low.length} รายการ · ในรายการซื้อ ${list.length}` }));
 }
 
-// ---------- rich menu (image drawn in the shop website) ----------
-export async function setupRichMenu(imageBuf, mime) {
-  const W = 2500, H = 843, w = Math.round(W / 3);
-  const stockUrl = BASE() ? BASE() + '/admin/#/stock' : 'https://line.me';
-  const menu = await call('/v2/bot/richmenu', { size: { width: W, height: H }, selected: true, name: 'Oppa stock', chatBarText: '📦 สต็อก',
-    areas: [
-      { bounds: { x: 0, y: 0, width: w, height: H }, action: { type: 'postback', data: 'a=low', displayText: 'ดูของใกล้หมด' } },
-      { bounds: { x: w, y: 0, width: w, height: H }, action: { type: 'postback', data: 'a=list', displayText: 'รายการที่ต้องซื้อ' } },
-      { bounds: { x: w * 2, y: 0, width: W - w * 2, height: H }, action: { type: 'uri', uri: stockUrl } }] });
-  await call(`/v2/bot/richmenu/${menu.richMenuId}/content`, null, { data: true, raw: imageBuf, type: mime });
-  await call(`/v2/bot/user/all/richmenu/${menu.richMenuId}`, null);
-  return menu.richMenuId;
+// ---------- rich menus (pictures drawn in the shop website) ----------
+// staff (default for everyone): ของใกล้หมด · รายการที่ต้องซื้อ · หน้าสต็อก
+// owners (linked to each owner's own chat): ยอดขาย·Live View · ใกล้หมด · ต้องซื้อ / สต็อก · จัดการร้าน · หลังบ้านสมาชิก
+const page = (hash) => (BASE() ? BASE() + '/admin/#/' + hash : 'https://line.me');
+export async function setupRichMenus(staffImg, ownerImg) {
+  const c = await lineCfg();
+  const W = 2500, w = Math.round(W / 3);
+  const col = (i, y, h, action) => ({ bounds: { x: w * i, y, width: i === 2 ? W - w * 2 : w, height: h }, action });
+  const staff = await call('/v2/bot/richmenu', { size: { width: W, height: 843 }, selected: true, name: 'Oppa stock', chatBarText: '📦 สต็อก',
+    areas: [col(0, 0, 843, { type: 'postback', data: 'a=low', displayText: 'ดูของใกล้หมด' }), col(1, 0, 843, { type: 'postback', data: 'a=list', displayText: 'รายการที่ต้องซื้อ' }), col(2, 0, 843, { type: 'uri', uri: page('stock') })] });
+  await call(`/v2/bot/richmenu/${staff.richMenuId}/content`, null, { data: true, raw: staffImg.buf, type: staffImg.mime });
+  let owner = null;
+  if (ownerImg) {
+    owner = await call('/v2/bot/richmenu', { size: { width: W, height: 1686 }, selected: true, name: 'Oppa owner', chatBarText: '🏪 เมนูเจ้าของร้าน',
+      areas: [col(0, 0, 843, { type: 'postback', data: 'a=report', displayText: 'ยอดขายวันนี้' }), col(1, 0, 843, { type: 'postback', data: 'a=low', displayText: 'ดูของใกล้หมด' }),
+        col(2, 0, 843, { type: 'postback', data: 'a=list', displayText: 'รายการที่ต้องซื้อ' }),
+        col(0, 843, 843, { type: 'uri', uri: page('stock') }), col(1, 843, 843, { type: 'uri', uri: page('menu') }), col(2, 843, 843, { type: 'uri', uri: page('members') })] });
+    await call(`/v2/bot/richmenu/${owner.richMenuId}/content`, null, { data: true, raw: ownerImg.buf, type: ownerImg.mime });
+  }
+  await call(`/v2/bot/user/all/richmenu/${staff.richMenuId}`, null);
+  // the old menus go (LINE keeps at most 1000 per channel)
+  for (const old of [c.richmenus && c.richmenus.staff, c.richmenus && c.richmenus.owner]) if (old) await call(`/v2/bot/richmenu/${old}`, null, { method: 'DELETE' }).catch(() => {});
+  const next = { ...(await lineCfg()), richmenus: { staff: staff.richMenuId, owner: owner ? owner.richMenuId : null } };
+  await setSetting('line', next);
+  await linkMenus(next);
+  return next.richmenus;
 }
+// rich menus only show in 1:1 chats: each owner's chat gets the owner menu, staff the default one
+export async function linkMenus(c = null) {
+  c = c || await lineCfg();
+  const owner = c.richmenus && c.richmenus.owner;
+  for (const r of (c.recipients || []).filter((x) => x.type === 'user')) {
+    try {
+      if (owner && roleOf(r) === 'owner') await call(`/v2/bot/user/${r.id}/richmenu/${owner}`, null);
+      else await call(`/v2/bot/user/${r.id}/richmenu`, null, { method: 'DELETE' });
+    } catch (e) { console.warn('[line menu]', e.message); }
+  }
+}
+
+// ---------- sales: a receipt per bill (owners), today's sales on request ----------
+const B = (satang) => (Number(satang || 0) / 100).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const tm = (iso) => (iso ? new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) + ' น.' : '');
+const row2 = (l, r, o = {}) => ({ type: 'box', layout: 'horizontal', spacing: 'md', contents: [txt(l, { size: 'sm', color: '#555555', flex: 5, ...o.l }), txt(r, { size: 'sm', align: 'end', flex: 3, ...o.r })] });
+export function saleMessage(o, { url = '', qr = '', methods = {}, store = '' } = {}) {
+  const items = o.items.filter((i) => i.qty - i.void_qty > 0);
+  const shown = items.slice(0, 12);
+  const pays = o.payments.filter((p) => p.status === 'paid').map((p) => methods[p.method] || p.method);
+  const body = [
+    txt(store || 'ขายแล้ว', { size: 'xs', color: '#999999' }),
+    { type: 'box', layout: 'horizontal', contents: [txt(`฿${B(o.total)}`, { size: 'xxl', weight: 'bold', color: BRAND, flex: 3 }), txt(o.queue_no ? `คิว ${o.queue_no}` : '', { size: 'md', weight: 'bold', align: 'end', gravity: 'center', flex: 2 })] },
+    txt(`บิล ${o.bill_no} · ${tm(o.paid_at || o.created_at)}`, { size: 'sm', color: '#555555' }),
+    txt([o.dine_type === 'takeaway' ? 'กลับบ้าน' : o.dine_type === 'mixed' ? 'ทานที่ร้าน+กลับบ้าน' : 'ทานที่ร้าน', o.table_name ? 'โต๊ะ ' + o.table_name : '', o.staff_name ? 'โดย ' + o.staff_name : ''].filter(Boolean).join(' · '), { size: 'xs', color: '#999999' }),
+    { type: 'separator', margin: 'md' },
+    { type: 'box', layout: 'vertical', spacing: 'xs', margin: 'md', contents: shown.map((i) => row2(`${i.qty - i.void_qty}× ${i.name}${(i.options || []).length ? ' (' + i.options.map((x) => x.name).join(', ') + ')' : ''}`, B(i.line_total))) },
+    ...(items.length > shown.length ? [txt(`และอีก ${items.length - shown.length} รายการ`, { size: 'xs', color: '#999999' })] : []),
+    { type: 'separator', margin: 'md' },
+    { type: 'box', layout: 'vertical', spacing: 'xs', margin: 'md', contents: [
+      ...(o.discount ? [row2('ส่วนลด', '−' + B(o.discount))] : []), ...(o.packaging ? [row2('ค่าบรรจุภัณฑ์', B(o.packaging))] : []),
+      row2('รวม', B(o.total), { l: { weight: 'bold', color: '#111111' }, r: { weight: 'bold' } }), row2('ชำระโดย', pays.join(' + ') || '-')] },
+    ...(qr ? [{ type: 'image', url: qr, size: 'md', aspectMode: 'fit', margin: 'lg' }, txt('สแกนดูบิล', { size: 'xxs', color: '#999999', align: 'center' })] : []),
+  ];
+  return { type: 'flex', altText: `🧾 ${o.bill_no} ฿${B(o.total)} · ${items.length} รายการ`, contents: { type: 'bubble', size: 'kilo',
+    body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: body },
+    ...(url ? { footer: { type: 'box', layout: 'vertical', contents: [{ type: 'button', style: 'link', height: 'sm', action: { type: 'uri', label: '🧾 ดูบิล', uri: url } }] } } : {}) } };
+}
+export async function notifySale(orderId) {
+  const c = await lineCfg();
+  if (!c.enabled || !c.notify_sale || !(c.recipients || []).some((r) => roleOf(r) === 'owner')) return 0;
+  const { orderFull } = await import('./orders.js');
+  const { billToken } = await import('./billlink.js');
+  const s = await getSettings();
+  const o = await orderFull(orderId);
+  if (!o || !o.bill_no) return 0;
+  const t = await billToken(o.bill_no);
+  const url = abs('/b/#' + t), qr = abs(`/api/public/bill/${encodeURIComponent(t)}/qr.png`);
+  return lineTo('sale', saleMessage(o, { url, qr, methods: Object.fromEntries((s.sale.payment_methods || []).map((m) => [m.id, m.name])), store: s.store.name }));
+}
+export function reportMessage(sum, { recent = [], live = '', store = '' } = {}) {
+  const avg = sum.bills_paid ? Math.round(sum.net_sales / sum.bills_paid) : 0;
+  const tile = (label, value, color = '#111111') => ({ type: 'box', layout: 'vertical', flex: 1, paddingAll: '8px', backgroundColor: '#F7F3F1', cornerRadius: '10px', contents: [txt(label, { size: 'xxs', color: '#888888' }), txt(value, { size: 'md', weight: 'bold', color })] });
+  return { type: 'flex', altText: `📊 ยอดขายวันนี้ ฿${B(sum.net_sales)} · ${sum.bills_paid} บิล`, contents: { type: 'bubble', size: 'mega',
+    header: { type: 'box', layout: 'vertical', backgroundColor: BRAND, paddingAll: '16px', contents: [txt('📊 ยอดขายวันนี้', { color: '#FFFFFF', weight: 'bold', size: 'md' }), txt(`${store} · อัปเดต ${tm(sum.generated_at)}`, { color: '#FFE4DE', size: 'xs' })] },
+    body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [
+      txt(`฿${B(sum.net_sales)}`, { size: '3xl', weight: 'bold', color: BRAND }),
+      { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [tile('บิล', String(sum.bills_paid)), tile('เฉลี่ย/บิล', B(avg)), tile('ชาม', String(sum.bowls_net))] },
+      ...(sum.gross_profit !== undefined ? [row2('กำไรขั้นต้น', `${B(sum.gross_profit)} (${sum.margin_pct}%)`)] : []),
+      ...(sum.discount ? [row2('ส่วนลด', B(sum.discount))] : []),
+      ...(sum.voids.count || sum.refunds.count ? [row2('ยกเลิก / คืนเงิน', `${sum.voids.count} / ${sum.refunds.count} (${B(sum.voids.amount + sum.refunds.amount)})`)] : []),
+      ...(sum.pending_payment.count ? [row2('⏳ รอชำระ', `${sum.pending_payment.count} บิล ${B(sum.pending_payment.amount)}`, { r: { color: '#B45309' } })] : []),
+      ...(sum.payments.length ? [{ type: 'separator' }, txt('แยกตามช่องทาง', { size: 'xs', color: '#888888' }), ...sum.payments.map((p) => row2(p.name || p.method, B(p.net)))] : []),
+      ...(recent.length ? [{ type: 'separator' }, txt('บิลล่าสุด', { size: 'xs', color: '#888888' }), ...recent.map((x) => row2(`${x.bill_no}${x.queue_no ? ' · คิว ' + x.queue_no : ''} · ${new Date(x.paid_at).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' })}`, B(x.total)))] : []),
+    ] },
+    footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
+      ...(live ? [{ type: 'button', style: 'primary', color: BRAND, height: 'sm', action: { type: 'uri', label: '🔴 เปิด Live View', uri: live } }] : []),
+      { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '⟳ อัปเดตยอด', data: 'a=report', displayText: 'ยอดขายวันนี้' } }] } } };
+}
+export const livePage = () => (BASE().startsWith('https:') ? page('live') : '');
 
 // ---------- linking a chat (owner 1:1 or the shop group) with a one-time code shown in the shop website ----------
-export async function newLinkCode() {
+export async function newLinkCode(role = 'owner') {
   const code = String(crypto.randomInt(100000, 999999));
   const c = await lineCfg();
-  await setSetting('line', { ...c, link_code: code, link_until: Date.now() + 10 * 60e3 });
+  await setSetting('line', { ...c, link_code: code, link_role: role === 'staff' ? 'staff' : 'owner', link_until: Date.now() + 10 * 60e3 });
   return code;
 }
 export async function tryLink(text, source) {
@@ -248,12 +344,17 @@ export async function tryLink(text, source) {
   const rid = source.groupId || source.roomId || source.userId;
   let name = source.groupId ? 'กลุ่ม LINE' : 'ผู้ใช้ LINE';
   try { if (!source.groupId && source.userId) name = (await call(`/v2/bot/profile/${source.userId}`, null, { method: 'GET' })).displayName || name; } catch { /* name is optional */ }
-  const recipients = (c.recipients || []).filter((r) => r.id !== rid).concat([{ id: rid, type: source.groupId ? 'group' : source.roomId ? 'room' : 'user', name, at: now() }]);
-  await setSetting('line', { ...c, recipients, link_code: '', link_until: 0, enabled: true });
-  return name;
+  const role = c.link_role === 'staff' ? 'staff' : 'owner';
+  const recipients = (c.recipients || []).filter((r) => r.id !== rid).concat([{ id: rid, type: source.groupId ? 'group' : source.roomId ? 'room' : 'user', name, role, at: now() }]);
+  const next = { ...c, recipients, link_code: '', link_until: 0, enabled: true };
+  await setSetting('line', next);
+  linkMenus(next).catch(() => {});
+  return { name, role };
 }
-export async function isRecipient(source) {
+// the linked chat a message came from (a group's role applies to everyone in that group)
+export async function recipientOf(source) {
   const c = await lineCfg();
-  const ids = new Set((c.recipients || []).map((r) => r.id));
-  return ids.has(source.groupId) || ids.has(source.roomId) || ids.has(source.userId);
+  const rs = c.recipients || [];
+  return rs.find((r) => r.id === (source.groupId || source.roomId)) || (!source.groupId && !source.roomId ? rs.find((r) => r.id === source.userId) : null) || null;
 }
+export async function isRecipient(source) { return !!(await recipientOf(source)); }
