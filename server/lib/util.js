@@ -62,6 +62,12 @@ export const DEFAULT_SETTINGS = {
     tier_mode: 'auto' },
   // what prints automatically after payment, and in which order (same printer = printed in this order)
   labels: {},
+  // customer website (/web): shop info, hours, menu, map and links — edited in admin → เว็บไซต์ร้าน
+  web: { enabled: true, tagline: 'มาม่าเกาหลีต้มสด ร้อน ๆ ทุกชาม', about: '', hero_image: '', announcement: '',
+    hours: { 0: { open: '10:00', close: '21:00', closed: false }, 1: { open: '10:00', close: '21:00', closed: false }, 2: { open: '10:00', close: '21:00', closed: false },
+      3: { open: '10:00', close: '21:00', closed: false }, 4: { open: '10:00', close: '21:00', closed: false }, 5: { open: '10:00', close: '21:00', closed: false }, 6: { open: '10:00', close: '21:00', closed: false } },
+    hours_note: '', map_url: '', facebook: '', instagram: '', tiktok: '', line_url: '', grab_url: '', lineman_url: '',
+    show_menu: true, show_prices: true, featured: [] },
   theme: {},
   print: { order: ['receipt', 'kitchen', 'merchant', 'queue'], auto_receipt: true, auto_merchant: true, auto_queue: false, kitchen_every_order: true, payqr_auto: 'no_display', mark_additions: false,
     // merchant summary: 'normal' = the usual slip, 'compact' = short block on a continuous roll; printer '' = printers with the merchant role

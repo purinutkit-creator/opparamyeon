@@ -7,7 +7,7 @@ import { applyFonts } from '/shared/fonts.js';
 import { api, ctx, can, page, card, kpi, money, table, barChart } from './common.js';
 import { menuPage, stockPage, staffPage, tablesPage } from './menu.js';
 import { membersPage, memberDetail, resetsPage, tiersPage, rewardsPage } from './members.js';
-import { settingsPage, displayPage, fontsPage, printersPage, devicesPage, auditPage, paymentsPage, lockPage } from './settings.js';
+import { settingsPage, displayPage, fontsPage, printersPage, devicesPage, auditPage, paymentsPage, lockPage, webPage } from './settings.js';
 import { linePage } from './line.js';
 import { designerPage } from './designer.js';
 import { livePage } from './live.js';
@@ -22,7 +22,7 @@ const ROUTES = [
   ['ภาพรวม', [['dashboard', '📊 ยอดขายวันนี้', 'view_sales'], ['live', '🔴 Live View หน้าร้าน', 'view_sales'], ['bills', '🧾 ประวัติบิล', 'view_sales'], ['reports', '📈 รายงาน', 'view_sales']]],
   ['ร้าน', [['menu', '🍜 เมนูและสินค้า', 'manage_menu'], ['assistant', '✨ ผู้ช่วยเพิ่มสินค้า', 'manage_menu'], ['labels', '🏷️ พิมพ์บาร์โค้ดสินค้า', 'manage_menu'], ['stock', '📦 สต็อก', 'manage_stock'], ['tables', '🪑 โต๊ะ', 'manage_tables'], ['staff', '👥 พนักงานและสิทธิ์', 'manage_staff']]],
   ['สมาชิก', [['members', '⭐ สมาชิก', 'manage_members'], ['resets', '🔑 คำขอรีเซ็ตรหัส', 'member_reset'], ['tiers', '👑 Tier Member', 'settings'], ['rewards', '🎁 ของรางวัล', 'manage_members']]],
-  ['ตั้งค่า', [['settings', '⚙️ ตั้งค่าร้าน', 'settings'], ['lock', '🔒 ล็อกหน้าจอ (Inactive)', 'settings'], ['line', '💬 LINE แจ้งเตือนสต็อก', 'settings'], ['theme', '🎨 ธีมและรูปแบบ', 'settings'], ['payments', '💳 การรับชำระเงิน', 'settings'], ['designer', '🖨️ ออกแบบเอกสาร', 'settings'], ['fonts', '🔤 ฟอนต์', 'settings'],
+  ['ตั้งค่า', [['settings', '⚙️ ตั้งค่าร้าน', 'settings'], ['lock', '🔒 ล็อกหน้าจอ (Inactive)', 'settings'], ['web', '🌐 เว็บไซต์ร้าน', 'settings'], ['line', '💬 LINE แจ้งเตือนสต็อก', 'settings'], ['theme', '🎨 ธีมและรูปแบบ', 'settings'], ['payments', '💳 การรับชำระเงิน', 'settings'], ['designer', '🖨️ ออกแบบเอกสาร', 'settings'], ['fonts', '🔤 ฟอนต์', 'settings'],
     ['display', '📺 จอลูกค้า', 'settings'], ['printers', '🖨️ เครื่องพิมพ์', 'manage_printers'], ['devices', '💻 เครื่องขาย/อุปกรณ์', 'settings'], ['audit', '📜 ประวัติการแก้ไข', 'settings']]],
 ];
 
@@ -57,7 +57,7 @@ function shell(r, content) {
     // opened from the POS app: everything stays in this window, and leaving goes back to the sales screen (the POS session stays signed in)
     ...(fromPos ? [h('h4', {}, 'ลิงก์'), h('a', { href: '/kitchen/' }, '👩‍🍳 จอครัว'), h('a', { href: '/guide/' }, '📖 คู่มือ'), h('a', { href: '/pos/', class: 'backpos', onclick: backToPos }, '← กลับหน้าขาย POS')]
       : [h('h4', {}, 'ลิงก์'), h('a', { href: '/pos/', target: '_blank' }, '🛒 หน้าขาย POS'), h('a', { href: '/kitchen/', target: '_blank' }, '👩‍🍳 จอครัว'), h('a', { href: '/display/', target: '_blank' }, '📺 จอลูกค้า'),
-        h('a', { href: '/member/', target: '_blank' }, '⭐ เว็บไซต์สมาชิก'), h('a', { href: '/guide/', target: '_blank' }, '📖 คู่มือ'),
+        h('a', { href: '/member/', target: '_blank' }, '⭐ เว็บไซต์สมาชิก'), h('a', { href: '/web/', target: '_blank' }, '🌐 เว็บไซต์ร้าน (ลูกค้า)'), h('a', { href: '/guide/', target: '_blank' }, '📖 คู่มือ'),
         h('a', { href: '#', onclick: async (e) => { e.preventDefault(); await api.post('/auth/logout').catch(() => {}); store.del('admin_token'); location.reload(); } }, '🚪 ออกจากระบบ')]),
     h('p', { class: 'version', style: { padding: '0 .5em' } }, `เวอร์ชัน ${VERSION}`));
   app.replaceChildren(h('div', { class: 'topm' }, h('button', { class: 'btn sm', onclick: () => side.classList.toggle('open') }, '☰'), h('strong', {}, ctx.settings.store.name),
@@ -80,7 +80,7 @@ async function route() {
       location.hash = '#/bills'; setTimeout(() => billDetail(found.id), 300); return;
     }
     const pages = { dashboard, live: () => livePage(sock), labels: labelsPage, theme: themePage, assistant: assistantPage, bills: billsPage, reports: reportsPage, menu: menuPage, stock: stockPage, tables: tablesPage, staff: staffPage, members: arg ? () => memberDetail(arg) : membersPage,
-      resets: resetsPage, tiers: tiersPage, rewards: rewardsPage, settings: settingsPage, lock: lockPage, line: linePage, payments: paymentsPage, designer: designerPage, fonts: fontsPage, display: displayPage,
+      resets: resetsPage, tiers: tiersPage, rewards: rewardsPage, settings: settingsPage, lock: lockPage, web: webPage, line: linePage, payments: paymentsPage, designer: designerPage, fonts: fontsPage, display: displayPage,
       printers: printersPage, devices: devicesPage, audit: auditPage };
     const fn = pages[r] || dashboard;
     set(await fn(set));

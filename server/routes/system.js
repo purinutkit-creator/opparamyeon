@@ -10,6 +10,7 @@ import { staffAuth, can, requirePerm } from '../lib/auth.js';
 import { claimNext, report, retry, reprint, publicPrinter, enqueue, storeData, normalizePrinterOptions, feedMerchantRoll } from '../lib/print.js';
 import { DEFAULT_TEMPLATES, DOC_TYPES, COMPACT_MERCHANT, COMPACT_MERCHANT_NAME } from '../lib/templates.js';
 import { VERSION, businessRange } from '../../public/shared/core.js';
+import { catalog } from './catalog.js';
 
 const r = Router();
 const upload = multer({ limits: { fileSize: 60 * 1024 * 1024 } });
@@ -256,6 +257,49 @@ r.get('/settings', staffAuth(), ah(async (req, res) => {
   const full = can(req.staff, 'settings') ? s : publicSettings(s);
   res.json({ ...full, version: VERSION, day_rules: await dayRules(), today: await businessDateOf() });
 }));
+// customer website: plain text, http(s) links only, opening hours as HH:MM
+const T = (x, n) => String(x || '').slice(0, n);
+const url = (x) => (/^https?:\/\/\S+$/i.test(String(x || '').trim()) ? String(x).trim().slice(0, 500) : '');
+const hhmm = (x, d) => (/^([01]\d|2[0-3]):[0-5]\d$/.test(String(x || '')) ? String(x) : d);
+export function cleanWeb(v) {
+  const hours = Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => { const x = (v.hours || {})[d] || {}; return [d, { open: hhmm(x.open, '10:00'), close: hhmm(x.close, '21:00'), closed: !!x.closed }]; }));
+  return { enabled: v.enabled !== false, tagline: T(v.tagline, 120), about: T(v.about, 3000), hero_image: T(v.hero_image, 500), announcement: T(v.announcement, 300), hours, hours_note: T(v.hours_note, 200),
+    map_url: url(v.map_url), facebook: url(v.facebook), instagram: url(v.instagram), tiktok: url(v.tiktok), line_url: url(v.line_url), grab_url: url(v.grab_url), lineman_url: url(v.lineman_url),
+    show_menu: v.show_menu !== false, show_prices: v.show_prices !== false, featured: Array.isArray(v.featured) ? v.featured.map(String).slice(0, 12) : [] };
+}
+// open now? hours in Bangkok time; a closing time before the opening time runs past midnight
+export function openState(hours, at = new Date()) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Bangkok', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(at).map((x) => [x.type, x.value]));
+  const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday), mins = Number(p.hour) * 60 + Number(p.minute);
+  const m = (t) => { const [a, b] = String(t).split(':').map(Number); return a * 60 + b; };
+  const within = (d, nowM) => { const x = hours[d]; if (!x || x.closed) return null; const o = m(x.open), c = m(x.close); return c > o ? (nowM >= o && nowM < c ? x : null) : (nowM >= o ? x : null); };
+  const y = (day + 6) % 7, yx = hours[y];
+  if (within(day, mins)) return { open: true, until: hours[day].close, day };
+  if (yx && !yx.closed && m(yx.close) <= m(yx.open) && mins < m(yx.close)) return { open: true, until: yx.close, day };
+  const today = hours[day];
+  if (today && !today.closed && mins < m(today.open)) return { open: false, next: today.open, next_day: day, day };
+  for (let i = 1; i <= 7; i++) { const d = (day + i) % 7; if (hours[d] && !hours[d].closed) return { open: false, next: hours[d].open, next_day: d, day }; }
+  return { open: false, day };
+}
+// everything the customer website shows, no sign-in (menu = items shown to customers in Mobile Ordering)
+r.get('/public/web', ah(async (req, res) => {
+  const s = await getSettings();
+  const w = cleanWeb({ ...DEFAULT_SETTINGS.web, ...(s.web || {}) });
+  if (!w.enabled) return res.json({ enabled: false, store: { name: s.store.name } });
+  let menu = null;
+  if (w.show_menu) {
+    const c = await catalog({ mobile: true });
+    const used = new Set(c.products.map((p) => p.category_id));
+    menu = { categories: c.categories.filter((x) => used.has(x.id)).map((x) => ({ id: x.id, name: x.name, color: x.color })),
+      products: c.products.map((p) => ({ id: p.id, name: p.name, category_id: p.category_id, description: p.description || '', image: p.image || '', price: w.show_prices ? p.price : null,
+        highlights: String(p.highlights || '').split('\n').map((x) => x.trim()).filter(Boolean), spice: p.spice_level || 0, sold_out: !!p.sold_out })) };
+  }
+  res.setHeader('Cache-Control', 'no-cache');
+  res.json({ enabled: true, version: VERSION, now: new Date().toISOString(), open: openState(w.hours),
+    store: { name: s.store.name, branch: s.store.branch, address: s.store.address, phone: s.store.phone, logo: s.store.logo, line: s.store.contact_line },
+    web: w, theme: s.theme || {}, fonts: s.fonts, members: !!(s.members && s.members.enabled), menu });
+}));
+
 r.put('/settings/:key', staffAuth('settings'), ah(async (req, res) => {
   const key = req.params.key;
   if (!(key in DEFAULT_SETTINGS)) throw bad('ไม่รู้จักหมวดการตั้งค่า');
@@ -276,6 +320,7 @@ r.put('/settings/:key', staffAuth('settings'), ah(async (req, res) => {
     v.selfie = ['required', 'optional', 'off'].includes(v.selfie) ? v.selfie : (before && before.selfie) || 'required'; // not sent = keep
     v.selfie_when = ['every', 'first'].includes(v.selfie_when) ? v.selfie_when : (before && before.selfie_when) || 'every';
   }
+  if (key === 'web' && v) Object.assign(v, cleanWeb({ ...(before || {}), ...v })); // a partial save keeps the rest
   const after = await setSetting(key, v);
   await audit(req.staff.id, 'settings', 'settings', key, before, after, req.body.reason);
   emit('shop', 'settings:changed', { key });

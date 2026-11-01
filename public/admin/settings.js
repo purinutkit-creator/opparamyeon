@@ -508,3 +508,45 @@ export async function lockPage() {
     body,
     h('div', { style: { marginTop: '1em' } }, saveBtn('บันทึก', () => saveKey('lock', { enabled: on.checked, seconds: secs, warn: Number(warn.value), action: action.value, keep_with_bill: keep.checked })))));
 }
+
+// ---------- customer website (/web) ----------
+export async function webPage() {
+  const all = await api.get('/settings');
+  const cat = await api.get('/catalog');
+  const W = { ...(all.web || {}) };
+  const f = form([
+    { k: 'enabled', label: '🌐 เปิดเว็บไซต์ร้าน (ปิด = ขึ้นว่าปิดปรับปรุง)', type: 'bool' },
+    { k: 'tagline', label: 'คำโปรยใต้ชื่อร้าน', hint: 'เช่น มาม่าเกาหลีต้มสด ร้อน ๆ ทุกชาม' },
+    { k: 'hero_image', label: 'รูปใหญ่หน้าแรก (ไม่ใส่ = รูปชามมาม่า)', type: 'image' },
+    { k: 'announcement', label: '📣 ประกาศ (เช่น หยุดวันที่ 5 / มีเมนูใหม่)', hint: 'เว้นว่าง = ไม่แสดง' },
+    { k: 'about', label: 'เกี่ยวกับร้าน', type: 'textarea', wide: true },
+    { k: 'show_menu', label: 'แสดงเมนู (เฉพาะสินค้าที่ติ๊ก "แสดงใน Mobile Ordering")', type: 'bool' },
+    { k: 'show_prices', label: 'แสดงราคา', type: 'bool' },
+    { k: 'featured', label: '⭐ เมนูแนะนำ (สูงสุด 12)', type: 'multi', options: cat.products.filter((p) => p.mobile && p.active).map((p) => [p.id, p.name]), wide: true },
+    { k: 'map_url', label: 'ลิงก์ Google Maps ของร้าน', hint: 'ไม่ใส่ = ใช้ที่อยู่ร้านจากตั้งค่าร้าน · ลิงก์ "ฝังแผนที่" (…/maps/embed…) จะแสดงแผนที่ตามนั้น' },
+    { k: 'line_url', label: 'ลิงก์ LINE (ไม่ใส่ = ใช้ LINE ID ในตั้งค่าร้าน)' }, { k: 'facebook', label: 'ลิงก์ Facebook' }, { k: 'instagram', label: 'ลิงก์ Instagram' }, { k: 'tiktok', label: 'ลิงก์ TikTok' },
+    { k: 'grab_url', label: 'ลิงก์ร้านใน GrabFood' }, { k: 'lineman_url', label: 'ลิงก์ร้านใน LINE MAN' },
+    { k: 'hours_note', label: 'หมายเหตุเวลาเปิด', hint: 'เช่น หยุดทุกวันพุธที่ 2 ของเดือน' },
+  ], { enabled: true, show_menu: true, show_prices: true, featured: [], ...W });
+  const DAYS = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+  const hours = JSON.parse(JSON.stringify(W.hours || {}));
+  const hrow = (d) => {
+    const x = hours[d] = { open: '10:00', close: '21:00', closed: false, ...(hours[d] || {}) };
+    const o = h('input', { class: 'input', type: 'time', value: x.open, oninput: (e) => { x.open = e.target.value; } });
+    const c = h('input', { class: 'input', type: 'time', value: x.close, oninput: (e) => { x.close = e.target.value; } });
+    const off = h('input', { type: 'checkbox', checked: !!x.closed, onchange: (e) => { x.closed = e.target.checked; sync(); } });
+    const sync = () => { o.disabled = c.disabled = off.checked; };
+    sync();
+    return h('div', { style: 'display:grid;grid-template-columns:90px 1fr 1fr auto;gap:8px;align-items:center;margin-bottom:6px' }, h('b', {}, DAYS[d]), o, c, h('label', { class: 'switch' }, off, 'หยุด'));
+  };
+  const copyAll = h('button', { class: 'btn small', type: 'button', onclick: () => { const m = hours[1]; for (const d of [0, 2, 3, 4, 5, 6]) hours[d] = { ...m }; hbox.replaceChildren(...[1, 2, 3, 4, 5, 6, 0].map(hrow)); } }, 'ใช้เวลาวันจันทร์กับทุกวัน');
+  const hbox = h('div', {}, [1, 2, 3, 4, 5, 6, 0].map(hrow));
+  const link = location.origin + '/web';
+  return page('เว็บไซต์ร้าน', card(h('h3', {}, '🌐 เว็บไซต์ร้านสำหรับลูกค้า'),
+    h('p', { class: 'small muted' }, 'หน้าเว็บของร้านให้ลูกค้าดูเมนู ราคา เวลาเปิด-ปิด (บอกว่าตอนนี้เปิดอยู่ไหม) แผนที่ และช่องทางติดต่อ · ชื่อร้าน โลโก้ ที่อยู่ เบอร์โทร ใช้จาก "ตั้งค่าร้าน" · รูป/รายละเอียด/สรรพคุณ/ความเผ็ดของเมนูใช้จากหน้าเมนู'),
+    h('div', { class: 'row', style: { margin: '.6em 0 1em', gap: '8px', flexWrap: 'wrap' } }, h('code', { style: { padding: '.5em .8em', borderRadius: '10px', background: 'var(--surface2)' } }, link),
+      h('a', { class: 'btn', href: link, target: '_blank' }, '↗ เปิดดูเว็บไซต์'), h('button', { class: 'btn', onclick: () => navigator.clipboard.writeText(link).then(() => toast('คัดลอกลิงก์แล้ว', 'ok')) }, '📋 คัดลอกลิงก์')),
+    f),
+    card(h('h3', {}, '🕒 เวลาเปิด-ปิด'), h('p', { class: 'small muted' }, 'เวลาปิดน้อยกว่าเวลาเปิด = เปิดข้ามเที่ยงคืน (เช่น 18:00 – 02:00)'), hbox, copyAll),
+    h('div', { style: { marginTop: '1em' } }, saveBtn('บันทึก', async () => { const v = f.value(); await saveKey('web', { ...v, featured: (v.featured || []).slice(0, 12), hours }); toast('บันทึกแล้ว · เว็บไซต์อัปเดตทันที', 'ok'); })));
+}
