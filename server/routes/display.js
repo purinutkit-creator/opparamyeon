@@ -60,6 +60,12 @@ const displayAuth = () => async (req, res, next) => {
     req.display = p; next();
   } catch (e) { next(e); }
 };
+// the screen itself leaves (7 quick taps on the customer display): its pairing is revoked, it goes back to the pairing code
+r.post('/display/unpair', displayAuth(), ah(async (req, res) => {
+  await db.run('UPDATE display_pairings SET revoked = 1 WHERE id = ?', [req.display.id]);
+  await audit(null, 'display_unpair_self', 'display', req.display.id, null, { terminal_id: req.display.terminal_id });
+  res.json({ ok: true });
+}));
 r.get('/display/me', displayAuth(), ah(async (req, res) => {
   const t = await db.get('SELECT id, name FROM terminals WHERE id = ?', [req.display.terminal_id]);
   res.json({ terminal: t, pairing_id: req.display.id });

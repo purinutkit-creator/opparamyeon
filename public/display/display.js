@@ -67,6 +67,38 @@ async function checkVersion() {
     location.reload();
   } catch { /* offline */ }
 }
+// 7 quick taps anywhere (not on a button/keypad) → ask, then leave the pairing and go back to the pairing code
+let taps = [], tapHint = null, tapHintTimer = null;
+function tapToLeave(e) {
+  if (preview || !store.get('display_token') || prompt || document.querySelector('.leave-ask')) return;
+  if (e.target.closest('button, input, a, .keypad, .overlay')) return;
+  const t = Date.now();
+  taps = taps.filter((x) => t - x < 3000); taps.push(t);
+  const left = 7 - taps.length;
+  if (left <= 0) { taps = []; hideTapHint(); return askLeave(); }
+  if (taps.length >= 4) {
+    if (!tapHint) { tapHint = h('div', { class: 'tap-hint' }); document.body.append(tapHint); }
+    tapHint.textContent = `แตะอีก ${left} ครั้ง เพื่อออกจากการเชื่อมต่อ`;
+    clearTimeout(tapHintTimer); tapHintTimer = setTimeout(() => { taps = []; hideTapHint(); }, 3000);
+  }
+}
+function hideTapHint() { clearTimeout(tapHintTimer); if (tapHint) { tapHint.remove(); tapHint = null; } }
+function askLeave() {
+  let n = 10, timer = null;
+  const close = () => { clearInterval(timer); box.remove(); };
+  const sec = h('b', {}, String(n));
+  const box = h('div', { class: 'leave-ask' }, h('div', { class: 'la-card' },
+    h('div', { class: 'la-ic' }, '🔌'), h('h2', {}, 'ออกจากการเชื่อมต่อจอนี้?'),
+    h('p', {}, 'จอนี้จะเลิกแสดงรายการของเครื่องขาย และกลับไปหน้าใส่รหัสจับคู่'),
+    h('div', { class: 'la-btns' },
+      h('button', { class: 'la-no', onclick: close }, 'ยกเลิก (', sec, ')'),
+      h('button', { class: 'la-yes', onclick: async (ev) => { ev.currentTarget.disabled = true; clearInterval(timer);
+        try { await api.post('/display/unpair', {}); } catch { /* already revoked / offline: still leave here */ }
+        store.del('display_token'); location.replace(location.pathname); } }, 'ออกจากการเชื่อมต่อ'))));
+  document.body.append(box);
+  timer = setInterval(() => { n -= 1; sec.textContent = String(n); if (n <= 0) close(); }, 1000);
+}
+document.addEventListener('pointerdown', tapToLeave, { passive: true });
 function net(ok) { let n = $('.net'); if (!n) { n = h('div', { class: 'net' }); document.body.append(n); } n.textContent = ok ? `● เชื่อมต่อแล้ว · v${VERSION}` : '○ ขาดการเชื่อมต่อ กำลังเชื่อมต่อใหม่…'; }
 
 function pairing() {
