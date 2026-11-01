@@ -5,6 +5,7 @@ import { applyTheme } from '/shared/theme.js';
 import { rememberTap, flyToCart, countTo, lineChanges, setFxLevel } from './fx.js';
 import { flip, leave } from '/shared/motion.js';
 import { selfieBox, SELFIE_CSS } from '/shared/selfie.js';
+import { scanWithCamera, BARCODECAM_CSS } from '/shared/barcodecam.js';
 import { shiftDetailsView, shiftStats, SHIFT_CSS } from '/shared/shiftview.js';
 document.head.append(Object.assign(document.createElement('style'), { textContent: SHIFT_CSS }));
 document.head.append(Object.assign(document.createElement('style'), { textContent: SELFIE_CSS }));
@@ -1073,7 +1074,8 @@ function payDialog() {
       method === 'cash' && received > rem ? h('div', { class: 'bigsum', style: { color: 'var(--ok)' } }, 'ทอน ', baht(received - rem)) : null,
       method === 'promptpay' && st.settings.payment.promptpay_enabled ? h('div', { style: { textAlign: 'center' } }, h('img', { src: '/api/qr.svg?d=' + encodeURIComponent(qrPayload(Math.min(rem, toSatang(amt.value) || rem))), style: { width: '200px' }, alt: 'PromptPay QR' }),
         h('div', { class: 'small muted' }, 'แสดงบนจอลูกค้าด้วย · ตรวจสอบยอดเงินเข้าก่อนกดยืนยัน'),
-        h('button', { class: 'btn block', style: { marginTop: '.5em' }, onclick: () => printPayQr(Math.min(rem, toSatang(amt.value) || rem), false) }, '🖨 พิมพ์ QR ชำระเงิน')) : null,
+        h('button', { class: 'btn block', style: { marginTop: '.5em' }, onclick: () => printPayQr(Math.min(rem, toSatang(amt.value) || rem), false) }, '🖨 พิมพ์ QR ชำระเงิน'),
+        h('button', { class: 'btn ok block big', style: { marginTop: '.5em' }, onclick: () => slipDialog(Math.min(rem, toSatang(amt.value) || rem), async (sl) => { slip = sl; const r = await confirmPay(); if (r !== false) payM.close(); else slip = null; }) }, '📷 สแกนสลิปลูกค้า (ตรวจสลิป)')) : null,
       keypad(amt, { decimal: true }),
       h('div', { class: 'row', style: { marginTop: '.6em' } }, h('button', { class: 'btn block', onclick: addPay }, '+ เพิ่มช่องทางนี้ (แบ่งจ่าย)')));
     if (method === 'promptpay' && st.settings.payment.promptpay_enabled) printPayQr(rem, true);
@@ -1094,15 +1096,14 @@ function payDialog() {
   fillAmt();
   drawLeft(); drawRight();
   const idem = st.cart.idem; // same key on retry → never double charged
-  modal('ชำระเงิน', h('div', { class: 'pay-grid' }, left, right), { wide: true, onClose: () => pushDisplay(), actions: [
-    { label: 'ยกเลิก', onClick: () => {} },
-    { label: 'ยืนยันรับเงิน', class: 'ok big', onClick: async () => {
+  let slip = null; // { code, bank_name, ref } — the customer's transfer slip, checked at the counter
+  const confirmPay = async () => {
       const list = pays.slice();
       if (paid() < t.total) {
         const v = toSatang(amt.value); const rem = remaining();
         if (!(v > 0)) { toast(method === 'cash' ? 'กรุณาใส่จำนวนเงินที่รับมา' : 'กรุณาใส่จำนวนเงิน', 'warn'); return false; }
         if (method === 'cash') { if (v < rem) { toast('รับเงินไม่พอ', 'warn'); return false; } list.push({ method, amount: rem, received: v }); }
-        else { if (v < rem) { toast('ยอดไม่ครบ กรุณาเพิ่มช่องทางชำระ', 'warn'); return false; } list.push({ method, amount: rem }); }
+        else { if (v < rem) { toast('ยอดไม่ครบ กรุณาเพิ่มช่องทางชำระ', 'warn'); return false; } list.push({ method, amount: rem, ...(slip && method === 'promptpay' ? { slip_qr: slip.code } : {}) }); }
       }
       const payload = { idempotency_key: idem, order_id: st.cart.order_id, cart: cartPayload(), payments: list.map((p) => ({ ...p, amount: p.amount, received: p.received })),
         print: { receipt: printReceipt.checked, queue: printQueue.checked, merchant: printMerchant.checked, mobile_qr: printMobile.checked }, approver: st.cart.approver };
@@ -1111,10 +1112,47 @@ function payDialog() {
         done(o);
       } catch (e) {
         if (e.code === 'already_paid') { toast('บิลนี้ชำระแล้ว', 'warn'); st.cart = newCart(); saveCart(); renderCart(); return; }
+        if (e.code === 'slip_used' || e.code === 'bad_slip') { errToast(e); return false; }
         throw e;
       }
-    } }] });
+  };
+  const payM = modal('ชำระเงิน', h('div', { class: 'pay-grid' }, left, right), { wide: true, onClose: () => pushDisplay(), actions: [
+    { label: 'ยกเลิก', onClick: () => {} },
+    { label: 'ยืนยันรับเงิน', class: 'ok big', onClick: confirmPay }] });
 }
+// the customer's transfer slip: scan the small QR on it (scanner gun or camera) → real bank slip, not used before → cashier checks the amount → paid
+function slipDialog(amount, onOk) {
+  const inp = h('input', { class: 'input', placeholder: 'ยิงเครื่องสแกนที่ QR บนสลิป (หรือวางโค้ด)', autocomplete: 'off', style: { fontSize: '1.1em' } });
+  const out = h('div', { class: 'slip-out' });
+  let busy = false;
+  const check = async (raw) => {
+    const code = fromThaiKeys(String(raw || '').trim()).replace(/\s+/g, '');
+    if (!code || busy) return;
+    busy = true; out.replaceChildren(h('div', { class: 'muted' }, 'กำลังตรวจสลิป…'));
+    try {
+      const r = await api.post('/payments/slip-check', { code });
+      const okBtn = h('button', { class: 'btn ok big block', onclick: async () => { okBtn.disabled = true; dlg.close(); await onOk({ code, bank_name: r.bank_name, ref: r.ref }); } }, `✓ ยอดตรง ${baht(amount)} ฿ — ชำระเสร็จ`);
+      out.replaceChildren(h('div', { class: 'slip-ok' }, h('div', { class: 'big' }, '✅ สลิปธนาคารจริง'), h('div', {}, `ธนาคาร${r.bank_name} · เลขอ้างอิง ${r.ref}`), h('div', { class: 'small' }, 'ยังไม่เคยใช้กับบิลอื่น')),
+        h('div', { class: 'slip-amt' }, 'ตรวจยอดในสลิปให้เป็น ', h('b', {}, baht(amount) + ' ฿'), ' และโอนเข้าบัญชีร้าน'), okBtn);
+      setTimeout(() => okBtn.focus(), 50); // Enter = confirm
+    } catch (e) {
+      out.replaceChildren(h('div', { class: 'slip-bad' }, h('div', { class: 'big' }, e.code === 'slip_used' ? '⛔ สลิปนี้ใช้แล้ว' : '❌ ไม่ใช่สลิปธนาคาร'), h('div', {}, e.message)));
+      inp.value = ''; inp.focus();
+    } finally { busy = false; }
+  };
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); check(inp.value); } });
+  const dlg = modal('📷 ตรวจสลิปโอนเงิน', h('div', {}, h('style', {}, BARCODECAM_CSS + SLIP_CSS),
+    h('p', { class: 'muted', style: { marginTop: 0 } }, `ยอดบิล ${baht(amount)} ฿ — สแกน QR เล็ก ๆ บนสลิปของลูกค้า (ไม่ใช่ QR พร้อมเพย์ของร้าน)`),
+    h('div', { class: 'row', style: { gap: '8px' } }, inp, h('button', { class: 'btn', onclick: () => check(inp.value) }, 'ตรวจ')),
+    h('button', { class: 'btn block', style: { marginTop: '.5em' }, onclick: () => scanWithCamera((c) => { inp.value = c; check(c); }, { title: '📷 สแกน QR บนสลิป' }) }, '📷 ใช้กล้องสแกน'), out),
+  { actions: [{ label: 'ปิด', onClick: () => {} }] });
+}
+const SLIP_CSS = `
+  .slip-out { margin-top: 12px; display: grid; gap: 10px; }
+  .slip-ok, .slip-bad { padding: 14px 16px; border-radius: 16px; display: grid; gap: 4px; }
+  .slip-ok { background: var(--ok-soft); color: var(--ok); } .slip-bad { background: var(--bad-soft); color: var(--bad); }
+  .slip-ok .big, .slip-bad .big { font-size: 1.35em; font-weight: 800; }
+  .slip-amt { font-size: 1.1em; } .slip-amt b { font-size: 1.3em; color: var(--brand); }`;
 // printed PromptPay QR slip: auto (shop setting decides, once per bill+amount on the server) or on demand
 async function printPayQr(amount, auto) {
   if (!(amount > 0)) return;

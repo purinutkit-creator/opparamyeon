@@ -10,7 +10,7 @@ import { billFromToken, shiftToken, shiftFromToken } from '../lib/billlink.js';
 import { joinShiftCrew, verifyOnDuty, clockIn, printAttendance, selfieOf, needSelfie } from '../lib/crew.js';
 import { notifyShiftClose } from '../lib/line.js';
 import { MERCHANT_CLOSE } from '../lib/templates.js';
-import { baht } from '../../public/shared/core.js';
+import { baht, parseSlipQr } from '../../public/shared/core.js';
 
 const r = Router();
 
@@ -33,6 +33,14 @@ r.get('/orders', staffAuth(), ah(async (req, res) => {
 // bill barcode on the merchant copy / receipt → look the bill up
 // bill details from the signed QR on the merchant slip: no login, only what is printed on a receipt
 // QR of the bill link (shown in the LINE receipt): only for a valid signed bill token
+// cashier scans the customer's transfer slip: is its QR a real bank slip, and was it used before?
+r.post('/payments/slip-check', staffAuth('sell'), ah(async (req, res) => {
+  const sq = parseSlipQr((req.body || {}).code);
+  if (!sq) throw bad('QR นี้ไม่ใช่สลิปโอนเงินของธนาคาร — สแกน QR เล็ก ๆ บนสลิปของลูกค้า (ไม่ใช่ QR พร้อมเพย์ของร้าน)', 'bad_slip');
+  const used = await db.get('SELECT bill_no, amount, created_at FROM slips WHERE ref = ?', [sq.ref]);
+  if (used) return res.status(409).json({ error: `สลิปนี้ใช้ไปแล้วกับบิล ${used.bill_no} (${new Date(used.created_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' })})`, code: 'slip_used', used });
+  res.json({ ok: true, ...sq });
+}));
 r.get('/public/bill/:token/qr.png', ah(async (req, res) => {
   const billNo = await billFromToken(req.params.token);
   if (!billNo) throw notFound('ลิงก์บิลไม่ถูกต้อง');

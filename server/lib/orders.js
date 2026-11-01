@@ -3,7 +3,7 @@ import { db, J, S } from '../db.js';
 import { id, now, getSettings, businessDateOf, nextCounter, bad, conflict, notFound, forbidden, emit, audit, token, addMinutes } from './util.js';
 import { can } from './auth.js';
 import { notifyLow } from './line.js';
-import { computeTotals, orderDineType, splitTickets, countBowls, dineLabel, isAddon, renamedLine, markOf } from '../../public/shared/core.js';
+import { computeTotals, orderDineType, splitTickets, countBowls, dineLabel, isAddon, renamedLine, markOf, parseSlipQr } from '../../public/shared/core.js';
 import { enqueue, orderDocData, fmtDate } from './print.js';
 import { awardOrder, reverseForRefund } from './members.js';
 import { assignCooker, cookerCfg, changed as cookersChanged, jobsOf } from './cookers.js';
@@ -400,7 +400,14 @@ export async function payOrder({ orderId, payments, staff, terminalId, shiftId, 
       if (!enabled.has(p.method) && !provider) throw bad('ช่องทางชำระเงินไม่ได้เปิดใช้งาน: ' + p.method);
       const rec = p.method === 'cash' ? Math.max(amt, Math.round(Number(p.received) || amt)) : amt;
       if (p.method !== 'cash') nonCash += amt;
-      rows.push({ method: p.method, amount: amt, received: rec, ref: p.ref || null, slip: p.slip_file || null });
+      // a transfer slip scanned at the counter: its QR must be a real bank slip, used for no other bill
+      let slipRef = null;
+      if (p.slip_qr) {
+        const sq = parseSlipQr(p.slip_qr);
+        if (!sq) throw bad('QR นี้ไม่ใช่สลิปโอนเงินของธนาคาร', 'bad_slip');
+        slipRef = sq;
+      }
+      rows.push({ method: p.method, amount: amt, received: rec, ref: slipRef ? `สลิป ${slipRef.bank_name} ${slipRef.ref}` : p.ref || null, slip: p.slip_file || null, slipRef });
       paid += amt; received += rec;
     }
     if (nonCash > order.total) throw bad('ยอดชำระที่ไม่ใช่เงินสดเกินยอดบิล');
@@ -416,6 +423,11 @@ export async function payOrder({ orderId, payments, staff, terminalId, shiftId, 
       terminal_id = COALESCE(terminal_id, ?), staff_id = COALESCE(staff_id, ?), version = version + 1, updated_at = ?, expires_at = NULL WHERE id = ? AND status = ?`,
     [t, bdate, order.total, change, shiftId, terminalId, staff ? staff.id : null, t, orderId, order.status]);
     if (!lock.changes) throw conflict('บิลนี้กำลังถูกชำระจากเครื่องอื่น', 'already_paid');
+    for (const r of rows.filter((x) => x.slipRef)) {
+      const used = await db.get('SELECT bill_no, created_at FROM slips WHERE ref = ?', [r.slipRef.ref]);
+      if (used) throw conflict(`สลิปนี้ใช้ไปแล้วกับบิล ${used.bill_no}`, 'slip_used');
+      await db.run('INSERT INTO slips(ref, bank, order_id, bill_no, amount, staff_id, created_at) VALUES(?,?,?,?,?,?,?)', [r.slipRef.ref, r.slipRef.bank, orderId, order.bill_no, r.amount, staff ? staff.id : null, t]);
+    }
     let first = true;
     for (const r of rows) {
       // record the net amount actually kept for each method (cash minus change)

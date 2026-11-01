@@ -1,7 +1,7 @@
 // Pure logic shared by the server (Node) and the browser.
 // Money is always an integer number of satang (1 บาท = 100 satang).
 
-export const VERSION = '1.49.1';
+export const VERSION = '1.50.0';
 
 export const baht = (satang) => {
   const v = (Number(satang) || 0) / 100;
@@ -319,4 +319,36 @@ export function latestOnly() {
     inflight = p;
     return p;
   };
+}
+
+// ---------- Thai bank transfer slip mini-QR (Bank of Thailand slip verification format) ----------
+// 00 [00 "000001" (API id) · 01 sending bank code · 02 transaction ref] · 51 "TH" · 91 CRC-16 (same CRC as PromptPay)
+// It only says which bank sent it and the transfer reference — not the amount or the receiver.
+export const THAI_BANKS = { '002': 'กรุงเทพ', '004': 'กสิกรไทย', '006': 'กรุงไทย', '011': 'ทหารไทยธนชาต (ttb)', '014': 'ไทยพาณิชย์', '017': 'ซิตี้แบงก์', '022': 'ซีไอเอ็มบี ไทย',
+  '024': 'ยูโอบี', '025': 'กรุงศรีอยุธยา', '030': 'ออมสิน', '033': 'อาคารสงเคราะห์', '034': 'ธ.ก.ส.', '066': 'อิสลามแห่งประเทศไทย', '067': 'ทิสโก้', '069': 'เกียรตินาคินภัทร',
+  '070': 'ไอซีบีซี (ไทย)', '071': 'ไทยเครดิต', '073': 'แลนด์ แอนด์ เฮ้าส์', '098': 'SME D Bank' };
+function tlvRead(str) {
+  const out = {}; let i = 0;
+  while (i < str.length) {
+    const tag = str.slice(i, i + 2), len = Number(str.slice(i + 2, i + 4));
+    if (!/^\d{2}$/.test(tag) || !/^\d{2}$/.test(str.slice(i + 2, i + 4)) || i + 4 + len > str.length) return null;
+    out[tag] = str.slice(i + 4, i + 4 + len); i += 4 + len;
+  }
+  return out;
+}
+export function parseSlipQr(raw) {
+  const s = String(raw || '').trim();
+  if (s.length < 30 || s.length > 200 || !/^[0-9A-Za-z]+$/.test(s)) return null;
+  const top = tlvRead(s);
+  if (!top || !top['00'] || top['51'] !== 'TH' || !top['91']) return null;
+  if (crc16(s.slice(0, -4)) !== top['91'].toUpperCase()) return null; // CRC covers everything up to and including "9104"
+  const sub = tlvRead(top['00']);
+  if (!sub || sub['00'] !== '000001' || !/^\d{3}$/.test(sub['01'] || '') || !/^[0-9A-Za-z]{8,40}$/.test(sub['02'] || '')) return null;
+  return { bank: sub['01'], bank_name: THAI_BANKS[sub['01']] || `ธนาคารรหัส ${sub['01']}`, ref: sub['02'] };
+}
+// for tests / demo: build a valid slip QR
+export function makeSlipQr(bank, ref) {
+  const sub = `0006000001` + `0103${bank}` + `02${String(ref.length).padStart(2, '0')}${ref}`;
+  const body = `00${String(sub.length).padStart(2, '0')}${sub}` + '5102TH' + '9104';
+  return body + crc16(body);
 }
