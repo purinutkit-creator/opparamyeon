@@ -41,6 +41,56 @@ r.post('/payments/slip-check', staffAuth('sell'), ah(async (req, res) => {
   if (used) return res.status(409).json({ error: `สลิปนี้ใช้ไปแล้วกับบิล ${used.bill_no} (${new Date(used.created_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' })})`, code: 'slip_used', used });
   res.json({ ok: true, ...sq });
 }));
+// slip photo → AI reads amount / receiver / ref (≤ 5 s) while the server reads the slip's QR; compared with the bill
+const normName = (t) => String(t || '').toLowerCase().replace(/(นางสาว|นาง|นาย|น\.ส\.|ด\.ช\.|ด\.ญ\.|บจก\.?|บริษัท|จำกัด|หจก\.?|mr\.?|mrs\.?|ms\.?|miss)\s*/g, ' ').replace(/[^\p{L}\p{M}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim(); // \p{M}: Thai vowel/tone marks are part of the name
+export function slipVerdict(read, { expected, shopName, shopId, used, qr }) {
+  const reasons = [], warnings = [];
+  if (!read || !read.is_slip) reasons.push('รูปนี้ไม่ใช่สลิปโอนเงิน');
+  const amt = Math.round(Number(read && read.amount) * 100);
+  const amountOk = amt > 0 && amt === Math.round(Number(expected));
+  if (read && read.is_slip && !amountOk) reasons.push(amt > 0 ? `ยอดในสลิป ${(amt / 100).toFixed(2)} ฿ ไม่ตรงกับยอดบิล ${(expected / 100).toFixed(2)} ฿` : 'อ่านยอดเงินในสลิปไม่ได้');
+  // receiver: the shop's PromptPay name (first name) or the last digits of its PromptPay number
+  let receiverOk = null;
+  const rn = normName(read && read.receiver_name), sn = normName(shopName);
+  const first = (x) => x.split(/\s+/).filter((w) => w.length > 1)[0] || '';
+  if (first(sn) && first(rn)) receiverOk = rn.includes(first(sn)) || sn.includes(first(rn));
+  const shopDigits = String(shopId || '').replace(/\D/g, ''), accDigits = String((read && read.receiver_account) || '').replace(/\D/g, '');
+  if (shopDigits.length >= 4 && accDigits.length >= 3) receiverOk = receiverOk || shopDigits.endsWith(accDigits.slice(-Math.min(4, accDigits.length)));
+  if (read && read.is_slip && receiverOk === false) reasons.push(`ผู้รับในสลิป "${read.receiver_name || read.receiver_account}" ไม่ใช่บัญชีร้าน`);
+  if (read && read.is_slip && receiverOk === null) warnings.push('ยังเทียบชื่อผู้รับไม่ได้ — ตั้งชื่อบัญชีพร้อมเพย์ที่ จัดการร้าน → การรับชำระเงิน');
+  if (used) reasons.push(`สลิปนี้ใช้ไปแล้วกับบิล ${used.bill_no}`);
+  if (read && read.looks_edited) reasons.push('รูปสลิปดูเหมือนถูกแก้ไข');
+  if (read && read.date_time) { const t = Date.parse(read.date_time); if (t && Math.abs(Date.now() - t) > 24 * 3600e3) warnings.push('วันที่ในสลิปไม่ใช่วันนี้ — ตรวจดูอีกครั้ง'); }
+  if (!qr) warnings.push('อ่าน QR บนสลิปไม่ได้ — ระบบยืนยันสลิปจริงจาก QR ไม่ได้ (ถ่ายให้เห็น QR ชัด ๆ)');
+  return { verdict: reasons.length ? 'fail' : 'pass', reasons, warnings, amount_ok: amountOk, receiver_ok: receiverOk };
+}
+r.post('/payments/slip-read', staffAuth('sell'), ah(async (req, res) => {
+  const t0 = Date.now(), deadline = t0 + 4600;
+  const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String((req.body || {}).image || ''));
+  if (!m) throw bad('รูปสลิปไม่ถูกต้อง');
+  if (m[2].length > 4_000_000) throw bad('รูปใหญ่เกินไป');
+  const expected = Math.round(Number(req.body.amount) || 0);
+  const { aiKeys, readSlipAI, AiError } = await import('../lib/productai.js');
+  const keys = await aiKeys();
+  if (!keys.anthropic) throw bad('ยังไม่ได้ตั้ง Claude API Key — ใส่ได้ที่ จัดการร้าน → ผู้ช่วยเพิ่มสินค้า → ตั้งค่า AI');
+  const buf = Buffer.from(m[2], 'base64');
+  const { decodeImage, readBarcode } = await import('../lib/imgmatch.js');
+  const { saveFile } = await import('./system.js');
+  // the slip's own QR (real bank slip + its reference) is read here, at the same time as the AI
+  const qrP = (async () => { const img = decodeImage(buf, m[1]); const code = img ? readBarcode(img) : null; const q = code ? parseSlipQr(code) : null; return q ? { ...q, code } : null; })().catch(() => null);
+  const fileP = saveFile(buf, 'slip.jpg', m[1]).catch(() => null);
+  let read = null, err = null;
+  try { read = await readSlipAI({ apiKey: keys.anthropic, imageBase64: m[2], mediaType: m[1], deadline }); } catch (e) { err = e instanceof AiError ? e : new AiError('AI ตรวจไม่สำเร็จ'); }
+  const [qr, fid] = await Promise.all([qrP, fileP]);
+  const ref = (qr && qr.ref) || (read && /^[0-9A-Za-z]{6,40}$/.test(read.ref || '') ? read.ref : '');
+  const used = ref ? await db.get('SELECT bill_no FROM slips WHERE ref = ?', [ref]) : null;
+  const file = fid ? '/files/' + fid : null;
+  const ms = Date.now() - t0;
+  if (err) return res.json({ verdict: err.code === 'timeout' ? 'timeout' : 'error', reasons: [err.message], warnings: [], qr: qr ? { bank_name: qr.bank_name, ref: qr.ref, code: qr.code } : null, used: used ? used.bill_no : null, ref, file, ms });
+  const P = (await getSettings()).payment || {};
+  const v = slipVerdict(read, { expected, shopName: P.promptpay_name, shopId: P.promptpay_id, used, qr });
+  res.json({ ...v, read, qr: qr ? { bank_name: qr.bank_name, ref: qr.ref, code: qr.code } : null, ref, file, ms });
+}));
 r.get('/public/bill/:token/qr.png', ah(async (req, res) => {
   const billNo = await billFromToken(req.params.token);
   if (!billNo) throw notFound('ลิงก์บิลไม่ถูกต้อง');

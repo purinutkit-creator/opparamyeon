@@ -1106,7 +1106,7 @@ function payDialog() {
         const v = toSatang(amt.value); const rem = remaining();
         if (!(v > 0)) { toast(method === 'cash' ? 'กรุณาใส่จำนวนเงินที่รับมา' : 'กรุณาใส่จำนวนเงิน', 'warn'); return false; }
         if (method === 'cash') { if (v < rem) { toast('รับเงินไม่พอ', 'warn'); return false; } list.push({ method, amount: rem, received: v }); }
-        else { if (v < rem) { toast('ยอดไม่ครบ กรุณาเพิ่มช่องทางชำระ', 'warn'); return false; } list.push({ method, amount: rem, ...(slip && method === 'promptpay' ? { slip_qr: slip.code } : {}) }); }
+        else { if (v < rem) { toast('ยอดไม่ครบ กรุณาเพิ่มช่องทางชำระ', 'warn'); return false; } list.push({ method, amount: rem, ...(slip && method === 'promptpay' ? { ...(slip.code ? { slip_qr: slip.code } : slip.ref ? { slip_ref: slip.ref } : {}), ...(slip.file ? { slip_file: slip.file } : {}) } : {}) }); }
       }
       const payload = { idempotency_key: idem, order_id: st.cart.order_id, cart: cartPayload(), payments: list.map((p) => ({ ...p, amount: p.amount, received: p.received })),
         print: { receipt: printReceipt.checked, queue: printQueue.checked, merchant: printMerchant.checked, mobile_qr: printMobile.checked }, approver: st.cart.approver };
@@ -1144,13 +1144,69 @@ function slipDialog(amount, onOk) {
     } finally { busy = false; }
   };
   inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); check(inp.value); } });
+  // photo → AI reads amount / receiver / ref within 5 s; passes → paid
+  const aiSlip = () => captureSlip(async (image) => {
+    let n = 5;
+    const sec = h('b', {}, '5');
+    out.replaceChildren(h('div', { class: 'slip-wait' }, h('div', { class: 'sp' }), h('div', {}, '🤖 AI กำลังตรวจสลิป… ', sec, ' วินาที')));
+    const tick = setInterval(() => { n = Math.max(0, n - 1); sec.textContent = String(n); }, 1000);
+    const ctl = new AbortController(); const kill = setTimeout(() => ctl.abort(), 6500);
+    let r;
+    try { r = await api.post('/payments/slip-read', { image, amount }, { signal: ctl.signal }); }
+    catch (e) { r = { verdict: 'error', reasons: [e.name === 'AbortError' ? 'AI ตอบไม่ทันเวลา' : e.message], warnings: [] }; }
+    finally { clearInterval(tick); clearTimeout(kill); }
+    const R = r.read || {};
+    const facts = h('div', { class: 'slip-facts' }, R.amount ? h('div', {}, 'ยอดในสลิป ', h('b', {}, (Number(R.amount) || 0).toFixed(2) + ' ฿'), ` · บิล ${baht(amount)} ฿`) : null,
+      R.receiver_name || R.receiver_account ? h('div', {}, `ผู้รับ: ${[R.receiver_name, R.receiver_account].filter(Boolean).join(' · ')}`) : null,
+      r.qr ? h('div', {}, `QR สลิปจริง: ธนาคาร${r.qr.bank_name} · ${r.qr.ref}`) : null, r.ms ? h('div', { class: 'small' }, `ตรวจเสร็จใน ${(r.ms / 1000).toFixed(1)} วินาที`) : null);
+    const warn = (r.warnings || []).length ? h('div', { class: 'slip-warn' }, r.warnings.map((w) => h('div', {}, '⚠️ ' + w))) : null;
+    const again = h('button', { class: 'btn block', onclick: aiSlip }, '📸 ถ่ายใหม่');
+    if (r.verdict === 'pass') {
+      out.replaceChildren(h('div', { class: 'slip-ok' }, h('div', { class: 'big' }, '✅ ตรวจผ่าน — ยอดตรง โอนเข้าร้าน'), facts), warn || '', h('div', { class: 'muted small' }, 'กำลังปิดบิล…'));
+      setTimeout(async () => { dlg.close(); await onOk({ code: r.qr ? r.qr.code : null, ref: r.ref, file: r.file, bank_name: r.qr ? r.qr.bank_name : 'AI' }); }, 900);
+    } else if (r.verdict === 'fail') {
+      out.replaceChildren(h('div', { class: 'slip-bad' }, h('div', { class: 'big' }, '❌ ไม่ผ่าน'), ...(r.reasons || []).map((x) => h('div', {}, '• ' + x)), facts), warn || '', again);
+    } else {
+      out.replaceChildren(h('div', { class: 'slip-bad' }, h('div', { class: 'big' }, r.verdict === 'timeout' ? '⏱ AI ตรวจไม่ทันใน 5 วินาที' : '⚠️ AI ตรวจไม่ได้'), ...(r.reasons || []).map((x) => h('div', {}, x)),
+        h('div', {}, 'ตรวจยอดในสลิปด้วยตา แล้วกด "ยืนยันรับเงิน" ในหน้าชำระเงิน — หรือถ่ายใหม่')), again);
+    }
+  });
   const dlg = modal('📷 ตรวจสลิปโอนเงิน', h('div', {}, h('style', {}, BARCODECAM_CSS + SLIP_CSS),
     h('p', { class: 'muted', style: { marginTop: 0 } }, `ยอดบิล ${baht(amount)} ฿ — สแกน QR เล็ก ๆ บนสลิปของลูกค้า (ไม่ใช่ QR พร้อมเพย์ของร้าน)`),
     h('div', { class: 'row', style: { gap: '8px' } }, inp, h('button', { class: 'btn', onclick: () => check(inp.value) }, 'ตรวจ')),
-    h('button', { class: 'btn block', style: { marginTop: '.5em' }, onclick: () => scanWithCamera((c) => { inp.value = c; check(c); }, { title: '📷 สแกน QR บนสลิป' }) }, '📷 ใช้กล้องสแกน'), out),
+    h('button', { class: 'btn ok block big', style: { marginTop: '.5em' }, onclick: () => aiSlip() }, '📸 ถ่ายรูปสลิปให้ AI ตรวจยอด (ไม่เกิน 5 วินาที)'),
+    h('button', { class: 'btn block', style: { marginTop: '.5em' }, onclick: () => scanWithCamera((c) => { inp.value = c; check(c); }, { title: '📷 สแกน QR บนสลิป' }) }, '📷 สแกน QR บนสลิปอย่างเดียว (ไม่ตรวจยอด)'), out),
   { actions: [{ label: 'ปิด', onClick: () => {} }] });
 }
+// camera → one photo of the slip, shrunk for a quick upload (longest side 1100 px, JPEG)
+function captureSlip(onImage) {
+  const video = h('video', { playsinline: true, muted: true, autoplay: true, style: { width: '100%', maxHeight: '60vh', borderRadius: '14px', background: '#000' } });
+  const say = h('div', { class: 'muted small', style: { textAlign: 'center' } }, 'กำลังเปิดกล้อง…');
+  let stream = null;
+  const stop = () => { if (stream) stream.getTracks().forEach((t) => t.stop()); stream = null; };
+  const shoot = () => {
+    if (!video.videoWidth) return;
+    const k = Math.min(1, 1100 / Math.max(video.videoWidth, video.videoHeight));
+    const c = document.createElement('canvas'); c.width = Math.round(video.videoWidth * k); c.height = Math.round(video.videoHeight * k);
+    c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
+    const image = c.toDataURL('image/jpeg', 0.82);
+    dlg.close(); onImage(image);
+  };
+  const file = h('input', { type: 'file', accept: 'image/*', style: { display: 'none' }, onchange: () => { const f = file.files[0]; if (!f) return; const img = new Image(); img.onload = () => {
+    const k = Math.min(1, 1100 / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); dlg.close(); onImage(c.toDataURL('image/jpeg', 0.82)); }; img.src = URL.createObjectURL(f); } });
+  const dlg = modal('📸 ถ่ายรูปสลิป', h('div', { style: { display: 'grid', gap: '10px' } }, video, say,
+    h('button', { class: 'btn ok big block', onclick: shoot }, '📸 ถ่าย'), h('button', { class: 'btn block', onclick: () => file.click() }, '🖼 เลือกรูปสลิปจากเครื่อง'), file), { onClose: stop, autofocus: false });
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: localStorage.getItem('opp.bc_facing') || 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false })
+    .then((s2) => { stream = s2; video.srcObject = s2; say.textContent = 'ให้เห็นทั้งสลิป (ยอดเงิน ชื่อผู้รับ และ QR) ชัด ๆ แล้วกดถ่าย'; })
+    .catch(() => { say.textContent = '⚠️ เปิดกล้องไม่ได้ — เลือกรูปสลิปจากเครื่องแทน'; });
+}
 const SLIP_CSS = `
+  .slip-wait { display: flex; gap: 12px; align-items: center; padding: 14px 16px; border-radius: 16px; background: var(--surface2); font-weight: 700; }
+  .slip-wait .sp { width: 26px; height: 26px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--brand); animation: slipspin .8s linear infinite; }
+  @keyframes slipspin { to { transform: rotate(360deg); } }
+  .slip-facts { margin-top: 6px; display: grid; gap: 2px; color: var(--text); font-weight: 600; } .slip-facts b { font-size: 1.2em; }
+  .slip-warn { padding: 10px 14px; border-radius: 12px; background: var(--warn-soft); color: var(--warn); font-weight: 600; display: grid; gap: 2px; }
   .slip-out { margin-top: 12px; display: grid; gap: 10px; }
   .slip-ok, .slip-bad { padding: 14px 16px; border-radius: 16px; display: grid; gap: 4px; }
   .slip-ok { background: var(--ok-soft); color: var(--ok); } .slip-bad { background: var(--bad-soft); color: var(--bad); }

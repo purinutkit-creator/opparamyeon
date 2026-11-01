@@ -38,7 +38,7 @@ const SCHEMA = {
   additionalProperties: false,
 };
 
-export class AiError extends Error {}
+export class AiError extends Error { constructor(msg, code) { super(msg); this.code = code; } }
 
 export async function identifyWithClaude({ apiKey, imageBase64, mediaType, text, barcodeInfo, categories }) {
   const client = new Anthropic({ apiKey, baseURL: process.env.ANTHROPIC_BASE_URL || undefined, timeout: 60000, maxRetries: 1 });
@@ -100,6 +100,7 @@ const aiError = (e) => {
   if (e instanceof Anthropic.PermissionDeniedError) return new AiError('API Key นี้ไม่มีสิทธิ์ใช้งานโมเดลหรือการค้นหาเว็บ');
   if (e instanceof Anthropic.RateLimitError) return new AiError('ใช้งาน AI ถี่เกินไป — รอสักครู่แล้วลองใหม่');
   if (e instanceof Anthropic.BadRequestError) return new AiError('AI รับคำขอนี้ไม่ได้ — ลองเลือก "Google + AI เขียนให้" แทน หรือแจ้งผู้ดูแลระบบ (' + String(e.message).slice(0, 160) + ')');
+  if (e instanceof Anthropic.APIConnectionTimeoutError) return new AiError('AI ตอบไม่ทันเวลา', 'timeout');
   if (e instanceof Anthropic.APIConnectionError) return new AiError('เชื่อมต่อ AI ไม่ได้ — ตรวจสอบอินเทอร์เน็ตของเซิร์ฟเวอร์');
   if (e instanceof Anthropic.APIError) return new AiError(`AI ขัดข้อง (${e.status}) — ลองใหม่อีกครั้ง`);
   return e;
@@ -206,6 +207,47 @@ async function formatOptions(client, { name, barcode = '', notes, from }) {
   try { out = JSON.parse(block && block.text); } catch { throw new AiError('อ่านคำตอบของ AI ไม่ได้ — ลองใหม่'); }
   out.spice_level = Math.max(0, Math.min(5, Math.round(Number(out.spice_level) || 0)));
   return out;
+}
+
+// ---------- transfer slip photo → amount / receiver / reference (POS checks a customer's slip in a few seconds) ----------
+const SLIP_SCHEMA = {
+  type: 'object',
+  properties: {
+    is_slip: { type: 'boolean', description: 'true only if the photo shows a completed bank / PromptPay transfer slip (e-slip) from a Thai banking app' },
+    amount: { type: 'number', description: 'transferred amount in baht as printed (e.g. 105.00); 0 if unreadable' },
+    receiver_name: { type: 'string', description: 'receiver (to / ไปยัง / ผู้รับ) name exactly as printed, empty if not shown' },
+    receiver_account: { type: 'string', description: 'receiver account / PromptPay number as printed (masked digits allowed, e.g. xxx-xxx-5678)' },
+    sender_name: { type: 'string', description: 'sender (from / จาก) name as printed' },
+    bank: { type: 'string', description: 'bank or app name of the slip' },
+    date_time: { type: 'string', description: 'transfer date and time as ISO 8601 in Gregorian years, Asia/Bangkok (Thai slips print Buddhist years: subtract 543); empty if unreadable' },
+    ref: { type: 'string', description: 'transaction reference / เลขที่รายการ, letters and digits only, empty if not shown' },
+    looks_edited: { type: 'boolean', description: 'true if the image shows signs of editing (mismatched fonts, misaligned digits, pasted areas)' },
+  },
+  required: ['is_slip', 'amount', 'receiver_name', 'receiver_account', 'sender_name', 'bank', 'date_time', 'ref', 'looks_edited'],
+  additionalProperties: false,
+};
+export async function readSlipAI({ apiKey, imageBase64, mediaType = 'image/jpeg', deadline = Date.now() + 4600 }) {
+  const left = () => Math.max(500, deadline - Date.now());
+  const client = new Anthropic({ apiKey, baseURL: process.env.ANTHROPIC_BASE_URL || undefined, maxRetries: 0 });
+  const ask = (fast) => client.beta.messages.create({
+    model: AI_MODEL, max_tokens: 2000,
+    ...(fast ? { betas: ['fast-mode-2026-02-01'], speed: 'fast' } : {}),
+    output_config: { effort: 'low', format: { type: 'json_schema', schema: SLIP_SCHEMA } },
+    messages: [{ role: 'user', content: [
+      { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64 } },
+      { type: 'text', text: 'A cashier photographed a customer\'s bank transfer slip to check the payment. Read the slip exactly as printed. Do not guess digits you cannot read.' },
+    ] }],
+  }, { timeout: left() });
+  let res;
+  try { res = await ask(true); } catch (e) {
+    // fast mode busy or not available on this account: once more at normal speed if time is left
+    if ((e instanceof Anthropic.RateLimitError || e instanceof Anthropic.BadRequestError || e instanceof Anthropic.PermissionDeniedError) && deadline - Date.now() > 1500) {
+      try { res = await ask(false); } catch (e2) { throw aiError(e2); }
+    } else throw aiError(e);
+  }
+  if (res.stop_reason === 'refusal') throw new AiError('AI อ่านสลิปนี้ไม่ได้');
+  const block = res.content.find((b) => b.type === 'text');
+  try { return JSON.parse(block && block.text); } catch { throw new AiError('อ่านคำตอบของ AI ไม่ได้'); }
 }
 
 // ---------- image sources ----------

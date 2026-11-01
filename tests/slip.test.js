@@ -38,3 +38,54 @@ test('ตรวจสลิปตอนชำระพร้อมเพย์: 
   const kitchen = await S.login('0003', '3333');
   assert.equal((await S.call('POST', '/api/payments/slip-check', { code: q }, { token: kitchen })).status, 403);
 });
+
+test('AI ตรวจสลิปจากรูป: ยอด/ผู้รับ/สลิปซ้ำ เทียบกับบิล · ตรวจไม่ทัน 5 วินาที = timeout', async () => {
+  const http = await import('node:http');
+  const QRCode = (await import('qrcode')).default;
+  const { PNG } = await import('pngjs');
+  let reply = null, delay = 0;
+  const mock = http.createServer((req, res) => { let b = ''; req.on('data', (c) => { b += c; }); req.on('end', () => {
+    const body = JSON.parse(b);
+    setTimeout(() => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ id: 'm', type: 'message', role: 'assistant', model: body.model, content: [{ type: 'text', text: JSON.stringify(reply) }], stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 } })); }, delay);
+  }); });
+  await new Promise((r) => mock.listen(0, '127.0.0.1', r));
+  process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${mock.address().port}`;
+  try {
+    await S.call('PUT', '/api/assistant/config', { anthropic_api_key: 'sk-ant-test-1234' }, { token: owner });
+    await S.call('PUT', '/api/settings/payment', { value: { promptpay_id: '0812345678', promptpay_name: 'นาย ปุริณัฐ กิตติ' } }, { token: owner });
+    const ref = 'AISLIP' + Date.now();
+    const png = await QRCode.toBuffer(makeSlipQr('014', ref), { width: 300, margin: 4 });
+    const image = 'data:image/png;base64,' + png.toString('base64');
+    const egg = await db.get("SELECT id, price FROM products WHERE code = 'T001'");
+    const read = (o) => ({ is_slip: true, amount: egg.price / 100, receiver_name: 'นาย ปุริณัฐ ก.', receiver_account: 'xxx-xxx-5678', sender_name: 'สมชาย', bank: 'SCB', date_time: new Date().toISOString(), ref, looks_edited: false, ...o });
+    reply = read();
+    let r = await S.call('POST', '/api/payments/slip-read', { image, amount: egg.price }, { token: owner });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.verdict, 'pass', JSON.stringify(r.body));
+    assert.equal(r.body.qr.bank_name, 'ไทยพาณิชย์', 'อ่าน QR สลิปจากรูปได้');
+    assert.match(r.body.file, /^\/files\//);
+    reply = read({ amount: 1 });
+    r = await S.call('POST', '/api/payments/slip-read', { image, amount: egg.price }, { token: owner });
+    assert.equal(r.body.verdict, 'fail'); assert.match(r.body.reasons.join(), /ไม่ตรงกับยอดบิล/);
+    reply = read({ receiver_name: 'บริษัท อื่น จำกัด', receiver_account: 'xxx-x-x9999-x' });
+    r = await S.call('POST', '/api/payments/slip-read', { image, amount: egg.price }, { token: owner });
+    assert.equal(r.body.verdict, 'fail'); assert.match(r.body.reasons.join(), /ไม่ใช่บัญชีร้าน/);
+    // pay with it, then the same slip is refused
+    reply = read();
+    const ok = (await S.call('POST', '/api/payments/slip-read', { image, amount: egg.price }, { token: owner })).body;
+    const paid = await S.call('POST', '/api/orders/checkout', { idempotency_key: key(), cart: { lines: [line(egg.id, 1)] }, payments: [{ method: 'promptpay', amount: egg.price, slip_qr: ok.qr.code, slip_file: ok.file }] }, { token: owner, terminal: 'pos1' });
+    assert.equal(paid.status, 200, JSON.stringify(paid.body));
+    assert.ok(await db.get('SELECT 1 AS x FROM payments WHERE slip_file = ?', [ok.file]), 'เก็บรูปสลิปไว้กับการชำระ');
+    r = await S.call('POST', '/api/payments/slip-read', { image, amount: egg.price }, { token: owner });
+    assert.equal(r.body.verdict, 'fail'); assert.match(r.body.reasons.join(), /ใช้ไปแล้ว/);
+    // too slow → timeout well within the cashier's wait
+    delay = 7000;
+    const t0 = Date.now();
+    r = await S.call('POST', '/api/payments/slip-read', { image, amount: egg.price }, { token: owner });
+    assert.equal(r.body.verdict, 'timeout', JSON.stringify(r.body));
+    assert.ok(Date.now() - t0 < 5600, 'ไม่เกิน ~5 วินาที: ' + (Date.now() - t0));
+  } finally {
+    await S.call('PUT', '/api/assistant/config', { clear: ['anthropic_api_key'] }, { token: owner });
+    delete process.env.ANTHROPIC_BASE_URL; mock.close();
+  }
+});
