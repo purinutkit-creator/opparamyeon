@@ -221,6 +221,10 @@ const RESEARCH_CSS = `
   .rs-facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: .95em; }
   .rs-facts b { color: var(--muted); }
   .rs-src a { display: block; font-size: .85em; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rs-g { display: grid; gap: 8px; max-height: 340px; overflow: auto; padding-right: 4px; }
+  .rs-gi { padding: 10px 12px; border-radius: 12px; background: var(--surface2); display: grid; gap: 3px; }
+  .rs-gi a { font-weight: 800; color: #1a0dab; text-decoration: none; } .rs-gi a:hover { text-decoration: underline; }
+  .rs-gi small { color: #188038; } .rs-gi p { margin: 2px 0 4px; font-size: .92em; line-height: 1.45; } .rs-gi .btn { justify-self: start; }
 `;
 function researchDialog(f, p) {
   const cur = f.value();
@@ -234,7 +238,7 @@ function researchDialog(f, p) {
     const descs = data.descriptions || [];
     out.replaceChildren(
       h('div', { class: 'small', style: { padding: '8px 12px', borderRadius: '12px', background: data.found ? 'var(--ok-soft)' : 'var(--warn-soft)', color: data.found ? 'var(--ok)' : 'var(--warn)', fontWeight: 700 } },
-        (data.found ? '✓ พบข้อมูล: ' : '⚠️ ไม่พบสินค้านี้ตรง ๆ — ข้อมูลด้านล่างเป็นแบบทั่วไป ตรวจก่อนใช้: ') + (data.summary_th || '')),
+        (data.engine === 'google' ? '🔎 ค้นจาก Google · ' : '🤖 ค้นโดย AI · ') + (data.found ? '✓ พบข้อมูล: ' : '⚠️ ไม่พบสินค้านี้ตรง ๆ — ข้อมูลด้านล่างเป็นแบบทั่วไป ตรวจก่อนใช้: ') + (data.summary_th || '')),
       h('div', { class: 'rs-sec' }, h('h4', {}, '📝 เลือกคำอธิบาย (แก้ข้อความได้)'),
         ...descs.map((d, i) => { const ta = h('textarea', { rows: 2, oninput: () => { d.text = ta.value; } }, d.text);
           // a click anywhere on the card (the text too) picks it; the radio again un-picks it; no redraw, so typing keeps its place
@@ -246,18 +250,21 @@ function researchDialog(f, p) {
           return card; })),
       (data.highlights || []).length ? h('div', { class: 'rs-sec' }, h('h4', {}, '✅ เลือกสรรพคุณ / จุดเด่น (เลือกได้หลายข้อ)'),
         h('div', { class: 'rs-chips' }, data.highlights.map((t) => h('span', { class: 'rs-chip' + (chosen.has(t) ? ' on' : ''), onclick: () => { chosen.has(t) ? chosen.delete(t) : chosen.add(t); draw(); } }, (chosen.has(t) ? '✓ ' : '+ ') + t)))) : null,
-      h('div', { class: 'rs-sec' }, h('h4', {}, '🌶️ ความเผ็ดที่แนะนำ'),
+      data.spice_unknown ? h('div', { class: 'rs-sec' }, h('h4', {}, '🌶️ ความเผ็ด'), h('div', { class: 'small muted' }, data.spice_reason)) : h('div', { class: 'rs-sec' }, h('h4', {}, '🌶️ ความเผ็ดที่แนะนำ'),
         h('label', { class: 'rs-chip' + (spice !== null ? ' on' : ''), onclick: () => { spice = spice === null ? data.spice_level : null; draw(); } },
           (spice !== null ? '✓ ' : '+ ') + (data.spice_level ? '🌶️'.repeat(data.spice_level) + ` ระดับ ${data.spice_level}/5` : 'ไม่เผ็ด')),
         data.spice_reason ? h('div', { class: 'small muted', style: { marginTop: '4px' } }, data.spice_reason) : null),
       (data.facts || []).length ? h('div', { class: 'rs-sec' }, h('h4', {}, 'ℹ️ ข้อมูลที่พบ'), h('div', { class: 'rs-facts' }, data.facts.flatMap((x) => [h('b', {}, x.label), h('span', {}, x.value)])),
         h('label', { class: 'switch', style: { marginTop: '6px' } }, h('input', { type: 'checkbox', checked: addFacts, onchange: (e) => { addFacts = e.target.checked; } }), 'ต่อท้ายข้อมูลนี้ในคำอธิบายด้วย')) : null,
-      (data.sources || []).length ? h('div', { class: 'rs-sec rs-src' }, h('h4', {}, '🔗 แหล่งข้อมูล'), data.sources.map((x) => h('a', { href: x.url, target: '_blank', rel: 'noopener' }, x.title))) : null);
+      (data.google || []).length ? h('div', { class: 'rs-sec' }, h('h4', {}, `🔎 ผลการค้นหา Google (${data.google.length})`),
+        h('div', { class: 'rs-g' }, data.google.map((g) => h('div', { class: 'rs-gi' }, h('a', { href: g.url, target: '_blank', rel: 'noopener' }, g.title), h('small', {}, (() => { try { return new URL(g.url).hostname; } catch { return ''; } })()), h('p', {}, g.snippet),
+          h('button', { type: 'button', class: 'btn sm', onclick: () => { data.descriptions = [...(data.descriptions || []), { style: 'จาก Google · ' + g.title.slice(0, 40), text: g.snippet.replace(/\s*\.\.\.\s*$/, '') }]; picked = data.descriptions.length - 1; draw(); toast('เพิ่มเป็นตัวเลือกคำอธิบายแล้ว (แก้ข้อความได้)', 'ok', 1800); } }, '＋ ใช้เป็นคำอธิบาย'))))) : null,
+      !(data.google || []).length && (data.sources || []).length ? h('div', { class: 'rs-sec rs-src' }, h('h4', {}, '🔗 แหล่งข้อมูล'), data.sources.map((x) => h('a', { href: x.url, target: '_blank', rel: 'noopener' }, x.title))) : null);
   };
   const search = async (e) => {
     const btn = e && e.currentTarget; if (btn) btn.disabled = true;
     data = null; picked = null; chosen = new Set(); spice = null;
-    out.replaceChildren(h('div', { class: 'rs-load' }, h('div', { class: 'sp' }), h('b', {}, 'กำลังค้นหาข้อมูลจากเว็บ…'), h('span', { class: 'small' }, 'ใช้เวลาประมาณ 20–60 วินาที')));
+    out.replaceChildren(h('div', { class: 'rs-load' }, h('div', { class: 'sp' }), h('b', {}, 'กำลังค้นหาข้อมูล…'), h('span', { class: 'small' }, 'ค้นจาก Google แล้วสรุปเป็นตัวเลือก — ใช้เวลาประมาณ 10–40 วินาที')));
     try {
       data = await api.post('/products/research', { name: q.value, barcode: bc.value, note: note.value, category_id: cur.category_id || null, product_id: p ? p.id : null });
       picked = (data.descriptions || []).length ? 0 : null;

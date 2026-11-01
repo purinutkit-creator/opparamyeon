@@ -360,13 +360,13 @@ r.post('/products/research', staffAuth('manage_menu'), ah(async (req, res) => {
   const barcode = /^[0-9A-Za-z-]{4,32}$/.test(String(b.barcode || '').trim()) ? String(b.barcode).trim() : '';
   if (!name && !barcode) throw bad('ใส่ชื่อสินค้าก่อนค้นหา');
   const keys = await aiKeys();
-  if (!keys.anthropic) throw bad('ยังไม่ได้ตั้ง API Key ของ Claude — ใส่ได้ที่ จัดการร้าน → ผู้ช่วยเพิ่มสินค้า → ตั้งค่า AI');
+  if (!keys.anthropic && !keys.serper) throw bad('ยังไม่ได้ตั้งคีย์ค้นหา — ใส่ Serper API Key (ค้นจาก Google) และ/หรือ Claude API Key ได้ที่ จัดการร้าน → ผู้ช่วยเพิ่มสินค้า → ตั้งค่า AI');
   let barcodeInfo = '';
   if (barcode) { const info = await lookupBarcode(barcode).catch(() => null); if (info && info.found) barcodeInfo = [...(info.names || []), info.brand, info.quantity].filter(Boolean).join(' / ').slice(0, 400); }
   const cat = b.category_id ? await db.get('SELECT name FROM categories WHERE id = ?', [String(b.category_id)]) : null;
   try {
-    const out = await researchProduct({ apiKey: keys.anthropic, name: name || barcode, barcode, note: String(b.note || '').slice(0, 300), category: cat ? cat.name : '', barcodeInfo });
-    await audit(req.staff.id, 'product_research', 'product', b.product_id || null, null, { name, found: out.found });
+    const out = await researchProduct({ apiKey: keys.anthropic, serperKey: keys.serper, name: name || barcode, barcode, note: String(b.note || '').slice(0, 300), category: cat ? cat.name : '', barcodeInfo });
+    await audit(req.staff.id, 'product_research', 'product', b.product_id || null, null, { name, found: out.found, engine: out.engine });
     res.json(out);
   } catch (e) { if (e instanceof AiError) throw bad(e.message); throw e; }
 }));

@@ -104,7 +104,50 @@ const aiError = (e) => {
   if (e instanceof Anthropic.APIError) return new AiError(`AI ขัดข้อง (${e.status}) — ลองใหม่อีกครั้ง`);
   return e;
 };
-export async function researchProduct({ apiKey, name, barcode = '', note = '', category = '', barcodeInfo = '' }) {
+// ---------- Google (through Serper): what people write about this product ----------
+export async function googleProduct(name, key) {
+  const qs = [`${name} สรรพคุณ`, `${name} รีวิว`, name];
+  const res = await Promise.allSettled(qs.map((q) => getJson(`${SRC.serper()}/search`, { method: 'POST', ms: 10000, headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' }, body: JSON.stringify({ q, gl: 'th', hl: 'th', num: 10 }) })));
+  const ok = res.filter((x) => x.status === 'fulfilled').map((x) => x.value);
+  if (!ok.length) { const why = res.find((x) => x.status === 'rejected'); throw new AiError(/HTTP 40[13]/.test(String(why && why.reason && why.reason.message)) ? 'Serper API Key ไม่ถูกต้อง — ตรวจสอบที่ ตั้งค่า AI' : 'ค้นหา Google ไม่สำเร็จ — ลองใหม่'); }
+  const results = [], seen = new Set();
+  let kg = null, answer = '';
+  for (const j of ok) {
+    if (!kg && j.knowledgeGraph && (j.knowledgeGraph.description || j.knowledgeGraph.attributes)) kg = { title: j.knowledgeGraph.title || '', description: j.knowledgeGraph.description || '', attributes: j.knowledgeGraph.attributes || {} };
+    if (!answer && j.answerBox) answer = j.answerBox.snippet || j.answerBox.answer || '';
+    for (const o of j.organic || []) if (o.link && o.snippet && !seen.has(o.link)) { seen.add(o.link); results.push({ title: o.title || o.link, url: o.link, snippet: o.snippet }); }
+    for (const pa of j.peopleAlsoAsk || []) if (pa.snippet && pa.link && !seen.has(pa.link)) { seen.add(pa.link); results.push({ title: pa.question || pa.title || pa.link, url: pa.link, snippet: pa.snippet }); }
+  }
+  return { results: results.slice(0, 18), kg, answer };
+}
+const googleNotes = (g) => [
+  g.kg ? `Google info box: ${g.kg.title} — ${g.kg.description} ${Object.entries(g.kg.attributes).map(([k, v]) => `${k}: ${v}`).join('; ')}` : '',
+  g.answer ? `Google answer box: ${g.answer}` : '',
+  ...g.results.map((r, i) => `[${i + 1}] ${r.title}\n${r.snippet}\n${r.url}`),
+].filter(Boolean).join('\n\n');
+// no Claude key: options straight from Google's text (sentences cut from the snippets; spice left for the shop to set)
+function optionsFromGoogle(name, g) {
+  const clean = (t) => String(t || '').replace(/\s*\.\.\.\s*$/, '').replace(/^\w{3} \d{1,2}, \d{4} — /, '').replace(/\s+/g, ' ').trim();
+  const texts = [g.kg && g.kg.description, g.answer, ...g.results.map((r) => r.snippet)].map(clean).filter((t) => t.length > 25);
+  const descriptions = [...new Set(texts)].slice(0, 4).map((text, i) => ({ style: i === 0 && g.kg && g.kg.description ? 'จาก Google (กล่องข้อมูล)' : 'จาก Google', text }));
+  // Thai writes phrases separated by spaces, not full stops: long Thai pieces are split at spaces into short selling points
+  const pieces = texts.flatMap((t) => t.split(/[.!?•·|\n,;:()]| - |、|。/)).map((x) => x.trim()).flatMap((x) => (/[\u0E00-\u0E7F]/.test(x) && x.length > 40 ? x.split(/\s+/) : [x]));
+  const bits = [...new Set(pieces.map((x) => x.trim()).filter((x) => x.length >= 6 && x.length <= 60 && !/^\d+$/.test(x)))].slice(0, 10);
+  const facts = g.kg ? Object.entries(g.kg.attributes).slice(0, 8).map(([label, value]) => ({ label, value: String(value) })) : [];
+  return { found: g.results.length > 0, summary_th: g.kg ? `${g.kg.title} — ${g.kg.description}`.slice(0, 200) : `ผลการค้นหา Google สำหรับ "${name}"`, descriptions, highlights: bits, spice_level: 0, spice_reason: 'ยังไม่ได้ประเมิน (ไม่มี AI) — ตั้งเองได้ในฟอร์ม', facts, spice_unknown: true };
+}
+export async function researchProduct({ apiKey, serperKey = '', name, barcode = '', note = '', category = '', barcodeInfo = '' }) {
+  // Google first when the shop set a Serper key: Claude (if any) only writes the options from Google's results
+  if (serperKey) {
+    const g = await googleProduct(name, serperKey);
+    const google = g.results.map((r) => ({ title: r.title, url: r.url, snippet: r.snippet }));
+    if (!apiKey) return { ...optionsFromGoogle(name, g), engine: 'google', google, sources: google.slice(0, 8).map(({ title, url }) => ({ title, url })) };
+    const out = await formatOptions(new Anthropic({ apiKey, baseURL: process.env.ANTHROPIC_BASE_URL || undefined, timeout: 120000, maxRetries: 1 }), { name, barcode, notes: googleNotes(g) || 'Google found nothing for this product.', from: 'Google search results (title, snippet, link)' });
+    return { ...out, engine: 'google', google, sources: google.slice(0, 8).map(({ title, url }) => ({ title, url })) };
+  }
+  return { ...(await claudeResearch({ apiKey, name, barcode, note, category, barcodeInfo })), engine: 'claude' };
+}
+async function claudeResearch({ apiKey, name, barcode = '', note = '', category = '', barcodeInfo = '' }) {
   const client = new Anthropic({ apiKey, baseURL: process.env.ANTHROPIC_BASE_URL || undefined, timeout: 180000, maxRetries: 1 });
   const ask = [
     'A Korean ramyeon shop in Thailand wants accurate information about a product on its menu, to write the product description, selling points and spice level shown to customers.',
@@ -135,7 +178,10 @@ export async function researchProduct({ apiKey, name, barcode = '', note = '', c
     }
   } catch (e) { throw aiError(e); }
   if (!notes.trim()) throw new AiError('AI ไม่ได้ส่งผลการค้นหากลับมา — ลองใหม่');
-  // 2) options in a fixed shape
+  return { ...(await formatOptions(client, { name, barcode, notes, from: 'Research notes from a web search' })), sources: [...sources.values()].slice(0, 8) };
+}
+// options in a fixed shape, written only from the notes given (Google results or Claude's research)
+async function formatOptions(client, { name, barcode = '', notes, from }) {
   let res;
   try {
     res = await client.beta.messages.create({
@@ -144,7 +190,7 @@ export async function researchProduct({ apiKey, name, barcode = '', note = '', c
       output_config: { effort: 'low', format: { type: 'json_schema', schema: INFO_SCHEMA } },
       messages: [{ role: 'user', content: [
         `Product in the shop: ${name}${barcode ? ` (barcode ${barcode})` : ''}`,
-        'Research notes from a web search:', notes.slice(0, 20000),
+        `${from}:`, notes.slice(0, 20000),
         'From these notes only, write options for the shop: 4 Thai descriptions in different styles (natural Thai a Thai shop would print on a menu, no prices, no made-up claims), 6-10 short Thai selling points, the spice level 0-5 with a reason, and the facts found. If the notes say the product could not be found, set found to false and keep the options generic to the kind of product.',
       ].join('\n') }],
     });
@@ -154,7 +200,7 @@ export async function researchProduct({ apiKey, name, barcode = '', note = '', c
   let out;
   try { out = JSON.parse(block && block.text); } catch { throw new AiError('อ่านคำตอบของ AI ไม่ได้ — ลองใหม่'); }
   out.spice_level = Math.max(0, Math.min(5, Math.round(Number(out.spice_level) || 0)));
-  return { ...out, sources: [...sources.values()].slice(0, 8) };
+  return out;
 }
 
 // ---------- image sources ----------
