@@ -203,18 +203,34 @@ test('LINE: เจ้าของ/พนักงาน · ใบเสร็จ
   assert.equal(await lineTo('low', { type: 'text', text: 'low' }), 1);
   assert.equal(await lineTo('sale', { type: 'text', text: 'sale' }), 1);
   assert.deepEqual(sent.slice(n1).map((x) => [x.body.to, x.body.messages[0].text]), [['Ustaff', 'low'], ['Uowner', 'sale']]);
-  // rich menus: staff (default) + owner (6 buttons) linked to the owner's chat only
+  // rich menus: staff (default) + each owner's own 6-button menu whose first button opens their live sales link
+  process.env.PUBLIC_URL = 'https://shop.test';
   const png = 'data:image/png;base64,' + Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64');
   const n2 = sent.length;
   r = await S.call('POST', '/api/line/richmenu', { image: png, owner_image: png }, { token: owner });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   const made = sent.slice(n2).filter((x) => x.path === '/v2/bot/richmenu').map((x) => x.body);
-  assert.equal(made.length, 2);
+  assert.equal(made.length, 2, 'เมนูพนักงาน + เมนูของเจ้าของ 1 คน');
   const ownerMenu = made.find((m) => m.name === 'Oppa owner');
   assert.equal(ownerMenu.areas.length, 6); assert.equal(ownerMenu.size.height, 1686);
-  assert.deepEqual(ownerMenu.areas.slice(0, 3).map((a) => a.action.data), ['a=report', 'a=low', 'a=list']);
+  const liveLink = ownerMenu.areas[0].action.uri;
+  assert.match(liveLink, /^https:\/\/shop\.test\/live\/#/, 'ปุ่มแรกเปิดหน้ายอดขายสด');
+  assert.deepEqual(ownerMenu.areas.slice(1, 3).map((a) => a.action.data), ['a=low', 'a=list']);
   assert.ok(sent.slice(n2).some((x) => x.path === '/v2/bot/user/Uowner/richmenu/rm-1'), 'ลิงก์เมนูเจ้าของให้แชตเจ้าของ');
-  assert.ok(!sent.slice(n2).some((x) => x.path === '/v2/bot/user/Ustaff/richmenu/rm-1'), 'พนักงานใช้เมนูปกติ');
+  assert.ok(sent.slice(n2).some((x) => x.path === '/v2/bot/user/Ustaff/richmenu' && x.body === 0), 'พนักงานใช้เมนูปกติ');
+  // the live link: today's sales without logging in, only while that chat is an owner
+  const liveTok = liveLink.split('#')[1];
+  let lv = await S.call('GET', '/api/public/live/' + encodeURIComponent(liveTok));
+  assert.equal(lv.status, 200, JSON.stringify(lv.body)); assert.ok(lv.body.recent.some((x) => x.bill_no === bill)); assert.ok('net_sales' in lv.body);
+  assert.equal((await S.call('GET', '/api/public/live/' + encodeURIComponent(liveTok.slice(0, -2) + '00'))).status, 403, 'ปลอมลิงก์ไม่ได้');
+  await S.call('PUT', '/api/line/settings', { enabled: true, notify_low: true, notify_close: true, recipients: ['Uowner', 'Ustaff'], roles: { Uowner: 'staff' } }, { token: owner });
+  assert.equal((await S.call('GET', '/api/public/live/' + encodeURIComponent(liveTok))).status, 403, 'เปลี่ยนเป็นพนักงานแล้วลิงก์ใช้ไม่ได้');
+  await S.call('PUT', '/api/line/settings', { enabled: true, notify_low: true, notify_close: true, recipients: ['Uowner', 'Ustaff'], roles: { Uowner: 'owner' } }, { token: owner });
+  delete process.env.PUBLIC_URL;
+  // shop website "remember this device": 30-day sign-in (not on a POS)
+  const lr = await S.call('POST', '/api/auth/login', { code: '0001', pin: '1234', remember: true });
+  const sess = await db.get('SELECT expires_at FROM sessions WHERE token = ?', [lr.body.token]);
+  assert.ok(Date.parse(sess.expires_at) - Date.now() > 29 * 864e5, 'จดจำ 30 วัน');
   // QR of the bill link: valid token only
   const { billToken } = await import('../server/lib/billlink.js');
   const q = await fetch(S.base + `/api/public/bill/${encodeURIComponent(await billToken(bill))}/qr.png`);

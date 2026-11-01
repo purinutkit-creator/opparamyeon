@@ -20,10 +20,10 @@ export const DEFAULT_ROLES = [
 
 const SESSION_HOURS = { staff: 14, member: 24 * 30, display: 24 * 365 };
 
-export async function createSession(kind, subjectId, terminalId = null) {
+export async function createSession(kind, subjectId, terminalId = null, { hours = null } = {}) {
   const t = token(32);
   await db.run('INSERT INTO sessions(token, kind, subject_id, terminal_id, created_at, expires_at) VALUES(?,?,?,?,?,?)',
-    [t, kind, subjectId, terminalId, now(), addMinutes(SESSION_HOURS[kind] * 60)]);
+    [t, kind, subjectId, terminalId, now(), addMinutes((hours || SESSION_HOURS[kind]) * 60)]);
   return t;
 }
 export async function revokeSessions(kind, subjectId, exceptToken = null) {

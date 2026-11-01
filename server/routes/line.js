@@ -6,19 +6,19 @@ import { staffAuth } from '../lib/auth.js';
 import { adjustStock } from '../lib/stock.js';
 import { decodeImage, readBarcode, similarProducts, aiMatch } from '../lib/imgmatch.js';
 import { addPickerMessage, addedMessage } from '../lib/line.js';
-import { lineContent, lineLoading, findProducts, stockCard, candidatesMessage, lineSecret, lineToken, verifyLineSignature, lineReply, lineCfg, lowItems, itemOf, openList, addToList, suggestQty, lowStockMessage, listMessage, tryLink, recipientOf, newLinkCode, setupRichMenus, linkMenus, lineToAll, roleOf, reportMessage, livePage } from '../lib/line.js';
+import { lineContent, lineLoading, findProducts, stockCard, candidatesMessage, lineSecret, lineToken, verifyLineSignature, lineReply, lineCfg, lowItems, itemOf, openList, addToList, suggestQty, lowStockMessage, listMessage, tryLink, recipientOf, newLinkCode, setupRichMenus, linkMenus, lineToAll, roleOf, reportMessage, liveUrl } from '../lib/line.js';
 import { summary } from './reports.js';
 import { businessDateOf, getSettings } from '../lib/util.js';
 
 // today's sales for the owner's chat (button "ยอดขาย · Live View" or typing "ยอด")
-async function salesReport() {
+async function salesReport(rec) {
   const day = await businessDateOf();
   const s = await getSettings();
   const names = Object.fromEntries((s.sale.payment_methods || []).map((m) => [m.id, m.name]));
   const sum = await summary(day, day, {}, { withCost: true });
   sum.payments = sum.payments.map((p) => ({ ...p, name: names[p.method] || p.method }));
   const recent = await db.all('SELECT bill_no, queue_no, total, paid_at FROM orders WHERE paid_business_date = ? AND paid_at IS NOT NULL ORDER BY paid_at DESC LIMIT 5', [day]);
-  return reportMessage(sum, { recent, live: livePage(), store: s.store.name });
+  return reportMessage(sum, { recent, live: rec ? await liveUrl(rec.id) : '', store: s.store.name });
 }
 const OWNER_ONLY = { type: 'text', text: '🔒 ยอดขายและรายงานดูได้เฉพาะเจ้าของร้าน\n\nพนักงานใช้ได้: ดูของใกล้หมด · เติมสต็อก · รายการที่ต้องซื้อ · เช็กสต็อกจากรูป/บาร์โค้ด' };
 
@@ -42,7 +42,7 @@ async function handle(ev) {
     const rec = await recipientOf(src);
     if (!rec) return;
     const t = ev.message.text.trim();
-    if (/^(ยอด|ยอดขาย|รายงาน|sales|report)/i.test(t)) return lineReply(rt, roleOf(rec) === 'owner' ? await salesReport() : OWNER_ONLY);
+    if (/^(ยอด|ยอดขาย|รายงาน|sales|report)/i.test(t)) return lineReply(rt, roleOf(rec) === 'owner' ? await salesReport(rec) : OWNER_ONLY);
     // a number typed right after "เติมสต็อก" = how many to add
     const pend = waiting.get(chatOf(src));
     if (pend && pend.until > Date.now() && /^\d{1,4}(\.\d+)?$/.test(t) && Number(t) > 0) { waiting.delete(chatOf(src)); return addNow(rt, pend.type, pend.id, Number(t), src); }
@@ -77,7 +77,7 @@ async function handle(ev) {
   if (!rec) return;
   const p = new URLSearchParams(ev.postback.data || '');
   const a = p.get('a'), who = 'line:' + (src.userId || src.groupId || '');
-  if (a === 'report') return lineReply(rt, roleOf(rec) === 'owner' ? await salesReport() : OWNER_ONLY);
+  if (a === 'report') return lineReply(rt, roleOf(rec) === 'owner' ? await salesReport(rec) : OWNER_ONLY);
   if (a === 'low') return lineReply(rt, lowStockMessage(await lowItems()));
   if (a === 'show') { const x = await itemOf(p.get('t'), p.get('i')); return x ? lineReply(rt, stockCard(x)) : null; }
   if (a === 'list') return lineReply(rt, listMessage(await openList(), await lowItems()));
@@ -117,6 +117,31 @@ async function addNow(rt, type, itemId, q, src) {
 }
 
 const r = Router();
+// live sales page opened from an owner's LINE rich menu: no login, the signed link of a chat that is still an owner
+r.get('/public/live/:token', ah(async (req, res) => {
+  const { liveFromToken } = await import('../lib/billlink.js');
+  const rid = await liveFromToken(req.params.token);
+  const c = await lineCfg();
+  const rec = rid && (c.recipients || []).find((x) => x.id === rid);
+  if (!rec || roleOf(rec) !== 'owner') return res.status(403).json({ error: 'ลิงก์นี้ใช้ไม่ได้แล้ว — เปิดใหม่จากเมนูใน LINE ของเจ้าของร้าน', code: 'revoked' });
+  const day = await businessDateOf();
+  const s = await getSettings();
+  const names = Object.fromEntries((s.sale.payment_methods || []).map((m) => [m.id, m.name]));
+  const sum = await summary(day, day, {}, { withCost: true });
+  sum.payments = sum.payments.map((p) => ({ ...p, name: names[p.method] || p.method }));
+  const recent = await db.all(`SELECT o.bill_no, o.queue_no, o.total, o.paid_at, o.dine_type, o.source, o.status, st.name AS staff FROM orders o LEFT JOIN staff st ON st.id = o.staff_id
+    WHERE o.paid_business_date = ? AND o.paid_at IS NOT NULL ORDER BY o.paid_at DESC LIMIT 15`, [day]);
+  const byHour = {};
+  for (const x of await db.all('SELECT paid_at, total FROM orders WHERE paid_business_date = ? AND paid_at IS NOT NULL', [day])) {
+    const k = new Date(x.paid_at).toLocaleString('en-GB', { timeZone: 'Asia/Bangkok', hour: '2-digit', hourCycle: 'h23' }); byHour[k] = (byHour[k] || 0) + Number(x.total);
+  }
+  const top = await db.all(`SELECT i.name, SUM(i.qty - i.void_qty - i.refunded_qty) AS qty, SUM(i.line_total) AS amount FROM order_items i JOIN orders o ON o.id = i.order_id
+    WHERE o.paid_business_date = ? AND o.status = 'paid' GROUP BY i.name ORDER BY qty DESC LIMIT 5`, [day]);
+  const open = await db.get("SELECT COUNT(*) AS n, COALESCE(SUM(total),0) AS amount FROM orders WHERE status IN ('open','pending_payment')");
+  res.set('Cache-Control', 'no-store');
+  res.json({ store: s.store.name, viewer: rec.name, business_date: day, ...sum, recent, by_hour: byHour, top: top.map((x) => ({ name: x.name, qty: Number(x.qty), amount: Number(x.amount) })),
+    open_bills: { count: Number(open.n), amount: Number(open.amount) } });
+}));
 // settings page: secrets are write-only (never returned), recipients linked with a one-time code
 r.get('/line/settings', staffAuth('settings'), ah(async (req, res) => {
   const c = await lineCfg();

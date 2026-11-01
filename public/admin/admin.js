@@ -40,10 +40,12 @@ async function boot() {
 function login() {
   const code = h('input', { class: 'input', placeholder: 'รหัสพนักงาน', inputmode: 'numeric', autocomplete: 'username' });
   const pin = h('input', { class: 'input', type: 'password', placeholder: 'PIN', inputmode: 'numeric', autocomplete: 'current-password' });
-  const go = async () => { try { const r = await api.post('/auth/login', { code: code.value, pin: pin.value }, { token: null }); store.set('admin_token', r.token); store.del('admin_from_pos'); location.reload(); } catch (e) { errToast(e); } };
+  const keep = h('input', { type: 'checkbox', checked: store.get('admin_remember', true) });
+  const go = async () => { try { store.set('admin_remember', keep.checked); const r = await api.post('/auth/login', { code: code.value, pin: pin.value, remember: keep.checked }, { token: null }); store.set('admin_token', r.token); store.del('admin_from_pos'); location.reload(); } catch (e) { errToast(e); } };
   pin.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
   app.replaceChildren(loginHero('เว็บไซต์จัดการร้าน', 'ดูยอดขายวันนี้ รายงาน เมนู สมาชิก และตั้งค่าร้านได้จากทุกที่', h('div', { class: 'card' }, h('h2', {}, 'เข้าสู่ระบบ'), h('p', { class: 'muted' }, 'สำหรับเจ้าของและผู้จัดการ'),
-    h('label', { class: 'field' }, 'รหัสพนักงาน', code), h('label', { class: 'field' }, 'PIN', pin), keypad(pin, { onEnter: go }), h('p', { class: 'version' }, 'v' + VERSION))));
+    h('label', { class: 'field' }, 'รหัสพนักงาน', code), h('label', { class: 'field' }, 'PIN', pin), keypad(pin, { onEnter: go }),
+    h('label', { class: 'switch', style: { margin: '.8em 0 0' } }, keep, 'จดจำการเข้าสู่ระบบในเครื่องนี้ 30 วัน (ไม่ต้องใส่ PIN ใหม่ทุกครั้ง)'), h('p', { class: 'version' }, 'v' + VERSION))));
 }
 const fromPos = !!store.get('admin_from_pos');
 function backToPos(e) { e && e.preventDefault(); store.del('admin_token'); store.del('admin_from_pos'); location.href = '/pos/'; }

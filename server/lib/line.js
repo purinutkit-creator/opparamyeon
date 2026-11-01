@@ -238,37 +238,55 @@ export async function notifyShiftClose(summary) {
 const page = (hash) => (BASE() ? BASE() + '/admin/#/' + hash : 'https://line.me');
 export async function setupRichMenus(staffImg, ownerImg) {
   const c = await lineCfg();
-  const W = 2500, w = Math.round(W / 3);
-  const col = (i, y, h, action) => ({ bounds: { x: w * i, y, width: i === 2 ? W - w * 2 : w, height: h }, action });
+  const W = 2500;
   const staff = await call('/v2/bot/richmenu', { size: { width: W, height: 843 }, selected: true, name: 'Oppa stock', chatBarText: '📦 สต็อก',
     areas: [col(0, 0, 843, { type: 'postback', data: 'a=low', displayText: 'ดูของใกล้หมด' }), col(1, 0, 843, { type: 'postback', data: 'a=list', displayText: 'รายการที่ต้องซื้อ' }), col(2, 0, 843, { type: 'uri', uri: page('stock') })] });
   await call(`/v2/bot/richmenu/${staff.richMenuId}/content`, null, { data: true, raw: staffImg.buf, type: staffImg.mime });
-  let owner = null;
-  if (ownerImg) {
-    owner = await call('/v2/bot/richmenu', { size: { width: W, height: 1686 }, selected: true, name: 'Oppa owner', chatBarText: '🏪 เมนูเจ้าของร้าน',
-      areas: [col(0, 0, 843, { type: 'postback', data: 'a=report', displayText: 'ยอดขายวันนี้' }), col(1, 0, 843, { type: 'postback', data: 'a=low', displayText: 'ดูของใกล้หมด' }),
-        col(2, 0, 843, { type: 'postback', data: 'a=list', displayText: 'รายการที่ต้องซื้อ' }),
-        col(0, 843, 843, { type: 'uri', uri: page('stock') }), col(1, 843, 843, { type: 'uri', uri: page('menu') }), col(2, 843, 843, { type: 'uri', uri: page('members') })] });
-    await call(`/v2/bot/richmenu/${owner.richMenuId}/content`, null, { data: true, raw: ownerImg.buf, type: ownerImg.mime });
-  }
   await call(`/v2/bot/user/all/richmenu/${staff.richMenuId}`, null);
-  // the old menus go (LINE keeps at most 1000 per channel)
-  for (const old of [c.richmenus && c.richmenus.staff, c.richmenus && c.richmenus.owner]) if (old) await call(`/v2/bot/richmenu/${old}`, null, { method: 'DELETE' }).catch(() => {});
-  const next = { ...(await lineCfg()), richmenus: { staff: staff.richMenuId, owner: owner ? owner.richMenuId : null } };
+  // the owner picture is kept: every owner's chat gets its own copy of the menu (its button opens that owner's live sales link)
+  let ownerFile = null;
+  if (ownerImg) { const { saveFile } = await import('../routes/system.js'); ownerFile = await saveFile(ownerImg.buf, 'line-owner-menu', ownerImg.mime); }
+  const old = c.richmenus || {};
+  for (const m of [old.staff, old.owner, ...Object.values(old.per_owner || {})]) if (m) await call(`/v2/bot/richmenu/${m}`, null, { method: 'DELETE' }).catch(() => {});
+  const next = { ...(await lineCfg()), richmenus: { staff: staff.richMenuId, owner_file: ownerFile, per_owner: {} } };
   await setSetting('line', next);
   await linkMenus(next);
-  return next.richmenus;
+  return { staff: staff.richMenuId, owner: ownerFile ? 'per-owner' : null };
 }
-// rich menus only show in 1:1 chats: each owner's chat gets the owner menu, staff the default one
+const W3 = Math.round(2500 / 3);
+const col = (i, y, h, action) => ({ bounds: { x: W3 * i, y, width: i === 2 ? 2500 - W3 * 2 : W3, height: h }, action });
+export const liveUrl = async (recipientId) => { const { liveToken } = await import('./billlink.js'); return BASE().startsWith('https:') ? `${BASE()}/live/#${await liveToken(recipientId)}` : ''; };
+async function ownerMenuFor(r, file) {
+  const { db: d } = await import('../db.js');
+  const f = await d.get('SELECT mime, data, path FROM files WHERE id = ?', [file]);
+  if (!f) return null;
+  const buf = f.data ? Buffer.from(f.data, 'base64') : (await import('node:fs')).readFileSync(f.path);
+  const live = (await liveUrl(r.id)) || page('live');
+  const m = await call('/v2/bot/richmenu', { size: { width: 2500, height: 1686 }, selected: true, name: 'Oppa owner', chatBarText: '🏪 เมนูเจ้าของร้าน',
+    areas: [col(0, 0, 843, { type: 'uri', uri: live }), col(1, 0, 843, { type: 'postback', data: 'a=low', displayText: 'ดูของใกล้หมด' }),
+      col(2, 0, 843, { type: 'postback', data: 'a=list', displayText: 'รายการที่ต้องซื้อ' }),
+      col(0, 843, 843, { type: 'uri', uri: page('stock') }), col(1, 843, 843, { type: 'uri', uri: page('menu') }), col(2, 843, 843, { type: 'uri', uri: page('members') })] });
+  await call(`/v2/bot/richmenu/${m.richMenuId}/content`, null, { data: true, raw: buf, type: f.mime });
+  return m.richMenuId;
+}
+// rich menus only show in 1:1 chats: each owner's chat gets its own owner menu, staff the default stock menu
 export async function linkMenus(c = null) {
   c = c || await lineCfg();
-  const owner = c.richmenus && c.richmenus.owner;
+  const rm = { per_owner: {}, ...(c.richmenus || {}) };
+  if (!rm.staff && !rm.owner_file) return;
+  const per = { ...(rm.per_owner || {}) };
+  const owners = new Set((c.recipients || []).filter((x) => x.type === 'user' && roleOf(x) === 'owner').map((x) => x.id));
   for (const r of (c.recipients || []).filter((x) => x.type === 'user')) {
     try {
-      if (owner && roleOf(r) === 'owner') await call(`/v2/bot/user/${r.id}/richmenu/${owner}`, null);
-      else await call(`/v2/bot/user/${r.id}/richmenu`, null, { method: 'DELETE' });
+      if (owners.has(r.id) && rm.owner_file) {
+        if (!per[r.id]) per[r.id] = await ownerMenuFor(r, rm.owner_file);
+        if (per[r.id]) await call(`/v2/bot/user/${r.id}/richmenu/${per[r.id]}`, null);
+      } else await call(`/v2/bot/user/${r.id}/richmenu`, null, { method: 'DELETE' });
     } catch (e) { console.warn('[line menu]', e.message); }
   }
+  // chats no longer owners: their own menu goes
+  for (const [uid, mid] of Object.entries(per)) if (!owners.has(uid)) { await call(`/v2/bot/richmenu/${mid}`, null, { method: 'DELETE' }).catch(() => {}); delete per[uid]; }
+  await setSetting('line', { ...(await lineCfg()), richmenus: { ...rm, per_owner: per } });
 }
 
 // ---------- sales: a receipt per bill (owners), today's sales on request ----------
@@ -328,7 +346,6 @@ export function reportMessage(sum, { recent = [], live = '', store = '' } = {}) 
       ...(live ? [{ type: 'button', style: 'primary', color: BRAND, height: 'sm', action: { type: 'uri', label: '🔴 เปิด Live View', uri: live } }] : []),
       { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '⟳ อัปเดตยอด', data: 'a=report', displayText: 'ยอดขายวันนี้' } }] } } };
 }
-export const livePage = () => (BASE().startsWith('https:') ? page('live') : '');
 
 // ---------- linking a chat (owner 1:1 or the shop group) with a one-time code shown in the shop website ----------
 export async function newLinkCode(role = 'owner') {

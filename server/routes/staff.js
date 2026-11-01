@@ -26,7 +26,8 @@ r.post('/auth/login', ah(async (req, res) => {
   const mainSelfie = plan ? await selfieOf(s.id, req.body.ticket, req.body.face) : null;
   if (plan) for (const p of [{ ...person(s), selfie: mainSelfie }, ...crew]) if (!p.selfie && await needSelfie(p.id)) throw bad(`${p.name} ยังไม่ได้ถ่ายรูปเข้างาน`, 'selfie_required');
   const term = terminal_id ? await db.get('SELECT id FROM terminals WHERE id = ?', [terminal_id]) : null;
-  const tok = await createSession('staff', s.id, term ? term.id : null);
+  // shop website on a personal phone/computer: "remember this device" keeps the sign-in for 30 days (never on a POS)
+  const tok = await createSession('staff', s.id, term ? term.id : null, { hours: !term && req.body.remember ? 24 * 30 : null });
   if (crew.length) await db.run('UPDATE sessions SET crew = ? WHERE token = ?', [S(crew.map(person)), tok]);
   const open = term ? await db.get("SELECT id FROM shifts WHERE terminal_id = ? AND status = 'open'", [term.id]) : null;
   if (open) await joinShiftCrew(open.id, [{ ...person(s), main: true }, ...crew.map(person)]);

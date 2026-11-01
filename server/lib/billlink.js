@@ -71,3 +71,15 @@ export async function staffFromTicket(tok) {
   if (!(want.length === got.length && crypto.timingSafeEqual(want, got))) return null;
   return parseInt(m[2], 36) > Date.now() ? m[1] : null;
 }
+
+// Live sales page for an owner's LINE chat (rich menu button): <recipient id, base64url>.<signature>.
+// Valid only while that chat is still linked as an owner (checked by the caller), so removing it or making it staff ends the link.
+const b64u = (x) => Buffer.from(String(x)).toString('base64url');
+export async function liveToken(recipientId) { return `${b64u(recipientId)}.${crypto.createHmac('sha256', await secret()).update('live:' + recipientId).digest('hex').slice(0, 32)}`; }
+export async function liveFromToken(tok) {
+  const [a, sig] = String(tok || '').split('.');
+  if (!a || !sig) return null;
+  let rid; try { rid = Buffer.from(a, 'base64url').toString('utf8'); } catch { return null; }
+  const want = crypto.createHmac('sha256', await secret()).update('live:' + rid).digest('hex').slice(0, 32);
+  return want.length === sig.length && crypto.timingSafeEqual(Buffer.from(want), Buffer.from(sig)) ? rid : null;
+}

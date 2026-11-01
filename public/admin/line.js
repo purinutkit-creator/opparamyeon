@@ -133,7 +133,7 @@ export async function linePage() {
       lowL, toPick('low'), closeL, toPick('close')),
       h('div', { class: 'row', style: { marginTop: '.8em' } }, saveBtn('บันทึก', save), h('button', { class: 'btn', onclick: () => save().then(() => api.post('/line/test', {})).then((r) => toast(`ส่งทดสอบแล้ว ${r.sent} แชต`, 'ok')).catch(errToast) }, '🔔 ส่งทดสอบ'))),
     card(h('h3', {}, '4. ริชเมนูใน LINE'),
-      h('p', { class: 'small muted' }, '👑 เจ้าของร้าน (6 ช่อง): ยอดขาย·Live View · ของใกล้หมด · รายการที่ต้องซื้อ · หน้าสต็อก · จัดการร้าน · หลังบ้านสมาชิก — ปุ่ม "ยอดขาย" ตอบยอดวันนี้ในแชตพร้อมปุ่มเปิด Live View หน้าร้าน'), ownerCanvas,
+      h('p', { class: 'small muted' }, '👑 เจ้าของร้าน (6 ช่อง): ยอดขาย·Live View · ของใกล้หมด · รายการที่ต้องซื้อ · หน้าสต็อก · จัดการร้าน · หลังบ้านสมาชิก — ปุ่ม "ยอดขาย · Live View" เปิดหน้ายอดขายสด (อัปเดตทุก 10 วินาที) ได้ทันทีโดยไม่ต้องล็อกอิน: ลิงก์เฉพาะแชตเจ้าของแต่ละคน ใช้ไม่ได้ทันทีถ้าลบแชตหรือเปลี่ยนเป็นพนักงาน · ในแชตพิมพ์ "ยอด" ก็ได้'), ownerCanvas,
       h('p', { class: 'small muted', style: { marginTop: '1em' } }, '👤 พนักงาน: ของใกล้หมด · รายการที่ต้องซื้อ · หน้าสต็อก'), menuCanvas,
       h('p', { class: 'small muted' }, 'ริชเมนูแสดงในแชตส่วนตัวกับ OA เท่านั้น (ในกลุ่ม LINE ไม่มีริชเมนู — พิมพ์ "ยอด" / "สต็อก" / "ซื้อ" แทน)'),
       h('button', { class: 'btn primary', style: { marginTop: '.6em' }, onclick: installMenu }, '📲 ติดตั้งริชเมนูใน LINE')));
