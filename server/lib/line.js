@@ -293,7 +293,19 @@ export async function linkMenus(c = null) {
 const B = (satang) => (Number(satang || 0) / 100).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const tm = (iso) => (iso ? new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) + ' น.' : '');
 const row2 = (l, r, o = {}) => ({ type: 'box', layout: 'horizontal', spacing: 'md', contents: [txt(l, { size: 'sm', color: '#555555', flex: 5, ...o.l }), txt(r, { size: 'sm', align: 'end', flex: 3, ...o.r })] });
-export function saleMessage(o, { url = '', qr = '', methods = {}, store = '' } = {}) {
+// a product picture LINE can show: our own pictures as PNG thumbnails, outside JPEG/PNG links as they are, else the shop icon
+export const thumbOf = (image) => {
+  const m = /^\/files\/([\w-]+)/.exec(String(image || ''));
+  if (m) return abs(`/api/public/thumb/${m[1]}.png`);
+  if (/^https:\/\/\S+\.(png|jpe?g)(\?\S*)?$/i.test(String(image || ''))) return image;
+  return abs('/assets/icon-192.png');
+};
+const pic = (url, size = '44px') => (url ? { type: 'box', layout: 'vertical', width: size, height: size, flex: 0, cornerRadius: '8px', backgroundColor: '#F4EFEC',
+  contents: [{ type: 'image', url, size: 'full', aspectMode: 'cover', aspectRatio: '1:1' }] } : null);
+const ownerButtons = () => ({ type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+  { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📊 ยอดขายล่าสุด', data: 'a=report', displayText: 'ยอดขายล่าสุด' } },
+  { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🔥 สินค้าขายดี', data: 'a=top', displayText: 'สินค้าขายดี' } }] });
+export function saleMessage(o, { url = '', qr = '', methods = {}, store = '', images = {} } = {}) {
   const items = o.items.filter((i) => i.qty - i.void_qty > 0);
   const shown = items.slice(0, 12);
   const pays = o.payments.filter((p) => p.status === 'paid').map((p) => methods[p.method] || p.method);
@@ -303,7 +315,11 @@ export function saleMessage(o, { url = '', qr = '', methods = {}, store = '' } =
     txt(`บิล ${o.bill_no} · ${tm(o.paid_at || o.created_at)}`, { size: 'sm', color: '#555555' }),
     txt([o.dine_type === 'takeaway' ? 'กลับบ้าน' : o.dine_type === 'mixed' ? 'ทานที่ร้าน+กลับบ้าน' : 'ทานที่ร้าน', o.table_name ? 'โต๊ะ ' + o.table_name : '', o.staff_name ? 'โดย ' + o.staff_name : ''].filter(Boolean).join(' · '), { size: 'xs', color: '#999999' }),
     { type: 'separator', margin: 'md' },
-    { type: 'box', layout: 'vertical', spacing: 'xs', margin: 'md', contents: shown.map((i) => row2(`${i.qty - i.void_qty}× ${i.name}${(i.options || []).length ? ' (' + i.options.map((x) => x.name).join(', ') + ')' : ''}`, B(i.line_total))) },
+    { type: 'box', layout: 'vertical', spacing: 'md', margin: 'md', contents: shown.map((i) => ({ type: 'box', layout: 'horizontal', spacing: 'md', contents: [
+      ...(images[i.product_id] ? [pic(images[i.product_id])] : []),
+      { type: 'box', layout: 'vertical', flex: 5, contents: [txt(`${i.qty - i.void_qty}× ${i.name}`, { size: 'sm', weight: 'bold', color: '#222222' }),
+        ...((i.options || []).length ? [txt(i.options.map((x) => x.name).join(', '), { size: 'xs', color: '#888888' })] : [])] },
+      txt(B(i.line_total), { size: 'sm', align: 'end', flex: 2 })] })) },
     ...(items.length > shown.length ? [txt(`และอีก ${items.length - shown.length} รายการ`, { size: 'xs', color: '#999999' })] : []),
     { type: 'separator', margin: 'md' },
     { type: 'box', layout: 'vertical', spacing: 'xs', margin: 'md', contents: [
@@ -313,7 +329,8 @@ export function saleMessage(o, { url = '', qr = '', methods = {}, store = '' } =
   ];
   return { type: 'flex', altText: `🧾 ${o.bill_no} ฿${B(o.total)} · ${items.length} รายการ`, contents: { type: 'bubble', size: 'kilo',
     body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: body },
-    ...(url ? { footer: { type: 'box', layout: 'vertical', contents: [{ type: 'button', style: 'link', height: 'sm', action: { type: 'uri', label: '🧾 ดูบิล', uri: url } }] } } : {}) } };
+    footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
+      ...(url ? [{ type: 'button', style: 'link', height: 'sm', action: { type: 'uri', label: '🧾 ดูบิล', uri: url } }] : []), ownerButtons()] } } };
 }
 export async function notifySale(orderId) {
   const c = await lineCfg();
@@ -325,15 +342,19 @@ export async function notifySale(orderId) {
   if (!o || !o.bill_no) return 0;
   const t = await billToken(o.bill_no);
   const url = abs('/b/#' + t), qr = abs(`/api/public/bill/${encodeURIComponent(t)}/qr.png`);
-  return lineTo('sale', saleMessage(o, { url, qr, methods: Object.fromEntries((s.sale.payment_methods || []).map((m) => [m.id, m.name])), store: s.store.name }));
+  const images = {};
+  for (const i of o.items) if (i.product_id && !(i.product_id in images)) { const p = await db.get('SELECT image FROM products WHERE id = ?', [i.product_id]); images[i.product_id] = thumbOf(p && p.image); }
+  return lineTo('sale', saleMessage(o, { url, qr, images, methods: Object.fromEntries((s.sale.payment_methods || []).map((m) => [m.id, m.name])), store: s.store.name }));
 }
-export function reportMessage(sum, { recent = [], live = '', store = '' } = {}) {
+const hm = (iso) => new Date(iso).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' });
+export function reportMessage(sum, { recent = [], live = '', store = '', first = null, last = null } = {}) {
   const avg = sum.bills_paid ? Math.round(sum.net_sales / sum.bills_paid) : 0;
   const tile = (label, value, color = '#111111') => ({ type: 'box', layout: 'vertical', flex: 1, paddingAll: '8px', backgroundColor: '#F7F3F1', cornerRadius: '10px', contents: [txt(label, { size: 'xxs', color: '#888888' }), txt(value, { size: 'md', weight: 'bold', color })] });
   return { type: 'flex', altText: `📊 ยอดขายวันนี้ ฿${B(sum.net_sales)} · ${sum.bills_paid} บิล`, contents: { type: 'bubble', size: 'mega',
     header: { type: 'box', layout: 'vertical', backgroundColor: BRAND, paddingAll: '16px', contents: [txt('📊 ยอดขายวันนี้', { color: '#FFFFFF', weight: 'bold', size: 'md' }), txt(`${store} · อัปเดต ${tm(sum.generated_at)}`, { color: '#FFE4DE', size: 'xs' })] },
     body: { type: 'box', layout: 'vertical', spacing: 'md', contents: [
       txt(`฿${B(sum.net_sales)}`, { size: '3xl', weight: 'bold', color: BRAND }),
+      txt(first ? `🕙 ขายตั้งแต่ ${hm(first)} – ${hm(last)} น. · ${sum.bills_paid} บิล` : 'ยังไม่มีบิลวันนี้', { size: 'sm', color: '#555555', weight: 'bold' }),
       { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [tile('บิล', String(sum.bills_paid)), tile('เฉลี่ย/บิล', B(avg)), tile('ชาม', String(sum.bowls_net))] },
       ...(sum.gross_profit !== undefined ? [row2('กำไรขั้นต้น', `${B(sum.gross_profit)} (${sum.margin_pct}%)`)] : []),
       ...(sum.discount ? [row2('ส่วนลด', B(sum.discount))] : []),
@@ -344,7 +365,27 @@ export function reportMessage(sum, { recent = [], live = '', store = '' } = {}) 
     ] },
     footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
       ...(live ? [{ type: 'button', style: 'primary', color: BRAND, height: 'sm', action: { type: 'uri', label: '🔴 เปิด Live View', uri: live } }] : []),
-      { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '⟳ อัปเดตยอด', data: 'a=report', displayText: 'ยอดขายวันนี้' } }] } } };
+      { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [{ type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '⟳ อัปเดตยอด', data: 'a=report', displayText: 'ยอดขายล่าสุด' } },
+        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '🔥 สินค้าขายดี', data: 'a=top', displayText: 'สินค้าขายดี' } }] }] } } };
+}
+// best sellers today (top 5) with their pictures
+export function topMessage(items, { live = '', store = '', day = '' } = {}) {
+  const medal = ['🥇', '🥈', '🥉', '4', '5'];
+  const maxQ = Math.max(1, ...items.map((x) => x.qty));
+  const rows = items.map((x, i) => ({ type: 'box', layout: 'horizontal', spacing: 'md', alignItems: 'center', contents: [
+    txt(medal[i], { size: i < 3 ? 'xl' : 'md', weight: 'bold', color: '#999999', flex: 0, align: 'center' }),
+    pic(x.image, '52px'),
+    { type: 'box', layout: 'vertical', flex: 5, spacing: 'xs', contents: [txt(x.name, { size: 'sm', weight: 'bold', color: '#222222', maxLines: 2 }),
+      { type: 'box', layout: 'vertical', height: '6px', cornerRadius: '3px', backgroundColor: '#F4EFEC', contents: [{ type: 'box', layout: 'vertical', width: `${Math.max(4, Math.round((x.qty / maxQ) * 100))}%`, height: '6px', backgroundColor: BRAND, cornerRadius: '3px', contents: [] }] },
+      txt(`฿${B(x.amount)}`, { size: 'xs', color: '#888888' })] },
+    txt(`×${x.qty}`, { size: 'lg', weight: 'bold', color: BRAND, flex: 0, align: 'end' })] }));
+  return { type: 'flex', altText: items.length ? `🔥 ขายดีวันนี้: ${items.map((x) => x.name).slice(0, 3).join(', ')}`.slice(0, 380) : '🔥 ยังไม่มีการขายวันนี้', contents: { type: 'bubble', size: 'mega',
+    header: { type: 'box', layout: 'vertical', backgroundColor: '#2B1712', paddingAll: '16px', contents: [txt('🔥 สินค้าขายดีวันนี้', { color: '#FFFFFF', weight: 'bold', size: 'md' }), txt(`${store} · วันขาย ${day} · อัปเดต ${hm(new Date().toISOString())} น.`, { color: '#E8CFC6', size: 'xs' })] },
+    body: { type: 'box', layout: 'vertical', spacing: 'lg', contents: rows.length ? rows : [txt('ยังไม่มีการขายวันนี้', { color: '#888888' })] },
+    footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
+      ...(live ? [{ type: 'button', style: 'primary', color: BRAND, height: 'sm', action: { type: 'uri', label: '🔴 เปิด Live View', uri: live } }] : []),
+      { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [{ type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '📊 ยอดขายล่าสุด', data: 'a=report', displayText: 'ยอดขายล่าสุด' } },
+        { type: 'button', style: 'secondary', height: 'sm', action: { type: 'postback', label: '⟳ อัปเดต', data: 'a=top', displayText: 'สินค้าขายดี' } }] }] } } };
 }
 
 // ---------- linking a chat (owner 1:1 or the shop group) with a one-time code shown in the shop website ----------

@@ -6,7 +6,7 @@ import { staffAuth } from '../lib/auth.js';
 import { adjustStock } from '../lib/stock.js';
 import { decodeImage, readBarcode, similarProducts, aiMatch } from '../lib/imgmatch.js';
 import { addPickerMessage, addedMessage } from '../lib/line.js';
-import { lineContent, lineLoading, findProducts, stockCard, candidatesMessage, lineSecret, lineToken, verifyLineSignature, lineReply, lineCfg, lowItems, itemOf, openList, addToList, suggestQty, lowStockMessage, listMessage, tryLink, recipientOf, newLinkCode, setupRichMenus, linkMenus, lineToAll, roleOf, reportMessage, liveUrl } from '../lib/line.js';
+import { lineContent, lineLoading, findProducts, stockCard, candidatesMessage, lineSecret, lineToken, verifyLineSignature, lineReply as replyNow, linePush, lineCfg, lowItems, itemOf, openList, addToList, suggestQty, lowStockMessage, listMessage, tryLink, recipientOf, newLinkCode, setupRichMenus, linkMenus, lineToAll, roleOf, reportMessage, topMessage, thumbOf, liveUrl } from '../lib/line.js';
 import { summary } from './reports.js';
 import { businessDateOf, getSettings } from '../lib/util.js';
 
@@ -18,7 +18,27 @@ async function salesReport(rec) {
   const sum = await summary(day, day, {}, { withCost: true });
   sum.payments = sum.payments.map((p) => ({ ...p, name: names[p.method] || p.method }));
   const recent = await db.all('SELECT bill_no, queue_no, total, paid_at FROM orders WHERE paid_business_date = ? AND paid_at IS NOT NULL ORDER BY paid_at DESC LIMIT 5', [day]);
-  return reportMessage(sum, { recent, live: rec ? await liveUrl(rec.id) : '', store: s.store.name });
+  const span = await db.get('SELECT MIN(paid_at) AS first, MAX(paid_at) AS last FROM orders WHERE paid_business_date = ? AND paid_at IS NOT NULL', [day]);
+  return reportMessage(sum, { recent, live: rec ? await liveUrl(rec.id) : '', store: s.store.name, first: span && span.first, last: span && span.last });
+}
+async function topSellers(rec) {
+  const day = await businessDateOf();
+  const s = await getSettings();
+  const rows = await db.all(`SELECT i.product_id, MAX(i.name) AS name, SUM(i.qty - i.void_qty - i.refunded_qty) AS qty, SUM(i.line_total) AS amount FROM order_items i JOIN orders o ON o.id = i.order_id
+    WHERE o.paid_business_date = ? AND o.status = 'paid' GROUP BY i.product_id ORDER BY qty DESC, amount DESC LIMIT 5`, [day]);
+  const items = [];
+  for (const x of rows.filter((r) => Number(r.qty) > 0)) { const p = x.product_id ? await db.get('SELECT image FROM products WHERE id = ?', [x.product_id]) : null; items.push({ name: x.name, qty: Number(x.qty), amount: Number(x.amount), image: thumbOf(p && p.image) }); }
+  return topMessage(items, { live: rec ? await liveUrl(rec.id) : '', store: s.store.name, day });
+}
+// a reply that did not go through (network blip, token used up) is retried once, then sent as a push to the same chat
+const replyChat = new Map();
+async function lineReply(rt, messages) {
+  try { return await replyNow(rt, messages); } catch (e1) {
+    console.warn('[line reply]', e1.message);
+    if (/fetch failed|ECONN|ETIMEDOUT|socket/i.test(e1.message)) { try { return await replyNow(rt, messages); } catch { /* fall through to push */ } }
+    const to = replyChat.get(rt);
+    if (to) return linePush(to, messages).catch((e2) => console.warn('[line push fallback]', e2.message));
+  }
 }
 const OWNER_ONLY = { type: 'text', text: '🔒 ยอดขายและรายงานดูได้เฉพาะเจ้าของร้าน\n\nพนักงานใช้ได้: ดูของใกล้หมด · เติมสต็อก · รายการที่ต้องซื้อ · เช็กสต็อกจากรูป/บาร์โค้ด' };
 
@@ -29,7 +49,10 @@ lineWebhook.post('/line/webhook', express.raw({ type: '*/*', limit: '1mb' }), ah
   if (!(await verifyLineSignature(raw, req.headers['x-line-signature']))) return res.status(401).json({ error: 'bad signature' });
   let body; try { body = JSON.parse(raw.toString('utf8')); } catch { return res.status(400).end(); }
   res.json({ ok: true }); // LINE wants a quick 200; replies go out with the reply token
-  for (const ev of body.events || []) await handle(ev).catch((e) => console.warn('[line webhook]', e.message));
+  for (const ev of body.events || []) {
+    if (ev.replyToken) { replyChat.set(ev.replyToken, chatOf(ev.source || {})); setTimeout(() => replyChat.delete(ev.replyToken), 120e3); }
+    await handle(ev).catch((e) => console.warn('[line webhook]', e.message));
+  }
 }));
 
 async function handle(ev) {
@@ -43,6 +66,7 @@ async function handle(ev) {
     if (!rec) return;
     const t = ev.message.text.trim();
     if (/^(ยอด|ยอดขาย|รายงาน|sales|report)/i.test(t)) return lineReply(rt, roleOf(rec) === 'owner' ? await salesReport(rec) : OWNER_ONLY);
+    if (/^(ขายดี|สินค้าขายดี|top|best)/i.test(t)) return lineReply(rt, roleOf(rec) === 'owner' ? await topSellers(rec) : OWNER_ONLY);
     // a number typed right after "เติมสต็อก" = how many to add
     const pend = waiting.get(chatOf(src));
     if (pend && pend.until > Date.now() && /^\d{1,4}(\.\d+)?$/.test(t) && Number(t) > 0) { waiting.delete(chatOf(src)); return addNow(rt, pend.type, pend.id, Number(t), src); }
@@ -78,6 +102,7 @@ async function handle(ev) {
   const p = new URLSearchParams(ev.postback.data || '');
   const a = p.get('a'), who = 'line:' + (src.userId || src.groupId || '');
   if (a === 'report') return lineReply(rt, roleOf(rec) === 'owner' ? await salesReport(rec) : OWNER_ONLY);
+  if (a === 'top') return lineReply(rt, roleOf(rec) === 'owner' ? await topSellers(rec) : OWNER_ONLY);
   if (a === 'low') return lineReply(rt, lowStockMessage(await lowItems()));
   if (a === 'show') { const x = await itemOf(p.get('t'), p.get('i')); return x ? lineReply(rt, stockCard(x)) : null; }
   if (a === 'list') return lineReply(rt, listMessage(await openList(), await lowItems()));

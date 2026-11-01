@@ -14,6 +14,7 @@ before(async () => {
     const img = /^\/v2\/bot\/message\/([^/]+)\/content$/.exec(req.url);
     if (img) { res.setHeader('content-type', 'image/png'); return res.end(images.get(img[1])); }
     res.setHeader('content-type', 'application/json');
+    if (req.url === '/v2/bot/message/reply' && b.includes('rt-fail')) { res.statusCode = 400; return res.end('{"message":"Invalid reply token"}'); }
     res.end(req.url === '/v2/bot/richmenu' ? '{"richMenuId":"rm-1"}' : req.url.startsWith('/v2/bot/profile') ? '{"displayName":"เจ้าของร้าน"}' : req.url === '/v2/bot/info' ? (req.headers.authorization === 'Bearer ' + 'T'.repeat(160) ? '{"displayName":"Oppa Ramyeon","basicId":"@oppa"}' : (res.statusCode = 401, '{}')) : '{}');
   }); });
   await new Promise((r) => mock.listen(0, '127.0.0.1', r));
@@ -177,6 +178,7 @@ test('LINE: เจ้าของ/พนักงาน · ใบเสร็จ
   // receipts on, low-stock alerts to staff only
   let r = await S.call('PUT', '/api/line/settings', { enabled: true, notify_low: true, notify_close: true, notify_sale: true, to: { low: ['staff'], close: ['owner', 'staff'] }, recipients: ['Uowner', 'Ustaff'] }, { token: owner });
   assert.equal(r.status, 200);
+  process.env.PUBLIC_URL = 'https://shop.test'; // LINE needs https links for pictures and buttons
   await S.call('POST', '/api/shifts/open', { opening_cash: 0 }, { token: owner, terminal: 'pos1' });
   const n0 = sent.length;
   const co = await S.call('POST', '/api/orders/checkout', { idempotency_key: key(), cart: { lines: [line('p_r001', 1, { options: (await import('./helpers.js')).ramyeonOpts })] }, payments: [{ method: 'cash', amount: 1e7, received: 1e7 }] }, { token: owner, terminal: 'pos1' });
@@ -186,6 +188,22 @@ test('LINE: เจ้าของ/พนักงาน · ใบเสร็จ
   const bill = (await db.get('SELECT bill_no FROM orders WHERE paid_at IS NOT NULL ORDER BY paid_at DESC LIMIT 1')).bill_no;
   assert.match(pushes[0].body.messages[0].altText, new RegExp(bill));
   assert.ok(JSON.stringify(pushes[0].body).includes('มาม่าเกาหลีต้นตำรับ'));
+  // receipt: a picture beside each item, and buttons for the latest sales and best sellers
+  const rc = JSON.stringify(pushes[0].body.messages[0]);
+  assert.ok(rc.includes('a=report') && rc.includes('a=top'), 'ปุ่มยอดขายล่าสุด / สินค้าขายดี');
+  assert.ok(/"type":"image"/.test(rc), 'มีรูปสินค้าในบิล');
+  assert.ok(rc.includes('https://shop.test/assets/icon-192.png') || rc.includes('https://shop.test/api/public/thumb/'), 'รูปเป็นลิงก์ https ที่ LINE เปิดได้');
+  // best sellers: owner only
+  await hook([{ type: 'postback', replyToken: 'rt-top', source: { type: 'user', userId: 'Uowner' }, postback: { data: 'a=top' } }]); await wait(200);
+  const topMsg = lastTo('/v2/bot/message/reply').body.messages[0];
+  assert.equal(topMsg.type, 'flex'); assert.match(topMsg.altText, /ขายดี/); assert.ok(JSON.stringify(topMsg).includes('มาม่าเกาหลีต้นตำรับ'));
+  await hook([{ type: 'message', replyToken: 'rt-top2', source: { type: 'user', userId: 'Ustaff' }, message: { type: 'text', text: 'ขายดี' } }]); await wait(150);
+  assert.match(lastTo('/v2/bot/message/reply').body.messages[0].text, /เฉพาะเจ้าของ/);
+  // a reply LINE refuses (e.g. expired token) still reaches the chat as a push
+  const nF = sent.length;
+  await hook([{ type: 'postback', replyToken: 'rt-fail', source: { type: 'user', userId: 'Uowner' }, postback: { data: 'a=top' } }]); await wait(250);
+  const fb = sent.slice(nF).find((x) => x.path === '/v2/bot/message/push');
+  assert.ok(fb, 'ส่งแบบ push แทน'); assert.equal(fb.body.to, 'Uowner'); assert.match(fb.body.messages[0].altText, /ขายดี/);
   // sales report: owner yes, staff no
   await hook([{ type: 'postback', replyToken: 'rr1', source: { type: 'user', userId: 'Ustaff' }, postback: { data: 'a=report' } }]); await wait(150);
   assert.match(lastTo('/v2/bot/message/reply').body.messages[0].text, /เฉพาะเจ้าของ/);
@@ -236,4 +254,14 @@ test('LINE: เจ้าของ/พนักงาน · ใบเสร็จ
   const q = await fetch(S.base + `/api/public/bill/${encodeURIComponent(await billToken(bill))}/qr.png`);
   assert.equal(q.status, 200); assert.equal(q.headers.get('content-type'), 'image/png');
   assert.equal((await fetch(S.base + '/api/public/bill/B999.bad/qr.png')).status, 404);
+  // thumbnails for LINE: PNG for our own pictures, the shop icon when the file can't be read
+  const { PNG } = await import('pngjs');
+  const png1 = new PNG({ width: 300, height: 200 }); png1.data.fill(200);
+  const fd = new FormData(); fd.append('file', new Blob([PNG.sync.write(png1)], { type: 'image/png' }), 'x.png'); fd.append('kind', 'image');
+  const up = (await S.call('POST', '/api/files', fd, { token: owner })).body;
+  const th = await fetch(S.base + `/api/public/thumb/${up.id}.png`);
+  assert.equal(th.status, 200); assert.equal(th.headers.get('content-type'), 'image/png');
+  const dim = PNG.sync.read(Buffer.from(await th.arrayBuffer())); assert.deepEqual([dim.width, dim.height], [160, 160]);
+  const miss = await fetch(S.base + '/api/public/thumb/nope.png', { redirect: 'manual' });
+  assert.equal(miss.status, 302); assert.match(miss.headers.get('location'), /icon-192\.png/);
 });

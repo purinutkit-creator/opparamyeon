@@ -42,6 +42,34 @@ r.post('/files', staffAuth(), upload.single('file'), ah(async (req, res) => {
   const fid = await saveFile(f.buffer, f.originalname, f.mimetype);
   res.json({ id: fid, url: '/files/' + fid, mime: f.mimetype, size: f.size });
 }));
+// small PNG of a product picture for LINE cards (LINE shows only JPEG/PNG); anything else → the shop icon
+const thumbs = new Map();
+r.get('/public/thumb/:id.png', ah(async (req, res) => {
+  const fid = String(req.params.id);
+  let png = thumbs.get(fid);
+  if (!png) {
+    const f = await db.get('SELECT mime, data, path FROM files WHERE id = ?', [fid]);
+    const buf = f ? (f.data ? Buffer.from(f.data, 'base64') : fs.existsSync(f.path || '') ? fs.readFileSync(f.path) : null) : null;
+    const { decodeImage } = await import('../lib/imgmatch.js');
+    const img = buf ? decodeImage(buf, f.mime) : null;
+    if (!img) return res.redirect(302, '/assets/icon-192.png');
+    // square crop from the middle, 160 px
+    const N = 160, side = Math.min(img.width, img.height), ox = (img.width - side) / 2, oy = (img.height - side) / 2;
+    const { PNG } = await import('pngjs');
+    const out = new PNG({ width: N, height: N });
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const sx = Math.min(img.width - 1, Math.floor(ox + (x + 0.5) * side / N)), sy = Math.min(img.height - 1, Math.floor(oy + (y + 0.5) * side / N));
+      const i = (sy * img.width + sx) * 4, o = (y * N + x) * 4;
+      const a = img.data[i + 3] / 255; // transparent parts on white
+      out.data[o] = img.data[i] * a + 255 * (1 - a); out.data[o + 1] = img.data[i + 1] * a + 255 * (1 - a); out.data[o + 2] = img.data[i + 2] * a + 255 * (1 - a); out.data[o + 3] = 255;
+    }
+    png = PNG.sync.write(out);
+    if (thumbs.size > 300) thumbs.delete(thumbs.keys().next().value);
+    thumbs.set(fid, png);
+  }
+  res.set('Content-Type', 'image/png'); res.set('Cache-Control', 'public, max-age=86400');
+  res.send(png);
+}));
 export async function serveFile(req, res) {
   const f = await db.get('SELECT * FROM files WHERE id = ?', [req.params.id]);
   if (!f) return res.status(404).end();
