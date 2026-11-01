@@ -26,3 +26,23 @@ test('ลบเมนูที่ไม่ใช้: ไม่เคยขาย
   assert.equal(again.status, 200, 'รหัสและบาร์โค้ดใช้ซ้ำได้ ' + JSON.stringify(again.body));
   assert.deepEqual((await S.call('POST', '/api/products/delete', { ids: [] }, { token: owner })).status, 400);
 });
+
+test('จัดเรียงลำดับเมนูด้วยการลาก + ตั้งจุดครัวด่วน (ทีละเมนู / หลายเมนู)', async () => {
+  const list = async () => (await S.call('GET', '/api/catalog', undefined, { token: owner })).body.products;
+  const ram = (await list()).filter((p) => p.category_id === 'c_ramyeon');
+  const want = ram.map((p) => p.id).reverse();
+  await db.run("UPDATE categories SET sort_by = 'name_asc' WHERE id = 'c_ramyeon'");
+  assert.equal((await S.call('POST', '/api/products/reorder', { ids: want }, {})).status, 401);
+  const r = await S.call('POST', '/api/products/reorder', { ids: want, category_id: 'c_ramyeon' }, { token: owner });
+  assert.equal(r.status, 200);
+  assert.deepEqual((await list()).filter((p) => p.category_id === 'c_ramyeon').map((p) => p.id), want, 'หน้าขายเรียงตามที่ลาก');
+  assert.equal((await db.get("SELECT sort_by FROM categories WHERE id = 'c_ramyeon'")).sort_by, 'sort', 'หมวดเปลี่ยนเป็นเรียงตามลำดับที่ตั้ง');
+  // stations
+  const ids = ram.slice(0, 2).map((p) => p.id);
+  assert.equal((await S.call('POST', '/api/products/station', { ids, station_id: 'st_drink' }, { token: owner })).status, 200);
+  assert.deepEqual((await list()).filter((p) => ids.includes(p.id)).map((p) => p.station_id), ['st_drink', 'st_drink']);
+  assert.equal((await S.call('POST', '/api/products/station', { ids, station_id: 'nope' }, { token: owner })).status, 400);
+  await S.call('POST', '/api/products/station', { ids: [ids[0]], station_id: '' }, { token: owner });
+  assert.equal((await list()).find((p) => p.id === ids[0]).station_id, null, 'ไม่ระบุจุดครัว');
+  await S.call('POST', '/api/products/station', { ids, station_id: 'st_ramyeon' }, { token: owner });
+});

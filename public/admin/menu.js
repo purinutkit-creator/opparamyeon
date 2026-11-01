@@ -59,7 +59,16 @@ export async function menuPage(set) {
       stSel.addEventListener('change', () => { stFilter = stSel.value; drawList(); });
       const picked = new Set();
       const delBtn = h('button', { class: 'btn danger', style: { display: 'none' }, onclick: () => deleteProducts([...picked], cat, reload) });
-      const syncDel = () => { delBtn.style.display = picked.size ? '' : 'none'; delBtn.textContent = `🗑 ลบที่เลือก (${picked.size})`; };
+      // quick kitchen station for the ticked items
+      const stBulk = h('select', { class: 'input', style: { display: 'none', maxWidth: '230px' }, onchange: async () => {
+        if (stBulk.value === '_') return;
+        try { await api.post('/products/station', { ids: [...picked], station_id: stBulk.value }); toast(`ตั้งจุดครัว ${picked.size} เมนูแล้ว`, 'ok'); reload(); } catch (e) { errToast(e); stBulk.value = '_'; }
+      } }, h('option', { value: '_' }, '🍳 ตั้งจุดครัวให้ที่เลือก…'), ...cat.stations.map((x) => h('option', { value: x.id }, x.name)), h('option', { value: '' }, 'ไม่ระบุจุดครัว'));
+      const syncDel = () => { delBtn.style.display = stBulk.style.display = picked.size ? '' : 'none'; delBtn.textContent = `🗑 ลบที่เลือก (${picked.size})`; stBulk.value = '_'; };
+      // one tap sets the station that prints this item
+      const stationChips = (p) => h('div', { class: 'st-chips', onclick: (e) => e.stopPropagation() }, cat.stations.map((x) => h('button', { type: 'button', class: 'st-chip' + (p.station_id === x.id ? ' on' : ''), title: 'พิมพ์ใบครัวที่ ' + x.name,
+        onclick: async (e) => { const box = e.currentTarget.parentElement; const to = p.station_id === x.id ? '' : x.id; try { await api.post('/products/station', { ids: [p.id], station_id: to }); p.station_id = to || null;
+          box.querySelectorAll('.st-chip').forEach((b, i) => b.classList.toggle('on', cat.stations[i].id === to)); toast(to ? `${p.name} → ${x.name}` : `${p.name}: ไม่ระบุจุดครัว`, 'ok', 1400); } catch (er) { errToast(er); } } }, x.name)));
       const shown = () => cat.products.filter((p) => (!filter || p.name.includes(filter) || p.code.includes(filter) || p.barcodes.some((b) => b.includes(filter)))
         && (!stFilter || (stFilter === 'on' ? p.active : !p.active)));
       const all = h('input', { type: 'checkbox', title: 'เลือกทั้งหมดที่แสดง', onchange: () => { for (const p of shown()) all.checked ? picked.add(p.id) : picked.delete(p.id); syncDel(); drawList(); } });
@@ -69,10 +78,12 @@ export async function menuPage(set) {
         { t: '', f: (p) => (p.image ? h('img', { src: p.image, style: { width: '44px', height: '44px', objectFit: 'cover', borderRadius: '8px' } }) : '🍜') },
         { t: 'รหัส', k: 'code' }, { t: 'ชื่อ', k: 'name' }, { t: 'หมวด', f: (p) => (cat.categories.find((c) => c.id === p.category_id) || {}).name || '' },
         { t: 'ราคา', r: 1, f: (p) => baht(p.price) }, can('view_cost') ? { t: 'ต้นทุน', r: 1, f: (p) => (p.cost !== undefined ? baht(p.cost) : '') } : null, { t: 'ชาม', r: 1, k: 'bowl_count' },
-        { t: 'สต็อก', r: 1, f: (p) => (p.track_stock ? p.stock : '-') }, { t: 'สถานะ', f: (p) => h('span', { class: 'badge ' + (!p.active ? 'bad' : p.sold_out ? 'warn' : 'ok') }, !p.active ? 'ปิดขาย' : p.sold_out ? 'หมด' : 'ขาย') }].filter(Boolean),
+        { t: 'สต็อก', r: 1, f: (p) => (p.track_stock ? p.stock : '-') }, cat.stations.length ? { t: 'จุดพิมพ์ใบครัว', f: stationChips } : null,
+        { t: 'สถานะ', f: (p) => h('span', { class: 'badge ' + (!p.active ? 'bad' : p.sold_out ? 'warn' : 'ok') }, !p.active ? 'ปิดขาย' : p.sold_out ? 'หมด' : 'ขาย') }].filter(Boolean),
       shown(), { onRow: (p) => productDialog(p, cat, ingredients, reload) }));
       drawList(); syncDel();
-      body = h('div', {}, h('div', { class: 'bar' }, q, stSel, h('button', { class: 'btn primary', onclick: () => productDialog(null, cat, ingredients, reload) }, '+ เพิ่มเมนู'), delBtn), list);
+      body = h('div', {}, h('style', {}, MENU_LIST_CSS), h('div', { class: 'bar' }, q, stSel, h('button', { class: 'btn primary', onclick: () => productDialog(null, cat, ingredients, reload) }, '+ เพิ่มเมนู'),
+        h('button', { class: 'btn', onclick: () => sortDialog(cat, reload) }, '↕ จัดเรียงลำดับ'), stBulk, delBtn), list);
     } else if (tab === 'import') {
       body = importBox(reload);
     } else if (tab === 'categories') {
@@ -100,6 +111,100 @@ export async function menuPage(set) {
   return page('เมนูและสินค้า', box);
 }
 const SORT_BY_OPTS = [['sort', 'ลำดับแสดงที่ตั้งในสินค้า'], ['code_asc', 'รหัสสินค้า น้อย → มาก'], ['code_desc', 'รหัสสินค้า มาก → น้อย'], ['name_asc', 'ชื่อสินค้า ก → ฮ / A → Z'], ['name_desc', 'ชื่อสินค้า ฮ → ก / Z → A']];
+const MENU_LIST_CSS = `
+  .st-chips { display: flex; flex-wrap: wrap; gap: 4px; min-width: 250px; max-width: 360px; }
+  .st-chip { border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 99px; padding: 3px 9px; font: inherit; font-size: .8em; font-weight: 700; cursor: pointer; white-space: nowrap; transition: background .15s, color .15s; }
+  .st-chip.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .sort-list { display: grid; gap: 6px; max-height: 62vh; overflow: auto; padding: 2px; overscroll-behavior: contain; }
+  .sort-row { display: grid; grid-template-columns: 40px 30px 44px 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); user-select: none; -webkit-user-select: none; }
+  .sort-row.dragging { position: relative; z-index: 5; box-shadow: 0 14px 30px rgb(0 0 0 / .18); border-color: var(--brand); transition: box-shadow .2s; }
+  .sort-row .sort-h { cursor: grab; touch-action: none; font-size: 22px; color: var(--muted); display: grid; place-items: center; height: 40px; border-radius: 10px; background: var(--surface2); }
+  .sort-row.dragging .sort-h { cursor: grabbing; color: var(--brand); }
+  .sort-row .no { color: var(--muted); font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
+  .sort-row img, .sort-row .ph { width: 44px; height: 44px; border-radius: 10px; object-fit: cover; background: var(--surface2); display: grid; place-items: center; }
+  .sort-row b { display: block; line-height: 1.25; } .sort-row small { color: var(--muted); }
+  .sort-row .ud { display: flex; gap: 4px; } .sort-row .ud button { width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-size: 14px; }
+`;
+// drag rows by the ⠿ handle (mouse or finger); the others slide out of the way
+function sortable(list, onChange) {
+  const rows = () => [...list.children];
+  const slide = (moveFn) => { // FLIP: rows other than the dragged one glide to their new place
+    const before = new Map(rows().filter((r) => !r.classList.contains('dragging')).map((r) => [r, r.getBoundingClientRect().top]));
+    moveFn();
+    for (const [r, top] of before) { const d = top - r.getBoundingClientRect().top; if (!d) continue; r.style.transition = 'none'; r.style.transform = `translateY(${d}px)`; requestAnimationFrame(() => { r.style.transition = 'transform .22s cubic-bezier(.22,1,.36,1)'; r.style.transform = ''; }); }
+  };
+  list.addEventListener('pointerdown', (e) => {
+    const hdl = e.target.closest('.sort-h'); if (!hdl) return;
+    const row = hdl.closest('.sort-row'); e.preventDefault();
+    hdl.setPointerCapture(e.pointerId);
+    row.classList.add('dragging');
+    const grab = e.clientY - row.getBoundingClientRect().top;
+    let y = e.clientY, raf = 0;
+    const place = () => {
+      row.style.transform = '';
+      const natural = row.getBoundingClientRect().top;
+      row.style.transform = `translateY(${y - grab - natural}px)`;
+    };
+    const move = (ev) => {
+      y = ev.clientY;
+      const others = rows().filter((r) => r !== row);
+      const idx = others.filter((r) => { const b = r.getBoundingClientRect(); return b.top + b.height / 2 < y; }).length;
+      if (rows().indexOf(row) !== idx) slide(() => list.insertBefore(row, others[idx] || null));
+      place();
+      // near the top/bottom edge: scroll the list
+      const lb = list.getBoundingClientRect();
+      cancelAnimationFrame(raf);
+      const edge = y < lb.top + 40 ? -10 : y > lb.bottom - 40 ? 10 : 0;
+      if (edge) { const tick = () => { list.scrollTop += edge; place(); raf = requestAnimationFrame(tick); }; raf = requestAnimationFrame(tick); }
+    };
+    const up = () => {
+      cancelAnimationFrame(raf);
+      hdl.removeEventListener('pointermove', move); hdl.removeEventListener('pointerup', up); hdl.removeEventListener('pointercancel', up);
+      row.style.transition = 'transform .2s cubic-bezier(.22,1,.36,1)'; row.style.transform = '';
+      setTimeout(() => { row.classList.remove('dragging'); row.style.transition = ''; }, 200);
+      onChange();
+    };
+    hdl.addEventListener('pointermove', move); hdl.addEventListener('pointerup', up); hdl.addEventListener('pointercancel', up);
+  });
+  return { slide };
+}
+// "จัดเรียงลำดับ": one category at a time, drag (or ▲▼), save → the POS shows this order
+function sortDialog(cat, reload) {
+  const cats = cat.categories.filter((c) => cat.products.some((p) => p.category_id === c.id));
+  let catId = (cats[0] || {}).id || '';
+  let dirty = false;
+  const list = h('div', { class: 'sort-list' });
+  const note = h('p', { class: 'small muted', style: { margin: '.4em 0' } });
+  const renumber = () => [...list.children].forEach((r, i) => { r.querySelector('.no').textContent = i + 1; });
+  const sorter = sortable(list, () => { dirty = true; renumber(); });
+  const draw = () => {
+    const c = cat.categories.find((x) => x.id === catId);
+    const ps = cat.products.filter((p) => (catId ? p.category_id === catId : !p.category_id)).sort((a, b) => (a.sort || 0) - (b.sort || 0) || a.name.localeCompare(b.name, 'th'));
+    note.textContent = c && c.sort_by && c.sort_by !== 'sort' ? '⚠️ หมวดนี้ตั้งให้เรียงตามรหัส/ชื่ออยู่ — กดบันทึกแล้วจะเปลี่ยนเป็นเรียงตามลำดับที่จัดตรงนี้' : 'ลากที่ ⠿ เพื่อย้าย (หรือกด ▲ ▼) แล้วกดบันทึก — หน้า POS เรียงตามนี้ทันที';
+    list.replaceChildren(...ps.map((p, i) => h('div', { class: 'sort-row', 'data-id': p.id },
+      h('div', { class: 'sort-h', title: 'ลากเพื่อย้าย' }, '⠿'), h('span', { class: 'no' }, i + 1),
+      p.image ? h('img', { src: p.image, alt: '' }) : h('span', { class: 'ph' }, '🍜'),
+      h('div', {}, h('b', {}, p.name), h('small', {}, p.code + ' · ' + baht(p.price) + (p.active ? '' : ' · ปิดขาย'))),
+      h('div', { class: 'ud' }, h('button', { type: 'button', title: 'ขึ้น', onclick: (e) => { const r = e.target.closest('.sort-row'); if (r.previousElementSibling) { sorter.slide(() => list.insertBefore(r, r.previousElementSibling)); dirty = true; renumber(); } } }, '▲'),
+        h('button', { type: 'button', title: 'ลง', onclick: (e) => { const r = e.target.closest('.sort-row'); if (r.nextElementSibling) { sorter.slide(() => list.insertBefore(r.nextElementSibling, r)); dirty = true; renumber(); } } }, '▼')))));
+    if (!ps.length) list.replaceChildren(h('div', { class: 'empty' }, 'ไม่มีเมนูในหมวดนี้'));
+  };
+  const save = async () => {
+    const ids = [...list.querySelectorAll('.sort-row')].map((r) => r.dataset.id);
+    if (!ids.length) return;
+    await api.post('/products/reorder', { ids, category_id: catId || null });
+    for (const [i, pid] of ids.entries()) { const p = cat.products.find((x) => x.id === pid); if (p) p.sort = (i + 1) * 10; }
+    const c = cat.categories.find((x) => x.id === catId); if (c) c.sort_by = 'sort';
+    dirty = false; toast('บันทึกลำดับแล้ว', 'ok');
+  };
+  const sel = h('select', { class: 'input', style: { maxWidth: '320px' } }, cats.map((c) => h('option', { value: c.id }, c.name)),
+    cat.products.some((p) => !p.category_id) ? h('option', { value: '' }, '(ไม่มีหมวด)') : null);
+  sel.addEventListener('change', async () => { if (dirty && await confirmBox('บันทึกก่อนไหม', 'ลำดับในหมวดนี้ยังไม่ได้บันทึก — บันทึกก่อนเปลี่ยนหมวด?', 'บันทึก')) await save().catch(errToast); dirty = false; catId = sel.value; draw(); });
+  draw();
+  modal('↕ จัดเรียงลำดับเมนู', h('div', {}, h('style', {}, MENU_LIST_CSS), h('label', { class: 'field' }, 'หมวด', sel), note, list), { wide: true, onClose: () => { if (dirty) reload(); }, actions: [
+    { label: 'ปิด', onClick: () => { reload(); } },
+    { label: '💾 บันทึกลำดับ', class: 'primary', onClick: async () => { await save(); reload(); } }] });
+}
 // delete menu items (asks first); sold items stay in old bills and reports, everything else is removed for good
 async function deleteProducts(ids, cat, reload) {
   const names = ids.map((id) => (cat.products.find((p) => p.id === id) || {}).name).filter(Boolean);

@@ -149,6 +149,28 @@ r.post('/products/delete', staffAuth('manage_menu'), ah(async (req, res) => {
   changed();
   res.json({ ok: true, removed, archived });
 }));
+// drag-to-order in the shop website: the products of one category in the order wanted
+// (that category switches to "the order set" so the POS shows exactly this)
+r.post('/products/reorder', staffAuth('manage_menu'), ah(async (req, res) => {
+  const ids = [...new Set([].concat(req.body.ids || []).map(String))].slice(0, 1000);
+  if (!ids.length) throw bad('ไม่มีรายการให้จัดเรียง');
+  for (const [i, pid] of ids.entries()) await db.run('UPDATE products SET sort = ? WHERE id = ?', [(i + 1) * 10, pid]);
+  if (req.body.category_id) await db.run("UPDATE categories SET sort_by = 'sort' WHERE id = ?", [String(req.body.category_id)]);
+  await audit(req.staff.id, 'reorder', 'product', req.body.category_id || 'all', null, { count: ids.length });
+  changed();
+  res.json({ ok: true, count: ids.length });
+}));
+// quick kitchen station for one or many items ('' = none set → the general kitchen printers)
+r.post('/products/station', staffAuth('manage_menu'), ah(async (req, res) => {
+  const ids = [...new Set([].concat(req.body.ids || []).map(String))].slice(0, 1000);
+  const st = String(req.body.station_id || '');
+  if (!ids.length) throw bad('ยังไม่ได้เลือกเมนู');
+  if (st && !(await db.get('SELECT id FROM stations WHERE id = ?', [st]))) throw bad('ไม่พบจุดครัวนี้');
+  for (const pid of ids) await db.run('UPDATE products SET station_id = ? WHERE id = ?', [st || null, pid]);
+  await audit(req.staff.id, 'set_station', 'product', ids.length === 1 ? ids[0] : 'many', null, { station_id: st, count: ids.length });
+  changed();
+  res.json({ ok: true, count: ids.length });
+}));
 r.post('/products/:id/sold-out', staffAuth('sell'), ah(async (req, res) => {
   await db.run('UPDATE products SET sold_out = ? WHERE id = ?', [req.body.sold_out ? 1 : 0, req.params.id]);
   await audit(req.staff.id, 'sold_out', 'product', req.params.id, null, { sold_out: !!req.body.sold_out });
