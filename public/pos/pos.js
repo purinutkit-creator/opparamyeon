@@ -716,6 +716,14 @@ function addByCode(code) {
 }
 // product details on the customer display: picture, description, highlights, spice level (👁 on a product, or every time it is added)
 let showcaseTimer = null;
+// the item just added: shown big on the customer display (picture, price, description, spice) until the next one
+function noteLatest(p, l) {
+  if (!p) return;
+  const each = l && l.qty ? Math.round(lineTotal(l) / l.qty) : p.price;
+  st.latest = { id: p.id, name: p.name, image: p.image || '', price: each, description: p.description || '', spice: Number(p.spice_level) || 0,
+    highlights: String(p.highlights || '').split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 4),
+    options: l ? (renamedLine(l.name, l.options || [], 'everywhere').options || []).map((o) => displayOption(o)).slice(0, 6) : [], at: Date.now() };
+}
 function showcase(p, manual = false) {
   if (manual && st.showcase && st.showcase.id === p.id) { st.showcase = null; pushDisplay(); renderMenu(); return toast('ซ่อนรายละเอียดบนจอลูกค้าแล้ว', 'info', 1500); }
   st.showcase = { id: p.id, name: p.name, image: p.image || '', price: p.price, description: p.description || '', spice: Number(p.spice_level) || 0,
@@ -748,7 +756,7 @@ function pickProduct(p, { fromScan = false } = {}) {
   }
   // toppings (0 bowls) go into the currently selected bowl so they print with it
   const bowl = !p.bowl_count ? currentBowlGroup() : null;
-  addToCart(st.cart, p, { dine_type: st.cart.dine_type, bowl_group: bowl });
+  noteLatest(p, addToCart(st.cart, p, { dine_type: st.cart.dine_type, bowl_group: bowl }));
   if (fromScan) toast(`+1 ${p.name}`, 'ok', 900);
   saveCart(); renderCart();
 }
@@ -757,6 +765,7 @@ function quickPick(p, groups, chosenSoFar = []) {
   if (!g) {
     const bowl = p.bowl_count ? nextBowlGroup() : currentBowlGroup();
     const l = addToCart(st.cart, p, { qty: 1, options: chosenSoFar, dine_type: st.cart.dine_type, note: '', bowl_group: bowl });
+    noteLatest(p, l);
     if (p.bowl_count && l.qty === 1) st.activeBowl = l.bowl_group;
     toast(`+1 ${p.name}${chosenSoFar.length ? ' · ' + chosenSoFar.map((o) => o.name).join(', ') : ''}`, 'ok', 1200);
     saveCart(); renderCart();
@@ -828,6 +837,7 @@ function optionsDialog(p, editLine = null) {
     else {
       const bowl = p.bowl_count ? nextBowlGroup() : currentBowlGroup();
       const l = addToCart(st.cart, p, { qty, options, dine_type: dine, note: note.value, bowl_group: bowl });
+      noteLatest(p, l);
       if (p.bowl_count && l.qty === qty) st.activeBowl = l.bowl_group;
     }
     saveCart(); renderCart();
@@ -1155,6 +1165,7 @@ function pushDisplay(extra = {}) {
     lines: st.cart.lines.map((l) => { const rn = renamedLine(l.name, l.options || [], 'everywhere'); const pr = st.catalog && st.catalog.products.find((x) => x.id === l.product_id);
       return { name: rn.name, qty: l.qty, options: rn.options.map(displayOption), price: lineTotal(l), dine_type: l.dine_type, bowl_group: l.bowl_group, image: (pr && pr.image) || '' }; }),
     showcase: st.showcase || null,
+    latest: st.latest && st.cart.lines.some((l) => l.product_id === st.latest.id) ? st.latest : null,
     items_total: t.items_total, discount: t.discount, packaging: t.packaging, tax: t.tax, total: t.total, bowls: t.bowls, table: st.cart.table_name,
     member: m && st.settings.members.show_on_display ? { name: (m.first_name || m.nickname || '').slice(0, 2) + '***', points: m.points, tier: m.tier && m.tier.name, earn: previewEarn(st.cart, t) } : null,
     queue_no: st.cart.queue_no || '', discounts: discountRows(st.cart, t),

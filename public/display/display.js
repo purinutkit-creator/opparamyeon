@@ -161,14 +161,40 @@ function renderAll() {
     h('div', { class: 'promo', id: 'promo' }), h('div', { class: 'panel', id: 'panel' }),
     h('div', { class: 'gclock', id: 'gclock' }, h('b', {}, timeText()), h('span', {}, dateText())));
   const old = $('.disp');
-  if (old && old.className === wrap.className) { renderPanel(); renderShowcase(); if (paying) renderPay(); return renderDone(); }
+  if (old && old.className === wrap.className) { renderPanel(); renderShowcase(); renderLatest(); if (paying) renderPay(); return renderDone(); }
   if ($('.done:not(.leaving)') && state.phase !== 'done') wrap.classList.add('welcome-in');
   root.replaceChildren(wrap);
   if (paying) renderPay(); else renderPromo();
-  renderPanel(); renderShowcase(); renderDone(); renderPrompt();
+  renderPanel(); renderShowcase(); renderLatest(); renderDone(); renderPrompt();
 }
 // product details the cashier chose to show (👁 on the POS): picture, price, spice level, description, highlights
-let showcaseAt = 0, showcaseTimer = null;
+let showcaseAt = 0, showcaseTimer = null, latestAt = 0;
+// spice: 5 chilies lit up to the level, with words
+const SPICE_WORDS = ['ไม่เผ็ด', 'เผ็ดน้อย', 'เผ็ดปานกลาง', 'เผ็ดมาก', 'เผ็ดมากๆ', 'เผ็ดที่สุด'];
+const spiceRow = (n, delay = 0.35) => h('div', { class: 'sc-spice' + (n ? '' : ' none') },
+  h('span', { class: 'chili' }, Array.from({ length: 5 }, (_, i) => h('i', { class: i < n ? 'on' : '', style: `animation-delay:${delay + i * 0.08}s` }, '🌶️'))),
+  h('b', {}, SPICE_WORDS[Math.max(0, Math.min(5, n))] + (n ? ` ${n}/5` : '')));
+// the item just added: a big card on the left side (picture, price, description, spice) until the next one
+function renderLatest() {
+  const lt = state.phase === 'cart' && state.latest ? state.latest : null;
+  const host = $('.disp.active .promo');
+  const old = $('#latestcard');
+  if (!lt || !host) { if (old && !old.classList.contains('out')) { old.classList.add('out'); setTimeout(() => old.remove(), 400); } latestAt = 0; return; }
+  if (old && lt.at === latestAt && old.parentElement === host) return;
+  latestAt = lt.at;
+  if (old) { old.id = ''; old.classList.add('out'); setTimeout(() => old.remove(), 400); }
+  const el = h('div', { id: 'latestcard', class: 'latestcard' }, h('div', { class: 'sc-card lc-card' },
+    h('div', { class: 'sc-img' }, h('img', { src: lt.image || '/assets/bowl.svg', alt: '', class: lt.image ? '' : 'noimg' }), h('span', { class: 'lc-tag' }, '🆕 เพิ่มล่าสุด')),
+    h('div', { class: 'sc-body' },
+      h('h2', {}, lt.name),
+      lt.options && lt.options.length ? h('div', { class: 'lc-opts' }, lt.options.map((o) => h('span', {}, o))) : null,
+      h('div', { class: 'sc-price' }, baht(lt.price), h('small', {}, ' ฿')),
+      spiceRow(lt.spice),
+      lt.description ? h('p', { class: 'sc-desc' }, lt.description) : null,
+      lt.highlights && lt.highlights.length ? h('ul', { class: 'sc-hl' }, lt.highlights.map((x, i) => h('li', { style: `animation-delay:${0.4 + i * 0.1}s` }, h('b', {}, '✓'), x))) : null)));
+  host.append(el);
+}
+// 👁 on the POS: the product's details as a full-screen popup over the whole display (closes by itself)
 function renderShowcase() {
   const sc = state.showcase && state.phase !== 'pay' && state.phase !== 'done' && Date.now() - state.showcase.at < 15000 ? state.showcase : null;
   const old = $('#showcase');
@@ -176,17 +202,19 @@ function renderShowcase() {
   if (old && sc.at === showcaseAt) return;
   showcaseAt = sc.at;
   if (old) old.remove();
-  const chili = Array.from({ length: 5 }, (_, i) => h('i', { class: i < sc.spice ? 'on' : '', style: `animation-delay:${0.35 + i * 0.08}s` }, '🌶️'));
-  const el = h('div', { id: 'showcase', class: 'showcase' }, h('div', { class: 'sc-card' },
-    h('div', { class: 'sc-img' }, h('img', { src: sc.image || '/assets/bowl.svg', alt: '' })),
-    h('div', { class: 'sc-body' },
+  const left = Math.max(1000, 15000 - (Date.now() - sc.at));
+  const el = h('div', { id: 'showcase', class: 'showcase pop' }, h('div', { class: 'pop-card' },
+    h('div', { class: 'pop-img' }, h('img', { src: sc.image || '/assets/bowl.svg', alt: '', class: sc.image ? '' : 'noimg' })),
+    h('div', { class: 'pop-body' },
+      h('span', { class: 'pop-kicker' }, '✨ รู้จักเมนูนี้'),
       h('h2', {}, sc.name), h('div', { class: 'sc-price' }, baht(sc.price), h('small', {}, ' ฿')),
-      h('div', { class: 'sc-spice' }, h('span', {}, sc.spice ? 'ความเผ็ด' : 'ไม่เผ็ด'), sc.spice ? h('span', { class: 'chili' }, chili) : null),
+      spiceRow(sc.spice, 0.45),
       sc.description ? h('p', { class: 'sc-desc' }, sc.description) : null,
-      sc.highlights && sc.highlights.length ? h('ul', { class: 'sc-hl' }, sc.highlights.map((x, i) => h('li', { style: `animation-delay:${0.4 + i * 0.1}s` }, h('b', {}, '✓'), x))) : null)));
-  ($('.disp .promo') || root).append(el);
+      sc.highlights && sc.highlights.length ? h('ul', { class: 'sc-hl' }, sc.highlights.map((x, i) => h('li', { style: `animation-delay:${0.5 + i * 0.1}s` }, h('b', {}, '✓'), x))) : null),
+    h('i', { class: 'pop-timer', style: `animation-duration:${left}ms` })));
+  root.append(el);
   clearTimeout(showcaseTimer);
-  showcaseTimer = setTimeout(() => { if (showcaseAt === sc.at) { state = { ...state, showcase: null }; renderShowcase(); } }, Math.max(1000, 15000 - (Date.now() - sc.at)));
+  showcaseTimer = setTimeout(() => { if (showcaseAt === sc.at) { state = { ...state, showcase: null }; renderShowcase(); } }, left);
 }
 // smooth number change (counts from the previous value)
 function tween(node, to, ms = 520) {

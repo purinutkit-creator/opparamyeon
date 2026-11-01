@@ -519,7 +519,33 @@
   .sc-hl li { display: flex; gap: 1vh; align-items: baseline; font-size: clamp(13px, 2.2vh, 24px); font-weight: 700; animation: scup .5s cubic-bezier(.2,1,.4,1) both; }
   .sc-hl li b { color: #16a34a; }
   @keyframes scup { from { opacity: 0; transform: translateY(1.6vh); } }
-  @media (prefers-reduced-motion: reduce) { .showcase, .sc-card, .sc-img img, .sc-body *, .it.new .th { animation: none !important; } }
+  .sc-img img.noimg { object-fit: contain; padding: 4vh; box-sizing: border-box; }
+  .sc-spice b { font-weight: 800; }
+  /* the item just added: fills the left side while the bill is open */
+  .latestcard { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; padding: 11vh 3vh 3vh; background: radial-gradient(120% 90% at 50% 0%, #2a1712, #120a08); animation: m-fade .35s ease-out both; }
+  .latestcard.out { animation: lcout .4s ease-in forwards; pointer-events: none; }
+  @keyframes lcout { to { opacity: 0; transform: translateX(-4vh) scale(.97); } }
+  .lc-card { width: min(94%, 74vh); }
+  .lc-card .sc-img { position: relative; height: 32vh; }
+  .lc-tag { position: absolute; left: 1.6vh; top: 1.6vh; padding: .45em 1em; border-radius: 99px; background: rgb(226 58 31 / .92); color: #fff; font-weight: 800; font-size: clamp(12px, 1.9vh, 20px); box-shadow: 0 .6vh 1.6vh rgb(0 0 0 / .25); animation: scup .5s .1s both; }
+  .lc-opts { display: flex; flex-wrap: wrap; gap: .6vh; animation: scup .6s .18s both; }
+  .lc-opts span { padding: .2em .8em; border-radius: 99px; background: #f3ece8; font-weight: 700; font-size: clamp(11px, 1.8vh, 20px); color: #5b4a42; }
+  /* 👁 details: full-screen popup, picture beside the text */
+  .showcase.pop { position: fixed; inset: 0; z-index: 70; padding: 5vh 5vw; background: rgb(10 6 4 / .62); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  .pop-card { position: relative; width: min(96vw, 150vh); max-height: 88vh; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); border-radius: 4vh; overflow: hidden; background: linear-gradient(160deg, #fffaf6, #fff); color: #1d1410;
+    box-shadow: 0 4vh 10vh rgb(0 0 0 / .5), 0 0 0 .4vh rgb(255 255 255 / .6) inset; animation: popin2 .75s cubic-bezier(.2,1.3,.4,1) both; }
+  @keyframes popin2 { from { opacity: 0; transform: scale(.82) rotate(-1.5deg); } }
+  .pop-img { background: #f6efe9; min-height: 0; } .pop-img img { width: 100%; height: 100%; object-fit: cover; display: block; animation: sczoom 12s ease-out both; }
+  .pop-img img.noimg { object-fit: contain; padding: 6vh; box-sizing: border-box; }
+  .pop-body { padding: 5vh 4.5vh; display: grid; gap: 1.4vh; align-content: center; overflow: hidden; }
+  .pop-kicker { justify-self: start; padding: .4em 1em; border-radius: 99px; background: #fff0e8; color: #d6301d; font-weight: 800; font-size: clamp(12px, 2vh, 22px); animation: scup .5s .1s both; }
+  .pop-body h2 { margin: 0; font-family: var(--hf); font-size: clamp(26px, 5.6vh, 64px); line-height: 1.08; animation: scup .6s .15s cubic-bezier(.2,1,.4,1) both; }
+  .pop-body .sc-desc { font-size: clamp(14px, 2.6vh, 30px); }
+  .pop-body .sc-hl li { font-size: clamp(14px, 2.5vh, 28px); }
+  .pop-timer { position: absolute; left: 0; bottom: 0; height: .7vh; width: 100%; background: linear-gradient(90deg, #ff7a3d, #e23a1f); transform-origin: left; animation: poptime linear both; }
+  @keyframes poptime { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  @media (max-aspect-ratio: 1/1) { .pop-card { grid-template-columns: 1fr; grid-template-rows: 34vh auto; } .pop-body { padding: 3vh; } }
+  @media (prefers-reduced-motion: reduce) { .showcase, .sc-card, .sc-img img, .sc-body *, .it.new .th, .latestcard, .pop-card, .pop-img img, .pop-body * { animation: none !important; } }
 </style>
 </head>
 <body>
