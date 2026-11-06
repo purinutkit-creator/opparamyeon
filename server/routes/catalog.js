@@ -7,12 +7,32 @@ import { adjustStock } from '../lib/stock.js';
 import { lookupBarcode, suggestCategory, fetchImage } from '../lib/productlookup.js';
 import { aiKeys, identifyWithClaude, researchProduct, findImages, basicNames, mineNames, nameVariants, AiError, AI_MODEL } from '../lib/productai.js';
 import { saveFile } from './system.js';
+import { translationMap, translationStatus, translateBatch, saveTranslation, sources as translationSources, LANGS } from '../lib/translate.js';
 import { labelCfg, labelRowDots } from '../../public/shared/labels.js';
 import { isEan13, ean13Check } from '../../public/shared/core.js';
 import { staffAuth, can } from '../lib/auth.js';
 
 const r = Router();
 const changed = () => { emit('shop', 'catalog:changed', {}); emit('mobile', 'catalog:changed', {}); };
+// ---------- English / Chinese for the customer display ----------
+r.get('/translations', staffAuth('manage_menu'), ah(async (req, res) => {
+  const [list, map, status] = [await translationSources(), await translationMap(), await translationStatus()];
+  res.json({ status, langs: LANGS, items: list.map((o) => ({ ...o, tr: (map[o.kind] && map[o.kind][o.ref]) || {} })) });
+}));
+r.post('/translations/ai', staffAuth('manage_menu'), ah(async (req, res) => {
+  rateLimit('tr:' + req.staff.id, 60, 3600e3);
+  let out;
+  if ((req.body || {}).reset) await db.run('DELETE FROM translations');
+  try { out = await translateBatch({ size: Math.max(5, Math.min(40, Number((req.body || {}).size) || 30)) }); } catch (e) { if (e instanceof AiError) throw bad(e.message); throw e; }
+  if (out.translated) changed();
+  res.json({ ...out, status: await translationStatus() });
+}));
+r.put('/translations', staffAuth('manage_menu'), ah(async (req, res) => {
+  const { kind, ref, lang, data } = req.body || {};
+  try { await saveTranslation(String(kind), String(ref), String(lang), data); } catch { throw bad('บันทึกคำแปลไม่ได้'); }
+  changed();
+  res.json({ ok: true });
+}));
 
 // how a category orders its products: the order set on each product, product code, or name — up or down
 export const SORT_BY = ['sort', 'code_asc', 'code_desc', 'name_asc', 'name_desc'];
@@ -41,7 +61,7 @@ export async function catalog({ includeInactive = false, mobile = false, withCos
     .map((o) => (withCost ? o : { id: o.id, name: o.name, price: o.price, active: o.active, image: o.image || '', rename_to: o.rename_to || '', mark: o.mark || '' })), display: g.display || 'normal', rename_all: !!g.rename_all }));
   const stations = await db.all('SELECT * FROM stations ORDER BY sort, name');
   return {
-    categories: cats, stations, option_groups: groups, countries: ((await getSettings()).countries || []),
+    categories: cats, stations, option_groups: groups, countries: ((await getSettings()).countries || []), translations: await translationMap(),
     products: prods.map((p) => ({
       id: p.id, code: p.code, name: p.name, category_id: p.category_id, description: p.description, image: p.image, price: p.price,
       unit: p.unit, bowl_count: p.bowl_count, per_bowl_limit: p.per_bowl_limit, station_id: p.station_id, active: !!p.active, mobile: !!p.mobile, big_options: !!p.big_options, highlights: p.highlights || '', spice_level: Number(p.spice_level) || 0, show_details: !!p.show_details, country: p.country || '',

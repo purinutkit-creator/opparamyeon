@@ -76,3 +76,39 @@ export const DISPLAY_STYLE_DEFAULTS = {
   items_scale: 100, total_scale: 100, queue_scale: 100, corners: 'round',
   motion: 'normal', bg_effect: 'blobs', confetti: true, fireworks: true, floaters: true, money_fx: true, shine: true, ring: true, latest_fx: true, sparks: true,
 };
+
+// The customer display in English / Chinese (the cashier switches it per bill on the POS).
+// Shop edits (settings.display.texts) are Thai; these are the built-in other languages.
+export const LANG_NAMES = { th: 'ไทย', en: 'English', zh: '中文' };
+export const TEXT_I18N = {
+  en: {
+    idle_pill: '🍜 Order at the counter · 감사합니다', order_kicker: 'Your order', order_title: 'Your order', dine_in: '🍽️ Dine in', takeaway: '🥡 Take away',
+    mixed: '🍽️ Dine in + 🥡', takeaway_tag: 'Take away', dine_question: 'Dine in or take away?', table: '🪑 Table', member_hello: 'Hello', member_tier: 'Member',
+    member_points: 'Points', latest: 'Latest', last_added: '🆕 Just added', more_up: '▲ {n} more above', more_down: '▼ {n} more below', subtotal: 'Subtotal',
+    discount: 'Discount', packaging: 'Packaging', vat: 'VAT', total: 'Total', count: '{lines} items · {pcs} pcs', pay_due: 'Amount due', queue: 'Queue',
+    saved: '🎉 You saved {amount} baht', earn: '⭐ +{points} points for this bill', cash_title: 'Cash payment', cash_sub: 'ชำระด้วยเงินสด', received: '💵 Received',
+    short: '{amount} baht short', paid_exact: '✓ Paid in full · exact amount', change: '💰 Change', status_wait: 'Waiting for payment',
+    status_wait_qr: 'Waiting for payment · scan with any banking app', status_paid: 'Paid in full', status_paid_change: 'Paid · please take your change',
+    qr_title: 'THAI QR PAYMENT', qr_sub: 'PromptPay', qr_loading: 'Making the QR', qr_error: 'Could not load the QR · please tell our staff', qr_account: 'Account name',
+    qr_scan: 'Scan to pay', qr_banks: 'Works with every banking app', done_title: 'Payment complete', done_sub: 'Thank you', done_queue: 'Your queue number',
+    done_total: 'Paid', done_method: 'Paid by', done_change: 'Change', done_saved: 'You saved', done_points: 'Points earned', thanks_more: 'Thank you!|감사합니다|谢谢',
+    hint_queue: 'Please wait for your number to be called 🙏', hint_noqueue: 'Enjoy your meal 🍜', bye: 'See you again', bye_sub: '또 만나요 · 再见',
+    from_country: 'Product of', pop_kicker: '✨ About this dish', welcome: 'Welcome', thanks: 'Thank you!', unit: 'bowls',
+    spice: ['Not spicy', 'Mild', 'Medium', 'Hot', 'Very hot', 'Extreme'],
+  },
+  zh: {
+    idle_pill: '🍜 请到柜台点餐 · 감사합니다', order_kicker: 'Your order', order_title: '您的订单', dine_in: '🍽️ 堂食', takeaway: '🥡 外带',
+    mixed: '🍽️ 堂食 + 🥡', takeaway_tag: '外带', dine_question: '堂食还是外带？', table: '🪑 桌号', member_hello: '您好', member_tier: '会员',
+    member_points: '积分', latest: '最新', last_added: '🆕 刚加入', more_up: '▲ 上方还有 {n} 项', more_down: '▼ 下方还有 {n} 项', subtotal: '餐费小计',
+    discount: '折扣', packaging: '打包费', vat: '增值税', total: '合计', count: '{lines} 项 · {pcs} 件', pay_due: '应付金额', queue: '取餐号',
+    saved: '🎉 已为您节省 {amount} 泰铢', earn: '⭐ 本单可得 +{points} 积分', cash_title: '现金支付', cash_sub: 'Cash payment', received: '💵 已收',
+    short: '还差 {amount} 泰铢', paid_exact: '✓ 已付清 · 无需找零', change: '💰 找零', status_wait: '等待付款',
+    status_wait_qr: '等待付款 · 任意银行App扫码', status_paid: '已付清', status_paid_change: '已付清 · 请收好找零',
+    qr_title: 'THAI QR PAYMENT', qr_sub: 'PromptPay 即时转账', qr_loading: '正在生成二维码', qr_error: '二维码加载失败 · 请告知店员', qr_account: '收款人',
+    qr_scan: '扫码支付', qr_banks: '支持所有银行App', done_title: '支付成功', done_sub: 'Payment complete', done_queue: '您的取餐号',
+    done_total: '实付', done_method: '支付方式', done_change: '找零', done_saved: '节省', done_points: '获得积分', thanks_more: '谢谢！|감사합니다|Thank you!',
+    hint_queue: '请稍候叫号 🙏', hint_noqueue: '祝您用餐愉快 🍜', bye: '欢迎再次光临', bye_sub: 'See you again · 또 만나요',
+    from_country: '产地', pop_kicker: '✨ 了解这道菜', welcome: '欢迎光临', thanks: '谢谢！', unit: '碗',
+    spice: ['不辣', '微辣', '中辣', '辣', '很辣', '特辣'],
+  },
+};

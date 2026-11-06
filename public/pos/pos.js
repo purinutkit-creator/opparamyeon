@@ -21,7 +21,7 @@ const st = {
 };
 const U = () => (st.settings && st.settings.sale.count_unit) || 'ชาม'; // unit name (ชาม/จาน/ที่…) set by the shop
 const can = (p) => st.staff && st.staff.perms.includes(p);
-const newCart = () => ({ cart_id: uid(), started: false, order_id: null, version: null, lines: [], dine_type: 'dine_in', table_id: null, customer_name: '', note: '', member: null, discount: null, idem: uid() });
+const newCart = () => ({ cart_id: uid(), started: false, lang: 'th', order_id: null, version: null, lines: [], dine_type: 'dine_in', table_id: null, customer_name: '', note: '', member: null, discount: null, idem: uid() });
 
 // ---------------- boot ----------------
 async function boot() {
@@ -722,13 +722,14 @@ let showcaseTimer = null;
 // where the product comes from (shop's country list): { name, flag } or null
 // spice is left out for categories set not to show it (e.g. toppings)
 const spiceOf = (p) => { const c = ((st.catalog && st.catalog.categories) || []).find((x) => x.id === p.category_id); return c && Number(c.show_spice) === 0 ? null : Number(p.spice_level) || 0; };
-const countryOf = (p) => { const c = p && p.country && ((st.catalog && st.catalog.countries) || []).find((x) => x.id === p.country); return c ? { name: c.name, flag: c.flag || '' } : null; };
+const countryOf = (p) => { const c = p && p.country && ((st.catalog && st.catalog.countries) || []).find((x) => x.id === p.country); return c ? { id: c.id, name: c.name, flag: c.flag || '' } : null; };
 function noteLatest(p, l) {
   if (!p) return;
   const each = l && l.qty ? Math.round(lineTotal(l) / l.qty) : p.price;
   st.latest = { id: p.id, name: p.name, image: p.image || '', price: each, description: p.description || '', spice: spiceOf(p),
     highlights: String(p.highlights || '').split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 4),
-    options: l ? (renamedLine(l.name, l.options || [], 'everywhere').options || []).map((o) => displayOption(o)).slice(0, 6) : [], country: countryOf(p), at: Date.now() };
+    options: l ? (renamedLine(l.name, l.options || [], 'everywhere').options || []).map((o) => displayOption(o)).slice(0, 6) : [], country: countryOf(p), at: Date.now(),
+    _opts: l ? l.options || [] : [] };
 }
 function showcase(p, manual = false) {
   if (st.settings.display && st.settings.display.product_details === false) return; // the shop turned product details off
@@ -865,6 +866,41 @@ function previewTotals() {
 }
 // cart lines glide to their new places when one is added or removed
 function renderCart() { flip(() => $('#cart .lines'), renderCartNow, { enter: false }); renderGate(); }
+// ---------------- customer display language (ไทย / English / 中文), chosen per bill by the cashier ----------------
+const DLANGS = [['th', 'ไทย'], ['en', 'EN'], ['zh', '中文']];
+const METHOD_I18N = { cash: { en: 'Cash', zh: '现金' }, promptpay: { en: 'PromptPay QR', zh: 'PromptPay 扫码' }, card: { en: 'Card', zh: '刷卡' }, transfer: { en: 'Bank transfer', zh: '银行转账' }, other: { en: 'Other', zh: '其他' } };
+const SPICE_I18N = { en: ['Not spicy', 'Mild', 'Medium', 'Hot', 'Very hot', 'Extreme'], zh: ['不辣', '微辣', '中辣', '辣', '很辣', '特辣'] };
+function setLang(code) { st.cart.lang = code; saveCart(); renderCart(); pushDisplay(); }
+const langBar = (big) => h('div', { class: 'lang-bar' + (big ? ' big' : '') }, h('span', {}, '🌐 จอลูกค้า'),
+  DLANGS.map(([c, n]) => h('button', { class: (st.cart.lang || 'th') === c ? 'on' : '', onclick: (e) => { e.stopPropagation(); setLang(c); } }, n)));
+// what the customer reads, in their language: names, options, details, country, spice words, payment method, discount labels
+function translateState(s) {
+  const lang = st.cart.lang || 'th';
+  s.lang = lang;
+  if (lang === 'th') return;
+  const TR = (st.catalog && st.catalog.translations) || {};
+  const tp = (pid) => ((TR.product || {})[pid] || {})[lang] || null;
+  const to = (oid) => ((TR.option || {})[oid] || {})[lang] || null;
+  const opt = (o) => { const t = to(o.id); return t ? { ...o, name: t.name || o.name, topic: t.topic || o.topic } : o; };
+  const lineOut = (raw, name, pid) => {
+    const rn = renamedLine(name, raw || [], 'everywhere');
+    const ren = rn.name !== name && (raw || []).find((o) => o && o.rename_to === rn.name);
+    const n = ren ? ((to(ren.id) || {}).rename_to || rn.name) : ((tp(pid) || {}).name || name);
+    return { name: n, options: rn.options.map((o) => displayOption(opt(o))) };
+  };
+  s.lines = s.lines.map((x, i) => { const l = st.cart.lines[i]; return l ? { ...x, ...lineOut(l.options, l.name, l.product_id) } : x; });
+  const cty = (c) => (c && c.id ? { ...c, name: (((TR.country || {})[c.id] || {})[lang] || {}).name || c.name } : c);
+  const det = (d, opts) => { if (!d) return d; const t = tp(d.id) || {}; const o = { ...d, name: t.name || d.name, description: t.description || d.description, country: cty(d.country) };
+    if (t.highlights) o.highlights = t.highlights.split('\n').map((x) => x.trim()).filter(Boolean).slice(0, d.highlights ? Math.max(d.highlights.length, 4) : 6);
+    if (opts) { const lo = lineOut(opts, d.name, d.id); o.name = lo.name; o.options = lo.options.slice(0, 6); }
+    return o; };
+  s.showcase = det(s.showcase);
+  if (s.latest) s.latest = det(s.latest, st.latest && st.latest._opts);
+  s.spice_words = [0, 1, 2, 3, 4, 5].map((i) => ((((TR.spice || {})[String(i)] || {})[lang] || {}).name) || SPICE_I18N[lang][i]);
+  if (s.methods) s.methods = s.methods.map((nm) => { const m = st.settings.sale.payment_methods.find((x) => x.name === nm); return (m && METHOD_I18N[m.id] && METHOD_I18N[m.id][lang]) || nm; });
+  const DISC = { en: ['Member discount', 'Discount'], zh: ['会员折扣', '折扣'] }[lang];
+  s.discounts = (s.discounts || []).map((d) => ({ ...d, label: String(d.label).replace(/^ส่วนลดสมาชิก/, DISC[0]).replace(/^ส่วนลด/, DISC[1]) }));
+}
 // ---------------- start of a bill: "▶ เริ่มขาย" → big ทานที่ร้าน / กลับบ้าน (the customer can pick on their display too) ----------------
 const gateOn = () => st.settings && st.settings.sale.start_gate !== false && st.cart && st.cart.started === false && !st.cart.order_id && !st.cart.lines.length;
 const gateStep = () => (st.gate && st.gate.cart === st.cart.cart_id ? st.gate.step : 'start');
@@ -879,16 +915,16 @@ function renderGate() {
   let g = main.querySelector('.start-gate');
   if (!gateOn()) { if (g) { g.classList.add('leaving'); setTimeout(() => g.remove(), 260); } return; }
   const step = gateStep();
-  if (g && g.dataset.step === step && g.dataset.cart === st.cart.cart_id) return;
+  if (g && g.dataset.step === step && g.dataset.cart === st.cart.cart_id && g.dataset.lang === (st.cart.lang || 'th')) return;
   const body = step === 'start'
-    ? [h('div', { class: 'sg-title' }, 'บิลใหม่'), h('button', { class: 'sg-start', onclick: () => { st.gate = { cart: st.cart.cart_id, step: 'dine' }; renderGate(); pushDisplay(); } }, '▶ เริ่มขาย'),
+    ? [h('div', { class: 'sg-title' }, 'บิลใหม่'), langBar(true), h('button', { class: 'sg-start', onclick: () => { st.gate = { cart: st.cart.cart_id, step: 'dine' }; renderGate(); pushDisplay(); } }, '▶ เริ่มขาย'),
       h('div', { class: 'sg-sub' }, 'กดเพื่อเริ่มรับออเดอร์ลูกค้าคนถัดไป')]
-    : [h('div', { class: 'sg-title' }, 'ทานที่ร้าน หรือ กลับบ้าน?'),
+    : [h('div', { class: 'sg-title' }, 'ทานที่ร้าน หรือ กลับบ้าน?'), langBar(true),
       h('div', { class: 'sg-pick' }, h('button', { class: 'sg-dine', onclick: () => startDine('dine_in') }, h('span', {}, '🍽️'), 'ทานที่ร้าน'),
         h('button', { class: 'sg-take', onclick: () => startDine('takeaway') }, h('span', {}, '🥡'), 'กลับบ้าน')),
       h('div', { class: 'sg-sub' }, 'ลูกค้ากดเลือกที่จอลูกค้าได้ด้วย'),
       h('button', { class: 'btn ghost', onclick: () => { st.gate = null; renderGate(); pushDisplay(); } }, '← ย้อนกลับ')];
-  const ng = h('div', { class: 'start-gate', 'data-step': step, 'data-cart': st.cart.cart_id }, h('div', { class: 'sg-card' }, ...body));
+  const ng = h('div', { class: 'start-gate', 'data-step': step, 'data-cart': st.cart.cart_id, 'data-lang': st.cart.lang || 'th' }, h('div', { class: 'sg-card' }, ...body));
   if (g) g.replaceWith(ng); else main.appendChild(ng);
 }
 function renderCartNow() {
@@ -905,6 +941,7 @@ function renderCartNow() {
         h('button', { class: 'btn sm', onclick: clearCart }, cart.order_id ? 'ปิดบิลนี้' : 'ล้างบิล')),
       h('div', { class: 'seg' }, h('button', { class: cart.dine_type === 'dine_in' ? 'on' : '', onclick: () => setDine('dine_in') }, '🍽️ ทานที่ร้าน'),
         h('button', { class: cart.dine_type === 'takeaway' ? 'on takeaway' : '', onclick: () => setDine('takeaway') }, '🥡 กลับบ้าน')),
+      langBar(false),
       h('div', { class: 'row' },
         h('button', { class: 'chip', onclick: pickTable }, cart.table_name ? `โต๊ะ ${cart.table_name}` : '+ โต๊ะ'),
         h('button', { class: 'chip', onclick: async () => { const v = await promptBox('ชื่อลูกค้า', { value: cart.customer_name, required: false }); if (v !== null) { cart.customer_name = v; saveCart(); renderCart(); } } }, cart.customer_name ? `👤 ${cart.customer_name}` : '+ ชื่อลูกค้า'),
@@ -1331,6 +1368,8 @@ function pushDisplay(extra = {}) {
     member: m && st.settings.members.show_on_display ? { name: (m.first_name || m.nickname || '').slice(0, 2) + '***', points: m.points, tier: m.tier && m.tier.name, earn: previewEarn(st.cart, t) } : null,
     queue_no: st.cart.queue_no || '', discounts: discountRows(st.cart, t),
     qr: null, received: 0, change: 0, ...ex, at: Date.now() };
+  if (state.latest) { const { _opts, ...lt } = state.latest; state.latest = lt; }
+  translateState(state);
   if (st.bc) st.bc.postMessage(state);
   // staff-only details for the admin Live View (the server strips them before the customer display)
   const c = st.cart;

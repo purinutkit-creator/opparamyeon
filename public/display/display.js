@@ -2,7 +2,7 @@ import { makeApi, store, socket } from '/shared/api.js';
 import { h, $, toast, errToast, keypad } from '/shared/ui.js';
 import { baht, dineLabel, VERSION } from '/shared/core.js';
 import { applyFonts } from '/shared/fonts.js';
-import { TEXT_DEFAULTS, DISPLAY_STYLE_DEFAULTS } from '/shared/displaytexts.js';
+import { TEXT_DEFAULTS, DISPLAY_STYLE_DEFAULTS, TEXT_I18N } from '/shared/displaytexts.js';
 
 const qs = new URLSearchParams(location.search);
 const preview = qs.get('preview') === '1';
@@ -184,9 +184,13 @@ function pairing() {
 }
 
 // shop-editable text: T('key', { n: 3 }) → string; with a Node as a value → array of parts (for bold amounts)
+// the language the cashier picked for this bill (ไทย / English / 中文)
+const lang = () => (state && TEXT_I18N[state.lang] ? state.lang : 'th');
+const L = (key, th) => (lang() === 'th' ? th : TEXT_I18N[lang()][key] ?? th);
 function T(key, vars = {}) {
   const custom = (settings.display.texts || {})[key];
-  const raw = custom !== undefined && custom !== null && String(custom).trim() !== '' ? String(custom) : TEXT_DEFAULTS[key] ?? key;
+  const other = lang() !== 'th' ? TEXT_I18N[lang()][key] : undefined;
+  const raw = other !== undefined ? other : custom !== undefined && custom !== null && String(custom).trim() !== '' ? String(custom) : TEXT_DEFAULTS[key] ?? key;
   const parts = raw.split(/(\{\w+\})/).filter((x) => x !== '').map((x) => { const m = /^\{(\w+)\}$/.exec(x); return m && m[1] in vars ? vars[m[1]] : x; });
   return parts.some((x) => x instanceof Node) ? parts : parts.join('');
 }
@@ -263,11 +267,13 @@ function renderAll() {
 let showcaseAt = 0, showcaseTimer = null, latestAt = 0;
 // spice: 5 chilies lit up to the level, with words
 const SPICE_WORDS = ['ไม่เผ็ด', 'เผ็ดน้อย', 'เผ็ดปานกลาง', 'เผ็ดมาก', 'เผ็ดมากๆ', 'เผ็ดที่สุด'];
-const spiceWord = (n) => ((settings && settings.spice_words) || SPICE_WORDS)[Math.max(0, Math.min(5, n))] || SPICE_WORDS[Math.max(0, Math.min(5, n))];
+const spiceWord = (n) => { const i = Math.max(0, Math.min(5, n));
+  if (lang() !== 'th') return (state.spice_words && state.spice_words[i]) || TEXT_I18N[lang()].spice[i];
+  return ((settings && settings.spice_words) || SPICE_WORDS)[i] || SPICE_WORDS[i]; };
 // "made in" badge: flag (emoji or picture) + country name
 const originRow = (c, delay = 0.3) => (c && c.name ? h('div', { class: 'origin', style: `animation-delay:${delay}s` },
   c.flag ? (/^(\/|https:)/.test(c.flag) ? h('img', { class: 'flag', src: c.flag, alt: '' }) : h('span', { class: 'flag' }, c.flag)) : h('span', { class: 'flag' }, '🌏'),
-  h('span', {}, 'สินค้าจาก', h('b', {}, c.name))) : null);
+  h('span', {}, L('from_country', 'สินค้าจาก'), h('b', {}, c.name))) : null);
 const spiceRow = (n, delay = 0.35) => (n === null || n === undefined ? null : h('div', { class: 'sc-spice' + (n ? '' : ' none') },
   h('span', { class: 'chili' }, Array.from({ length: 5 }, (_, i) => h('i', { class: i < n ? 'on' : '', style: `animation-delay:${delay + i * 0.08}s` }, '🌶️'))),
   h('b', {}, spiceWord(n) + (n ? ` ${n}/5` : ''))));
@@ -282,7 +288,7 @@ function renderLatest() {
   latestAt = lt.at;
   if (old) { old.id = ''; old.classList.add('out'); setTimeout(() => old.remove(), 400); }
   const el = h('div', { id: 'latestcard', class: 'latestcard' }, h('div', { class: 'sc-card lc-card' },
-    h('div', { class: 'sc-img' }, h('img', { src: lt.image || '/assets/bowl.svg', alt: '', class: lt.image ? '' : 'noimg' }), h('span', { class: 'lc-tag' }, '🆕 เพิ่มล่าสุด')),
+    h('div', { class: 'sc-img' }, h('img', { src: lt.image || '/assets/bowl.svg', alt: '', class: lt.image ? '' : 'noimg' }), h('span', { class: 'lc-tag' }, L('last_added', '🆕 เพิ่มล่าสุด'))),
     h('div', { class: 'sc-body' },
       h('h2', {}, lt.name),
       lt.options && lt.options.length ? h('div', { class: 'lc-opts' }, lt.options.map((o) => h('span', {}, o))) : null,
@@ -305,7 +311,7 @@ function renderShowcase() {
   const el = h('div', { id: 'showcase', class: 'showcase pop' }, h('div', { class: 'pop-card' },
     h('div', { class: 'pop-img' }, h('img', { src: sc.image || '/assets/bowl.svg', alt: '', class: sc.image ? '' : 'noimg' })),
     h('div', { class: 'pop-body' },
-      h('span', { class: 'pop-kicker' }, '✨ รู้จักเมนูนี้'),
+      h('span', { class: 'pop-kicker' }, L('pop_kicker', '✨ รู้จักเมนูนี้')),
       h('h2', {}, sc.name), h('div', { class: 'sc-price' }, baht(sc.price), h('small', {}, ' ฿')),
       originRow(sc.country, 0.4),
       spiceRow(sc.spice, 0.45),
@@ -338,7 +344,7 @@ function renderPay() {
   const el = $('#promo'); if (!el) return;
   clearTimeout(slideTimer);
   const s = state;
-  const unit = settings.sale.count_unit || 'ชาม';
+  const unit = (settings.sale.count_unit || 'ชาม') === 'ชาม' ? L('unit', 'ชาม') : settings.sale.count_unit;
   const showQr = s.qr && settings.display.show_qr !== false;
   const mode = showQr ? 'qr:' + s.qr : 'cash';
   if (el.dataset.mode !== mode) {
@@ -433,13 +439,13 @@ function renderPromo() {
   const media = (d.media || []).filter((m) => m.url);
   const logo = d.logo || settings.store.logo;
   const bar = () => h('div', { class: 'glassbar' }, logo ? h('img', { src: logo, alt: '' }) : null,
-    h('div', { class: 't' }, h('b', {}, settings.store.name || ''), d.welcome ? h('span', {}, d.welcome) : null));
+    h('div', { class: 't' }, h('b', {}, settings.store.name || ''), d.welcome ? h('span', {}, L('welcome', d.welcome)) : null));
   const show = (i) => {
     if (!media.length) {
       // no promotion media: an animated welcome scene in the shop colour
       el.replaceChildren(h('div', { class: 'hero' }, h('span', { class: 'ring' }), h('span', { class: 'ring' }), h('span', { class: 'ring' }),
         h('div', { class: 'inner' }, h('div', { style: { position: 'relative' } }, h('div', { class: 'steam' }, h('i'), h('i'), h('i')), h('img', { class: 'bowl', src: logo || '/assets/bowl.svg', alt: '' })),
-          h('h1', {}, settings.store.name || 'Welcome'), d.welcome ? h('p', {}, d.welcome) : null, T('idle_pill') ? h('span', { class: 'pill' }, T('idle_pill')) : null)),
+          h('h1', {}, settings.store.name || 'Welcome'), d.welcome ? h('p', {}, L('welcome', d.welcome)) : null, T('idle_pill') ? h('span', { class: 'pill' }, T('idle_pill')) : null)),
         null);
       return;
     }
@@ -457,14 +463,14 @@ function renderPromo() {
   show(0);
 }
 const timeText = () => new Date().toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-const dateText = () => new Date().toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const dateText = () => new Date().toLocaleDateString(({ en: 'en-GB', zh: 'zh-CN' })[lang()] || 'th-TH', { timeZone: 'Asia/Bangkok', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 setInterval(() => { const c = $('#gclock'); if (c) { c.firstChild.textContent = timeText(); c.lastChild.textContent = dateText(); } }, 1000);
 let prevQty = new Map(), prevTotal = null, latestKey = null, lastAdd = null;
 function renderPanel() {
   const p = $('#panel'); if (!p) return;
   const s = state;
   if (!s.phase || s.phase === 'idle') { p.replaceChildren(); prevQty = new Map(); prevTotal = null; latestKey = null; lastAdd = null; return; }
-  const unit = settings.sale.count_unit || 'ชาม';
+  const unit = (settings.sale.count_unit || 'ชาม') === 'ชาม' ? L('unit', 'ชาม') : settings.sale.count_unit;
   const lines = s.lines || [];
   // lines that were just added (or got more) slide in and glow
   // brand-new lines slide in; a line that only got more stays where it is and bumps.
@@ -557,7 +563,7 @@ function renderDone() {
   const floaters = h('div', { class: 'floaters' }, Array.from({ length: 16 }, (_, i) => h('i', { style: `left:${(i * 61) % 100}%;animation-delay:${(i * 0.7) % 8}s;animation-duration:${7 + (i % 4)}s;font-size:${3 + (i % 3)}vh` }, ['🍜', '💛', '⭐', '🥢', '🎉', '❤️', '✨', '🍥'][i % 8])));
   const fireworks = h('div', { class: 'fireworks' });
   const check = h('div', { class: 'check', html: '<span class="ripple"></span><span class="ripple r2"></span><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' });
-  const thanks = settings.display.thanks || 'ขอบคุณค่ะ';
+  const thanks = L('thanks', settings.display.thanks || 'ขอบคุณค่ะ');
   const words = [thanks, ...T('thanks_more').split('|').map((w) => w.trim()).filter((w) => w && !thanks.includes(w))];
   const word = h('div', { class: 'word' }, wave(words[0]));
   const saved = (s.discounts || []).reduce((a, d) => a + d.amount, 0) || s.discount || 0;

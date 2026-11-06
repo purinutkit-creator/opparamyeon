@@ -50,7 +50,7 @@ export async function menuPage(set) {
   const box = h('div');
   const reload = async () => { Object.assign(cat, await api.get('/catalog?all=1')); draw(); };
   const draw = () => {
-    const tabs = h('div', { class: 'tabs', style: { marginBottom: '1em' } }, [['products', 'สินค้า/เมนู'], ['categories', 'หมวดหมู่'], ['countries', '🌏 ประเทศ'], ['spice', '🌶️ ระดับความเผ็ด'], ['options', 'ตัวเลือก/ท็อปปิ้ง'], ['ingredients', 'วัตถุดิบ'], ['stations', 'จุดครัวและการแบ่งใบ'], ['import', '📥 นำเข้าจาก Google Sheet']].map(([k, t]) =>
+    const tabs = h('div', { class: 'tabs', style: { marginBottom: '1em' } }, [['products', 'สินค้า/เมนู'], ['categories', 'หมวดหมู่'], ['countries', '🌏 ประเทศ'], ['lang', '🌐 ภาษาจอลูกค้า'], ['spice', '🌶️ ระดับความเผ็ด'], ['options', 'ตัวเลือก/ท็อปปิ้ง'], ['ingredients', 'วัตถุดิบ'], ['stations', 'จุดครัวและการแบ่งใบ'], ['import', '📥 นำเข้าจาก Google Sheet']].map(([k, t]) =>
       h('button', { class: 'tab' + (tab === k ? ' active' : ''), onclick: () => { tab = k; draw(); } }, t)));
     let body;
     if (tab === 'products') {
@@ -92,6 +92,8 @@ export async function menuPage(set) {
       body = spiceTab();
     } else if (tab === 'countries') {
       body = countriesTab(cat, reload);
+    } else if (tab === 'lang') {
+      body = langTab();
     } else if (tab === 'categories') {
       body = simpleList('categories', cat.categories, [{ k: 'name', label: 'ชื่อหมวด' }, { k: 'sort', label: 'ลำดับ', type: 'number' }, { k: 'color', label: 'สี', type: 'color' }, { k: 'active', label: 'แสดง', type: 'bool' },
         { k: 'sort_by', label: 'เรียงสินค้าในหมวดนี้ตาม', type: 'select', options: SORT_BY_OPTS }, { k: 'show_spice', label: '🌶️ แสดงความเผ็ดของสินค้าในหมวดนี้ (จอลูกค้า / เว็บไซต์)', type: 'bool' }], reload, (r) => (SORT_BY_OPTS.find(([v]) => v === (r.sort_by || 'sort')) || [])[1] || '');
@@ -334,6 +336,66 @@ const COUNTRY_PRESETS = [['kr', 'เกาหลีใต้', '🇰🇷'], ['jp
   ['sg', 'สิงคโปร์', '🇸🇬'], ['my', 'มาเลเซีย', '🇲🇾'], ['id', 'อินโดนีเซีย', '🇮🇩'], ['vn', 'เวียดนาม', '🇻🇳'], ['ph', 'ฟิลิปปินส์', '🇵🇭'], ['us', 'สหรัฐอเมริกา', '🇺🇸'],
   ['it', 'อิตาลี', '🇮🇹'], ['de', 'เยอรมนี', '🇩🇪'], ['fr', 'ฝรั่งเศส', '🇫🇷'], ['au', 'ออสเตรเลีย', '🇦🇺']];
 const flagEl = (f, size = '1.6em') => (/^(\/|https:)/.test(f || '') ? h('img', { src: f, alt: '', style: { height: size, borderRadius: '4px', boxShadow: '0 0 0 1px rgb(0 0 0 / .08)', verticalAlign: 'middle' } }) : h('span', { style: { fontSize: size, lineHeight: 1 } }, f || '🌏'));
+// English / Chinese names for the customer display: AI translates everything at once, the shop can correct any line
+function langTab() {
+  const box = h('div', {}, h('div', { class: 'muted' }, 'กำลังโหลด…'));
+  const KIND = { product: 'เมนู', option: 'ตัวเลือก', country: 'ประเทศ', spice: 'ระดับเผ็ด' };
+  let filter = '', only = '';
+  const load = async () => {
+    const d = await api.get('/translations');
+    const st = d.status;
+    const prog = h('div', { class: 'small muted' });
+    const run = async (reset) => {
+      if (reset && !(await confirmBox('แปลใหม่ทั้งหมด? คำแปลที่แก้เองจะถูกแทนที่'))) return;
+      aiBtn.disabled = redo.disabled = true;
+      let first = true, left = st.missing;
+      try {
+        while (true) {
+          prog.textContent = `🤖 AI กำลังแปล… เหลือ ${left} รายการ`;
+          const r = await api.post('/translations/ai', { reset: reset && first });
+          first = false; left = r.remaining;
+          if (!r.remaining || !r.translated) break;
+        }
+        toast(left ? `แปลแล้ว เหลือ ${left} รายการที่ AI ข้าม — กดอีกครั้งหรือแก้เอง` : 'แปลครบทุกรายการแล้ว ✓', left ? 'warn' : 'ok');
+      } catch (e) { errToast(e); }
+      load();
+    };
+    const aiBtn = h('button', { class: 'btn primary', onclick: () => run(false) }, st.missing ? `🤖 ให้ AI แปลที่ยังไม่มี (${st.missing})` : '✓ แปลครบแล้ว');
+    if (!st.missing) aiBtn.disabled = true;
+    const redo = h('button', { class: 'btn ghost', onclick: () => run(true) }, '↻ แปลใหม่ทั้งหมด');
+    const q = h('input', { class: 'input', placeholder: 'ค้นหา', value: filter, style: { maxWidth: '220px' } });
+    const sel = h('select', { class: 'input', style: { maxWidth: '180px' } }, [['', 'ทั้งหมด'], ['missing', 'ยังไม่ได้แปล'], ...Object.entries(KIND)].map(([v, t]) => h('option', { value: v, selected: v === only }, t)));
+    const list = h('div');
+    const row = (it) => {
+      const fields = it.kind === 'product' ? ['name', 'description', 'highlights'] : it.kind === 'option' ? ['name', ...(it.topic ? ['topic'] : []), ...(it.rename_to ? ['rename_to'] : [])] : ['name'];
+      const LBL = { name: 'ชื่อ', description: 'คำอธิบาย', highlights: 'สรรพคุณ', topic: 'หัวข้อ', rename_to: 'ชื่อเมนูเมื่อเลือก' };
+      const cells = d.langs.map((l) => {
+        const t = it.tr[l] || {};
+        const ins = Object.fromEntries(fields.map((f) => [f, f === 'description' || f === 'highlights'
+          ? h('textarea', { class: 'input', rows: 2, placeholder: LBL[f], value: t[f] || '' }) : h('input', { class: 'input', placeholder: LBL[f], value: t[f] || '' })]));
+        const save = h('button', { class: 'btn sm', onclick: async () => { try { await api.put('/translations', { kind: it.kind, ref: it.ref, lang: l, data: Object.fromEntries(fields.map((f) => [f, ins[f].value])) }); toast('บันทึกแล้ว', 'ok', 1200); it.tr[l] = Object.fromEntries(fields.map((f) => [f, ins[f].value])); } catch (e) { errToast(e); } } }, 'บันทึก');
+        return h('div', { class: 'tr-cell' }, h('b', {}, l === 'en' ? '🇬🇧 English' : '🇨🇳 中文'), ...fields.map((f) => ins[f]), save);
+      });
+      return h('div', { class: 'tr-row' + (d.langs.every((l) => it.tr[l]) ? '' : ' miss') },
+        h('div', { class: 'tr-src' }, h('span', { class: 'badge' }, KIND[it.kind]), h('b', {}, it.name), it.topic ? h('small', {}, it.topic) : null, it.rename_to ? h('small', {}, '→ ' + it.rename_to) : null,
+          it.description ? h('small', {}, it.description.slice(0, 120)) : null), ...cells);
+    };
+    const drawList = () => {
+      const shown = d.items.filter((it) => (!filter || it.name.includes(filter)) && (!only || (only === 'missing' ? !d.langs.every((l) => it.tr[l]) : it.kind === only)));
+      list.replaceChildren(...shown.slice(0, 200).map(row), shown.length > 200 ? h('p', { class: 'muted' }, `แสดง 200 จาก ${shown.length} รายการ — ค้นหาเพื่อดูรายการอื่น`) : '');
+    };
+    q.addEventListener('input', () => { filter = q.value; drawList(); });
+    sel.addEventListener('change', () => { only = sel.value; drawList(); });
+    drawList();
+    box.replaceChildren(h('style', {}, `.tr-row{display:grid;grid-template-columns:minmax(180px,1fr) 1fr 1fr;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}.tr-row.miss .tr-src b{color:var(--warn)}
+.tr-src,.tr-cell{display:grid;gap:5px;align-content:start}.tr-src small{color:var(--muted)}.tr-cell .btn{justify-self:start}@media(max-width:800px){.tr-row{grid-template-columns:1fr}}`),
+      h('p', { class: 'muted' }, 'ที่หน้าขาย POS แคชเชียร์กด 🌐 ไทย / EN / 中文 (ตั้งแต่หน้า "เริ่มขาย") แล้วจอลูกค้าเปลี่ยนภาษาทั้งหมด: ชื่อเมนู ตัวเลือก คำอธิบาย สรรพคุณ ประเทศ ระดับเผ็ด ยอดเงิน และข้อความทุกส่วน · รายการที่ยังไม่แปลแสดงเป็นภาษาไทย'),
+      h('div', { class: 'bar' }, aiBtn, redo, q, sel), prog,
+      h('div', { class: 'small muted' }, `แปลแล้ว ${st.done}/${st.total} รายการ · ใช้ Claude API Key เดียวกับผู้ช่วยเพิ่มสินค้า · แก้ชื่อเมนูภาษาไทยแล้ว รายการนั้นจะขึ้นว่า "ยังไม่ได้แปล" ให้แปลใหม่`), list);
+  };
+  load().catch((e) => box.replaceChildren(h('div', { class: 'muted' }, e.message)));
+  return box;
+}
 function countriesTab(cat, reload) {
   const list = (cat.countries || []).slice();
   const save = async (next, msg) => { await api.put('/settings/countries', { value: next }); toast(msg || 'บันทึกแล้ว', 'ok'); await reload(); };

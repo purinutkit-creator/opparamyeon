@@ -689,3 +689,10 @@ html[data-vt] .shift-crew .av, html[data-vt] .cp .av { animation: none; }
 .sg-dine { background: linear-gradient(135deg, #16a34a, #0f766e); }
 .sg-take { background: linear-gradient(135deg, #f59e0b, #ea580c); }
 @media (max-width: 700px) { .sg-pick { grid-template-columns: 1fr; } .sg-pick button { min-height: 22vh; } }
+
+/* customer display language (per bill) */
+.lang-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.lang-bar span { color: var(--muted); font-size: .85em; margin-right: 2px; }
+.lang-bar button { font: inherit; font-weight: 700; padding: .3em .8em; border-radius: 99px; border: 1px solid var(--line, #ddd); background: var(--surface, #fff); color: inherit; cursor: pointer; }
+.lang-bar button.on { background: var(--brand, #ef4444); border-color: transparent; color: #fff; }
+.lang-bar.big { justify-content: center; } .lang-bar.big button { font-size: 1.15em; padding: .45em 1.2em; }

@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS webhook_events (id TEXT PRIMARY KEY, provider TEXT, e
 CREATE TABLE IF NOT EXISTS device_reports (id TEXT PRIMARY KEY, terminal_id TEXT, kind TEXT, data TEXT, created_at TEXT);
 CREATE TABLE IF NOT EXISTS cooker_jobs (id TEXT PRIMARY KEY, order_id TEXT, ticket_id TEXT, machine INTEGER, bowls INTEGER, queue_no TEXT, start_at TEXT, end_at TEXT, status TEXT DEFAULT 'queued', created_at TEXT);
 CREATE INDEX IF NOT EXISTS cooker_jobs_active ON cooker_jobs(status, end_at);
+CREATE TABLE IF NOT EXISTS translations (kind TEXT NOT NULL, ref TEXT NOT NULL, lang TEXT NOT NULL, data TEXT, src TEXT, updated_at TEXT, PRIMARY KEY (kind, ref, lang));
 `;
 
 // Columns added after v1.0.0 (existing databases get them on boot)
