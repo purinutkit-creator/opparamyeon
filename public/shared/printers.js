@@ -185,9 +185,19 @@ function browserPrint(canvas) {
 }
 
 // Render + send one document. Returns 'printed' only when the printer itself reported OK after the job.
-export async function printDocument(printer, template, data, docType) {
+// `then`: more documents printed right after it in the same send (e.g. the merchant slip after the receipt — no wait in between)
+export async function printDocument(printer, template, data, docType, then = []) {
   const t = await transportFor(printer);
   if (!t) throw new Error('เครื่องนี้ยังไม่ได้เชื่อมต่อเครื่องพิมพ์ ' + printer.name);
+  let bytes = await docBytes(printer, t, template, data, docType);
+  if (bytes && bytes.browser) { for (const x of then || []) await docBytes(printer, t, x.template, x.data, x.doc_type); return { status: 'sent', note: bytes.note }; }
+  for (const x of then || []) {
+    const more = await docBytes(printer, t, x.template, x.data, x.doc_type);
+    if (more && !more.browser) bytes = concat([bytes, more]);
+  }
+  return sendAndConfirm(t, bytes);
+}
+async function docBytes(printer, t, template, data, docType) {
   let bytes;
   const o = printer.options || {};
   // printer beeper: every document ("มีเสียงทุกครั้งที่พิมพ์"), only kitchen tickets, only receipts, or off
@@ -195,15 +205,15 @@ export async function printDocument(printer, template, data, docType) {
   const buzz = mode === 'all' || (mode === 'kitchen' && docType === 'kitchen') || (mode === 'receipt' && docType === 'receipt');
   if (docType === 'cut') bytes = concat([init(), feed(printer.feed_before || 3), cutCmd(printer.cut_mode || 'full')]);
   // feed the roll out (shift close on the merchant roll), and cut when asked and the printer has a cutter
-  else if (docType === 'feed') { if (t.kind === 'browser') return { status: 'sent', note: 'เครื่องพิมพ์ผ่านเบราว์เซอร์ป้อนกระดาษไม่ได้' }; bytes = concat([init(), feed(Number(data.lines) || 6), ...(data.cut && (printer.cut_mode || 'full') !== 'none' ? [cutCmd(printer.cut_mode || 'full')] : [])]); }
-  else if (docType === 'drawer') { if (t.kind === 'browser') return { status: 'sent', note: 'เครื่องพิมพ์ผ่านเบราว์เซอร์เปิดลิ้นชักไม่ได้' }; bytes = concat([init(), drawerCmd(o.drawer_pin)]); }
+  else if (docType === 'feed') { if (t.kind === 'browser') return { browser: true, note: 'เครื่องพิมพ์ผ่านเบราว์เซอร์ป้อนกระดาษไม่ได้' }; bytes = concat([init(), feed(Number(data.lines) || 6), ...(data.cut && (printer.cut_mode || 'full') !== 'none' ? [cutCmd(printer.cut_mode || 'full')] : [])]); }
+  else if (docType === 'drawer') { if (t.kind === 'browser') return { browser: true, note: 'เครื่องพิมพ์ผ่านเบราว์เซอร์เปิดลิ้นชักไม่ได้' }; bytes = concat([init(), drawerCmd(o.drawer_pin)]); }
   else {
     // force_paper: the document picks its width itself (e.g. the shift summary chosen as 58 or 80 mm)
     const tpl = docType === 'test' ? testTemplate(printer.paper, template && template.font) : { ...template, paper: template && template.force_paper ? template.paper : printer.paper || template.paper };
     if (printer.margin && !tpl.label_exact) tpl.margin = printer.margin;
     if (o.width_dots && !tpl.force_paper) tpl.width_dots = o.width_dots;
     const r = await renderDoc(tpl, data, { scale: o.scale, noLogo: o.print_logo === false, reprintMark: o.reprint_mark, font: docType === 'test' ? null : await docFontStack(docType) });
-    if (t.kind === 'browser') { await browserPrint(r.canvas); return { status: 'sent', note: 'ส่งไปยังหน้าต่างพิมพ์ของเบราว์เซอร์' }; }
+    if (t.kind === 'browser') { await browserPrint(r.canvas); return { browser: true, note: 'ส่งไปยังหน้าต่างพิมพ์ของเบราว์เซอร์' }; }
     // a template set to "ไม่ตัด" prints as a continuous roll (e.g. short merchant slips): no cut, just a little space between slips
     const noCut = tpl.cut === 'none';
     // barcode labels: exactly the label size (no feed before, only the gap set between rows, end as set)
@@ -212,6 +222,9 @@ export async function printDocument(printer, template, data, docType) {
     else bytes = buildJob(r.canvas, { cuts: noCut ? [] : r.cuts, feedBefore: noCut ? 0 : printer.feed_before ?? 3, feedAfter: noCut ? Number(tpl.feed_after ?? 1) : printer.feed_after ?? 1, cutMode: noCut ? 'none' : printer.cut_mode || 'full',
       buzzer: buzz, beepCount: printer.beep_count || 4, beepDuration: o.beep_duration || 2, threshold: o.density || 160, topFeed: o.top_feed || 0 });
   }
+  return bytes;
+}
+async function sendAndConfirm(t, bytes) {
   if (t.kind === 'browser') return { status: 'sent' };
   await t.write(bytes, { status: true });
   // confirmation: ask for real-time status (only possible on transports with a return channel)
@@ -265,7 +278,7 @@ export class PrintHost {
         const job = await this.api.post('/print/claim', { printer_id: pid, host: this.terminalId });
         if (!job) break;
         try {
-          const r = await printDocument(p, job.template, job.payload.data, job.doc_type);
+          const r = await printDocument(p, job.template, job.payload.data, job.doc_type, job.then);
           await this.api.post(`/print/jobs/${job.id}/report`, { status: r.status, error: r.status === 'sent' ? r.note : null });
           this.push(p, job, r.status, r.note);
           if ((job.doc_type === 'kitchen' || (this.settings.sound.docs === 'all' && !['drawer', 'cut', 'feed'].includes(job.doc_type))) && (r.status === 'printed' || this.settings.sound.on === 'sent')) playSound(this.settings.sound, 'printed', this.device);

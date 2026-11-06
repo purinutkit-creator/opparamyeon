@@ -85,6 +85,22 @@ test('ใบสรุปร้านค้า: เลือกแบบย่อ
   assert.ok(t.elements.some((e) => e.type === 'qr') && t.elements.some((e) => e.type === 'totals'));
   const tpls = (await S.call('GET', '/api/templates', undefined, { token: owner })).body.templates;
   assert.ok(tpls.some((x) => x.doc_type === 'merchant' && x.name.startsWith('ใบสรุปย่อ')), 'แก้หน้าตาได้ในตัวออกแบบ');
+  // ⚡ merchant slip right after the receipt: one job on the printer that prints both, the other printer only gets its receipt
+  await S.call('PUT', '/api/settings/print', { value: { ...P, merchant_after_receipt: true } }, { token: owner });
+  const o3 = (await S.call('POST', '/api/orders/checkout', { idempotency_key: key(), cart: { lines: [line('p_d001', 1)] }, payments: [{ method: 'cash', amount: 1e6, received: 1e6 }], print: { merchant: true, receipt: true } }, { token: owner, terminal: 'pos1' })).body;
+  const rj = await db.all("SELECT id, printer_id, payload FROM print_jobs WHERE ref_id = ? AND doc_type = 'receipt'", [o3.id]);
+  const onBig = rj.find((j) => j.printer_id === big), onSmall = rj.find((j) => j.printer_id === small);
+  assert.equal(JSON.parse(onBig.payload).then.length, 1);
+  assert.equal(JSON.parse(onBig.payload).then[0].doc_type, 'merchant');
+  assert.equal(JSON.parse(onSmall.payload).then, undefined);
+  assert.equal((await db.all("SELECT id FROM print_jobs WHERE ref_id = ? AND doc_type = 'merchant'", [o3.id])).length, 0, 'ไม่มีงานใบสรุปแยก');
+  // the printing device gets both documents with their layouts in the one job
+  await db.run("UPDATE print_jobs SET status = 'printed' WHERE printer_id = ? AND id <> ?", [big, onBig.id]);
+  const c = await S.call('POST', '/api/print/claim', { printer_id: big, host: 'pos1' }, { token: owner, terminal: 'pos1' });
+  assert.equal(c.body.id, onBig.id, JSON.stringify(c.body).slice(0, 200));
+  assert.equal(c.body.then[0].doc_type, 'merchant');
+  assert.ok(c.body.then[0].template && c.body.then[0].template.elements, 'มีแบบฟอร์มใบสรุป');
+  assert.equal(c.body.then[0].data.bill_no, o3.bill_no);
   await S.call('PUT', '/api/settings/print', { value: P }, { token: owner });
 });
 

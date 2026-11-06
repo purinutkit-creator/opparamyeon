@@ -4,7 +4,7 @@ import { id, now, getSettings, businessDateOf, nextCounter, bad, conflict, notFo
 import { can } from './auth.js';
 import { notifyLow } from './line.js';
 import { computeTotals, orderDineType, splitTickets, countBowls, dineLabel, isAddon, renamedLine, markOf, parseSlipQr } from '../../public/shared/core.js';
-import { enqueue, orderDocData, fmtDate } from './print.js';
+import { enqueue, orderDocData, fmtDate, printerOptions, templateFor } from './print.js';
 import { awardOrder, reverseForRefund } from './members.js';
 import { assignCooker, cookerCfg, changed as cookersChanged, jobsOf } from './cookers.js';
 import { COMPACT_MERCHANT, COMPACT_MERCHANT_NAME } from './templates.js';
@@ -265,7 +265,7 @@ export async function sendKitchen(order, staff, terminalId, shiftId) {
 }
 
 // merchant summary: the shop picks the style (usual slip / compact roll) and which printer prints it
-async function enqueueMerchant(orderId, P) {
+async function merchantTarget(P) {
   const printer = P.merchant_printer_id ? await db.get('SELECT id FROM printers WHERE id = ? AND active = 1', [P.merchant_printer_id]) : null;
   let template = null;
   if (P.merchant_style === 'compact') {
@@ -273,7 +273,29 @@ async function enqueueMerchant(orderId, P) {
       || await db.get('SELECT data FROM templates WHERE doc_type = ? AND name = ?', ['merchant', COMPACT_MERCHANT_NAME]);
     template = t ? J(t.data) : COMPACT_MERCHANT;
   }
-  await enqueue('merchant', orderId, await orderDocData(await getOrder(orderId)), { dedupe: `merchant:${orderId}`, printerId: printer ? printer.id : null, template });
+  const ids = printer ? [printer.id] : (await db.all('SELECT id, roles FROM printers WHERE active = 1')).filter((p) => J(p.roles, []).includes('merchant')).map((p) => p.id);
+  return { printerId: printer ? printer.id : null, template, ids };
+}
+async function enqueueMerchant(orderId, P, skip = new Set()) {
+  const m = await merchantTarget(P);
+  const data = await orderDocData(await getOrder(orderId));
+  if (!skip.size) return enqueue('merchant', orderId, data, { dedupe: `merchant:${orderId}`, printerId: m.printerId, template: m.template });
+  // the printers that already got it after the receipt are left out
+  for (const pid of m.ids.filter((x) => !skip.has(x))) await enqueue('merchant', orderId, data, { dedupe: `merchant:${orderId}`, printerId: pid, template: m.template });
+}
+// "ใบสรุปร้านค้าต่อท้ายใบเสร็จ": on a printer that prints both, the merchant slip rides in the receipt's job (no second round trip)
+async function receiptWithMerchant(orderId, P) {
+  const m = await merchantTarget(P);
+  const data = await orderDocData(await getOrder(orderId));
+  const merged = new Set();
+  await enqueue('receipt', orderId, data, { dedupe: `receipt:${orderId}`, then: async (p) => {
+    if (!m.ids.includes(p.id)) return null;
+    merged.add(p.id);
+    const copies = Math.max(0, Number(printerOptions(p).copies_by_doc.merchant ?? 1));
+    const tpl = m.template ? { id: null, data: m.template } : await templateFor('merchant', p);
+    return Array.from({ length: copies }, (_, i) => ({ doc_type: 'merchant', data: { ...data, copy: i + 1, copies }, ...(tpl.id ? { template_id: tpl.id } : { template: tpl.data }) }));
+  } });
+  return merged;
 }
 // Toppings sold as their own product (cheese, egg ...) that were not put in a bowl would print on a slip of their own
 // at their station. When that station prints on exactly the same printer(s) as the bowls' station, the extra slip is
@@ -462,11 +484,14 @@ export async function payOrder({ orderId, payments, staff, terminalId, shiftId, 
     const P = s.print || {};
     const want = { receipt: print.receipt ?? P.auto_receipt ?? true, merchant: print.merchant ?? !!P.auto_merchant, queue: print.queue ?? !!P.auto_queue };
     const sequence = [...new Set([...(P.order || []), 'receipt', 'kitchen', 'merchant', 'queue'])];
+    const together = P.merchant_after_receipt && want.receipt && want.merchant;
+    let merged = new Set();
     for (const doc of sequence) {
       // kitchen: everything not sent yet goes now (also covers "send after payment" mode)
       if (doc === 'kitchen') { await sendKitchen(await getOrder(orderId), staff, terminalId, shiftId); continue; }
       if (!want[doc]) continue;
-      if (doc === 'merchant') { await enqueueMerchant(orderId, P); continue; }
+      if (doc === 'receipt' && together) { merged = await receiptWithMerchant(orderId, P); continue; }
+      if (doc === 'merchant') { await enqueueMerchant(orderId, P, merged); continue; }
       await enqueue(doc, orderId, await orderDocData(await getOrder(orderId)), { dedupe: `${doc}:${orderId}` });
     }
     order = await getOrder(orderId);

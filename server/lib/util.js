@@ -77,7 +77,7 @@ export const DEFAULT_SETTINGS = {
     hours_note: '', map_url: '', facebook: '', instagram: '', tiktok: '', line_url: '', grab_url: '', lineman_url: '',
     show_menu: true, show_prices: true, featured: [] },
   theme: {},
-  print: { order: ['receipt', 'kitchen', 'merchant', 'queue'], auto_receipt: true, auto_merchant: true, auto_queue: false, kitchen_every_order: true, payqr_auto: 'no_display', mark_additions: false, takeaway_mark: false,
+  print: { order: ['receipt', 'kitchen', 'merchant', 'queue'], auto_receipt: true, auto_merchant: true, auto_queue: false, kitchen_every_order: true, payqr_auto: 'no_display', mark_additions: false, takeaway_mark: false, merchant_after_receipt: false,
     // merchant summary: 'normal' = the usual slip, 'compact' = short block on a continuous roll; printer '' = printers with the merchant role
     merchant_style: 'normal', merchant_printer_id: '', merchant_template_id: '',
     // compact roll at shift close: feed this many lines so it can be torn off; also cut when the printer has a cutter and this is on

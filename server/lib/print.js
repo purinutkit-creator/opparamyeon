@@ -95,7 +95,8 @@ export async function orderDocData(order, extra = {}) {
 }
 
 // Create one job per matching printer and copy. dedupe makes the same document impossible to enqueue twice.
-export async function enqueue(docType, refId, data, { stationId = null, dedupe = null, printerId = null, template = null } = {}) {
+// `then(printer)` may return more documents to print right after this one in the same job (e.g. the merchant slip after the receipt)
+export async function enqueue(docType, refId, data, { stationId = null, dedupe = null, printerId = null, template = null, then = null } = {}) {
   let printers = await db.all('SELECT * FROM printers WHERE active = 1');
   // the payment QR goes to the receipt printer unless a printer is set up for it
   const role = docType === 'payqr' && !printers.some((p) => J(p.roles, []).includes('payqr')) ? 'receipt' : docType;
@@ -111,8 +112,9 @@ export async function enqueue(docType, refId, data, { stationId = null, dedupe =
       if (key && await db.get('SELECT id FROM print_jobs WHERE dedupe_key = ?', [key])) continue;
       const jid = id();
       const seq = await nextCounter('jobseq');
+      const more = then && c === copies ? (await then(p)) || [] : [];
       await db.run('INSERT INTO print_jobs(id, printer_id, doc_type, ref_id, payload, status, dedupe_key, created_at, updated_at, seq, history) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
-        [jid, p.id, docType, refId, S({ data: { ...data, copy: c, copies }, template_id: tpl.id, template: template || undefined }), 'queued', key, now(), now(), seq, S([{ at: now(), status: 'queued' }])]);
+        [jid, p.id, docType, refId, S({ data: { ...data, copy: c, copies }, template_id: tpl.id, template: template || undefined, ...(more.length ? { then: more } : {}) }), 'queued', key, now(), now(), seq, S([{ at: now(), status: 'queued' }])]);
       jobs.push({ id: jid, printer_id: p.id, host: p.host_terminal_id });
     }
   }
@@ -138,7 +140,13 @@ export async function claimNext(printerId, hostId) {
     const printer = await db.get('SELECT * FROM printers WHERE id = ?', [printerId]);
     const payload = J(job.payload);
     const tpl = payload.template_id ? await db.get('SELECT data FROM templates WHERE id = ?', [payload.template_id]) : null;
-    return { ...job, status: 'claimed', payload, template: payload.template || (tpl ? J(tpl.data) : DEFAULT_TEMPLATES[job.doc_type]), printer: publicPrinter(printer) };
+    // documents printed in the same job right after this one
+    const then = [];
+    for (const x of payload.then || []) {
+      const t2 = x.template_id ? await db.get('SELECT data FROM templates WHERE id = ?', [x.template_id]) : null;
+      then.push({ doc_type: x.doc_type, data: x.data, template: x.template || (t2 ? J(t2.data) : DEFAULT_TEMPLATES[x.doc_type]) });
+    }
+    return { ...job, status: 'claimed', payload, then, template: payload.template || (tpl ? J(tpl.data) : DEFAULT_TEMPLATES[job.doc_type]), printer: publicPrinter(printer) };
   });
 }
 
