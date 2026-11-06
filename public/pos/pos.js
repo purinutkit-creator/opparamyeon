@@ -870,9 +870,15 @@ function renderCart() { flip(() => $('#cart .lines'), renderCartNow, { enter: fa
 const DLANGS = [['th', 'ไทย'], ['en', 'EN'], ['zh', '中文']];
 const METHOD_I18N = { cash: { en: 'Cash', zh: '现金' }, promptpay: { en: 'PromptPay QR', zh: 'PromptPay 扫码' }, card: { en: 'Card', zh: '刷卡' }, transfer: { en: 'Bank transfer', zh: '银行转账' }, other: { en: 'Other', zh: '其他' } };
 const SPICE_I18N = { en: ['Not spicy', 'Mild', 'Medium', 'Hot', 'Very hot', 'Extreme'], zh: ['不辣', '微辣', '中辣', '辣', '很辣', '特辣'] };
-function setLang(code) { st.cart.lang = code; saveCart(); renderCart(); pushDisplay(); }
-const langBar = (big) => h('div', { class: 'lang-bar' + (big ? ' big' : '') }, h('span', {}, '🌐 จอลูกค้า'),
-  DLANGS.map(([c, n]) => h('button', { class: (st.cart.lang || 'th') === c ? 'on' : '', onclick: (e) => { e.stopPropagation(); setLang(c); } }, n)));
+// switches the customer display at once, whatever it shows: while paying it stays on the payment screen
+function setLang(code, after) {
+  const paying = lastPhase === 'pay' && st.lastPay ? st.lastPay : null; // renderCart re-sends the cart: remember the payment screen first
+  st.cart.lang = code; saveCart(); renderCart();
+  pushDisplay(paying || {});
+  if (after) after();
+}
+const langBar = (big, after) => h('div', { class: 'lang-bar' + (big ? ' big' : '') }, h('span', {}, '🌐 จอลูกค้า'),
+  DLANGS.map(([c, n]) => h('button', { class: (st.cart.lang || 'th') === c ? 'on' : '', onclick: (e) => { e.stopPropagation(); setLang(c, after); } }, n)));
 // what the customer reads, in their language: names, options, details, country, spice words, payment method, discount labels
 function translateState(s) {
   const lang = st.cart.lang || 'th';
@@ -1126,6 +1132,7 @@ function payDialog() {
       pays.length ? h('div', { class: 'card', style: { margin: '.6em 0' } }, pays.map((p, i) => row(h('span', {}, methods.find((m) => m.id === p.method).name, ' ', h('button', { class: 'chip', onclick: () => { pays.splice(i, 1); drawLeft(); drawRight(); } }, 'ลบ')),
         baht(p.method === 'cash' ? p.received : p.amount))), row('คงเหลือ', baht(rem))) : null,
       h('div', { class: 'pay-methods' }, methods.map((m) => h('button', { class: 'btn big' + (method === m.id ? ' on' : ''), onclick: () => { method = m.id; fillAmt(); drawLeft(); drawRight(); if (m.id === 'promptpay' && slipCfg().required && st.settings.payment.promptpay_enabled) setTimeout(() => openSlip(), 400); } }, m.name))),
+      h('div', { style: { marginTop: '.8em' } }, langBar(false, () => drawLeft())),
       h('div', { style: { marginTop: '1em' } }, h('label', { class: 'switch' }, printReceipt, 'พิมพ์ใบเสร็จ'), ' ', h('label', { class: 'switch' }, printQueue, 'พิมพ์ใบเลขคิว'), ' ',
         h('label', { class: 'switch' }, printMerchant, 'พิมพ์ใบสรุปร้านค้า'), ' ', h('label', { class: 'switch' }, printMobile, 'พิมพ์ใบ Mobile Ordering')));
   };
@@ -1326,7 +1333,12 @@ function done(o) {
   const change = o.change_amount;
   const methods = (o.payments || []).map((p) => (st.settings.sale.payment_methods.find((x) => x.id === p.method) || {}).name || p.method);
   // the thank-you screen stays on the customer display until the cashier presses "เสร็จ"
-  pushDisplay({ phase: 'done', queue_no: o.queue_no, change, total: o.total, received: o.paid_amount + change, dine_type: o.dine_type, bill_no: o.bill_no, methods: [...new Set(methods)],
+  // when the food should be ready: the latest cooker finishing this bill's bowls
+  const ends = (o.cooker_jobs || []).filter((j) => j.status !== 'done' && j.end_at).map((j) => Date.parse(j.end_at));
+  const etaAt = ends.length ? Math.max(...ends) : 0;
+  const eta = etaAt ? { time: new Date(etaAt).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' }), mins: Math.max(1, Math.ceil((etaAt - nowMs()) / 60000)) } : null;
+  st.qpeek = null; // the number was used: ask again for the next bill
+  pushDisplay({ phase: 'done', eta, queue_no: o.queue_no, change, total: o.total, received: o.paid_amount + change, dine_type: o.dine_type, bill_no: o.bill_no, methods: [...new Set(methods)],
     livePay: { done: true, bill_no: o.bill_no, method: methods.join(' + '), change } });
   modal('ชำระเงินสำเร็จ', h('div', { style: { textAlign: 'center' } }, h('div', { class: 'muted' }, 'เลขคิว'), h('div', { class: 'qbig' }, o.queue_no || '-'),
     h('div', { class: 'badge ' + (o.dine_type === 'takeaway' ? 'takeaway' : 'info'), style: { fontSize: '1.2em' } }, dineLabel(o.dine_type)),
@@ -1342,6 +1354,20 @@ function done(o) {
 
 // ---------------- customer display ----------------
 let lastPhase = 'idle';
+// the queue number this bill will most likely get, shown on the customer display while selling (the real one comes at payment)
+function queuePreview(phase) {
+  if (!['cart', 'pay', 'dine'].includes(phase) || !st.cart) return '';
+  const dine = orderDineType(st.cart.lines.length ? st.cart.lines : [{ qty: 1, dine_type: st.cart.dine_type }]);
+  const qp = st.qpeek;
+  if ((!qp || qp.dine !== dine || Date.now() - qp.at > 20000) && !st.qpeekBusy) {
+    st.qpeekBusy = true;
+    api.get('/queue/peek?dine=' + dine).then((r) => {
+      st.qpeek = { dine, no: r.queue_no || '', at: Date.now() };
+      if (st.qpeek.no !== (qp && qp.no) && !st.displayHold && ['cart', 'pay', 'dine'].includes(lastPhase)) pushDisplay(lastPhase === 'pay' && st.lastPay ? st.lastPay : {});
+    }).catch(() => {}).finally(() => { st.qpeekBusy = false; });
+  }
+  return qp && qp.dine === dine ? qp.no : '';
+}
 // discount lines for the customer display (manual bill discount and member tier discount)
 function discountRows(c, t) {
   const rows = [];
@@ -1358,6 +1384,7 @@ function pushDisplay(extra = {}) {
   const t = previewTotals();
   const phase = extra.phase || (st.cart.lines.length ? 'cart' : gateOn() && gateStep() === 'dine' ? 'dine' : 'idle');
   lastPhase = phase;
+  if (phase === 'pay') st.lastPay = extra;
   const m = st.cart.member;
   const state = { cart_id: st.cart.cart_id, phase, dine_type: orderDineType(st.cart.lines.length ? st.cart.lines : [{ qty: 1, dine_type: st.cart.dine_type }]),
     lines: st.cart.lines.map((l) => { const rn = renamedLine(l.name, l.options || [], 'everywhere'); const pr = st.catalog && st.catalog.products.find((x) => x.id === l.product_id);
@@ -1366,9 +1393,11 @@ function pushDisplay(extra = {}) {
     latest: st.latest && st.cart.lines.some((l) => l.product_id === st.latest.id) ? st.latest : null,
     items_total: t.items_total, discount: t.discount, packaging: t.packaging, tax: t.tax, total: t.total, bowls: t.bowls, table: st.cart.table_name,
     member: m && st.settings.members.show_on_display ? { name: (m.first_name || m.nickname || '').slice(0, 2) + '***', points: m.points, tier: m.tier && m.tier.name, earn: previewEarn(st.cart, t) } : null,
-    queue_no: st.cart.queue_no || '', discounts: discountRows(st.cart, t),
+    queue_no: st.cart.queue_no || queuePreview(phase), discounts: discountRows(st.cart, t),
     qr: null, received: 0, change: 0, ...ex, at: Date.now() };
   if (state.latest) { const { _opts, ...lt } = state.latest; state.latest = lt; }
+  // the owner's Live View always reads Thai: keep the Thai parts before translating for the customer
+  const thai = { lang: 'th', lines: state.lines, latest: state.latest, showcase: state.showcase, discounts: state.discounts, methods: state.methods };
   translateState(state);
   if (st.bc) st.bc.postMessage(state);
   // staff-only details for the admin Live View (the server strips them before the customer display)
@@ -1376,7 +1405,7 @@ function pushDisplay(extra = {}) {
   state.live = { bill_no: c.bill_no || '', queue_no: c.queue_no || '', table: c.table_name || '', customer: c.customer_name || '', note: c.note || '',
     member: m ? { name: `${m.first_name || m.nickname || ''} ${m.last_name || ''}`.trim(), member_no: m.member_no, points: m.points, tier: m.tier && m.tier.name, earn: previewEarn(c, t) } : null,
     discount_label: c.discount ? (c.discount.type === 'percent' ? `${c.discount.value}%` : baht(c.discount.value) + ' ฿') : '',
-    line_notes: c.lines.map((l) => l.note || ''), sent: c.lines.map((l) => l.sent_qty || 0), pay: livePay || null };
+    line_notes: c.lines.map((l) => l.note || ''), sent: c.lines.map((l) => l.sent_qty || 0), pay: livePay || null, th: state.lang !== 'th' ? thai : null };
   st.sock.emit('display:state', state);
 }
 

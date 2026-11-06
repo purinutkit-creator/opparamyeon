@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import { db, J, S } from '../db.js';
 import { ah, id, now, bad, notFound, conflict, emit, audit, getSettings, businessDateOf } from '../lib/util.js';
 import { staffAuth, staffForAction, can, requirePerm } from '../lib/auth.js';
-import { saveOrder, payOrder, checkout, voidOrder, refundItems, orderFull, getOrder, sendKitchen, freeTableIfIdle, idemRetry } from '../lib/orders.js';
+import { peekQueue, saveOrder, payOrder, checkout, voidOrder, refundItems, orderFull, getOrder, sendKitchen, freeTableIfIdle, idemRetry } from '../lib/orders.js';
 import { enqueue, orderDocData, reprint, retry, feedMerchantRoll } from '../lib/print.js';
 import { cookerStatus, finishTicket, finishOrder, voidOrderJobs } from '../lib/cookers.js';
 import { billFromToken, shiftToken, shiftFromToken, slipPass, slipPassCheck } from '../lib/billlink.js';
@@ -170,6 +170,11 @@ r.get('/orders/:id', staffAuth(), ah(async (req, res) => {
   res.json(o);
 }));
 
+r.get('/queue/peek', staffAuth('sell'), ah(async (req, res) => {
+  const sh = await needShift(req).catch(() => null);
+  const dine = ['dine_in', 'takeaway', 'mixed'].includes(req.query.dine) ? req.query.dine : 'dine_in';
+  res.json({ queue_no: await peekQueue(dine, req.terminalId, sh && sh.id) });
+}));
 // save: hold / send to kitchen / update an open bill
 r.post('/orders/save', staffAuth('sell'), ah(async (req, res) => {
   const sh = await needShift(req);

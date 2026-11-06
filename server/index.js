@@ -113,7 +113,7 @@ export async function createApp(opts = {}) {
           const { live: detail, ...pub } = state; // staff-only details stay off the customer display
           lastCart.set(sock.data.terminal, pub);
           io.to('display:' + sock.data.terminal).emit('display:state', pub);
-          pushLive({ terminal_id: sock.data.terminal, terminal_name: await termName(sock.data.terminal), staff_name: st.name, online: true, state: pub, detail: detail || {}, updated_at: now() });
+          pushLive({ terminal_id: sock.data.terminal, terminal_name: await termName(sock.data.terminal), staff_name: st.name, online: true, state: detail && detail.th ? { ...pub, ...detail.th } : pub, detail: detail || {}, updated_at: now() }); // Live View: Thai
           if (state && state.cart_id && state.phase === 'idle') closePrompts(sock.data.terminal, 'cancelled').catch(() => {});
         });
         sock.on('display:cart_changed', ({ cart_id } = {}) => {

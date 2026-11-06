@@ -86,6 +86,9 @@
   .chips { display: flex; gap: 1vh; flex-wrap: wrap; justify-content: flex-end; }
   .chip-d { display: inline-flex; align-items: center; gap: .4em; padding: .45em 1em; border-radius: 999px; font-weight: 800; font-size: clamp(14px, 2.3vh, 26px); background: var(--glass-2); border: 1px solid var(--stroke); white-space: nowrap; }
   .chip-d.takeaway { background: #ea580c; border-color: transparent; color: #fff; }
+  .chip-d.queue { background: linear-gradient(135deg, #facc15, #f59e0b); border-color: transparent; color: #3b2304; }
+  .chip-d.queue b { font-family: var(--hf); font-size: 1.25em; letter-spacing: .02em; }
+  .done .eta { font-weight: 800; font-size: clamp(16px, 3vh, 34px); padding: .45em 1.1em; border-radius: 99px; background: rgb(255 255 255 / .16); color: #fff; animation: fadein .5s .8s both; }
   .chip-d.dinein { background: color-mix(in srgb, #2563eb 85%, transparent); border-color: transparent; color: #fff; }
   .mem { display: flex; align-items: center; gap: 1.6vh; padding: 1.4vh 1.8vh; border-radius: 2.2vh; color: var(--memtxt);
     background: linear-gradient(120deg, var(--gold-l), var(--gold) 45%, var(--gold-d)); box-shadow: 0 1.4vh 3vh color-mix(in srgb, var(--gold) 35%, transparent); }

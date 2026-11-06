@@ -14,6 +14,7 @@ export const DISPLAY_TEXTS = [
     ['takeaway_tag', 'ป้ายรายการกลับบ้าน (บิลผสม)', 'กลับบ้าน'],
     ['dine_question', 'คำถามเริ่มบิล (ทานที่ร้าน/กลับบ้าน)', 'ทานที่ร้าน หรือ กลับบ้าน?'],
     ['table', 'โต๊ะ', '🪑 โต๊ะ'],
+    ['queue_chip', 'ป้ายเลขคิวระหว่างขาย', '🎫 คิว'],
     ['member_hello', 'ทักทายสมาชิก', 'สวัสดีคุณ'],
     ['member_tier', 'ระดับสมาชิก', 'สมาชิก'],
     ['member_points', 'แต้มสะสม', 'แต้มสะสม'],
@@ -55,6 +56,7 @@ export const DISPLAY_TEXTS = [
     ['done_title', 'หัวข้อ', 'ชำระเงินเรียบร้อย'],
     ['done_sub', 'หัวข้อเล็ก', 'Payment complete'],
     ['done_queue', 'เลขคิว', 'เลขคิวของคุณ · Your queue'],
+    ['done_eta', 'เวลาที่คาดว่าจะได้อาหาร', '⏱ คาดว่าจะได้รับอาหารประมาณ {time} น. (อีกราว {mins} นาที)'],
     ['done_total', 'การ์ด: ยอดชำระ', 'ยอดชำระ'],
     ['done_method', 'การ์ด: ชำระด้วย', 'ชำระด้วย'],
     ['done_change', 'การ์ด: เงินทอน', 'เงินทอน'],
@@ -83,7 +85,7 @@ export const LANG_NAMES = { th: 'ไทย', en: 'English', zh: '中文' };
 export const TEXT_I18N = {
   en: {
     idle_pill: '🍜 Order at the counter · 감사합니다', order_kicker: 'Your order', order_title: 'Your order', dine_in: '🍽️ Dine in', takeaway: '🥡 Take away',
-    mixed: '🍽️ Dine in + 🥡', takeaway_tag: 'Take away', dine_question: 'Dine in or take away?', table: '🪑 Table', member_hello: 'Hello', member_tier: 'Member',
+    mixed: '🍽️ Dine in + 🥡', takeaway_tag: 'Take away', dine_question: 'Dine in or take away?', table: '🪑 Table', member_hello: 'Hello', queue_chip: '🎫 Queue', done_eta: '⏱ Ready at about {time} (in ~{mins} min)', member_tier: 'Member',
     member_points: 'Points', latest: 'Latest', last_added: '🆕 Just added', more_up: '▲ {n} more above', more_down: '▼ {n} more below', subtotal: 'Subtotal',
     discount: 'Discount', packaging: 'Packaging', vat: 'VAT', total: 'Total', count: '{lines} items · {pcs} pcs', pay_due: 'Amount due', queue: 'Queue',
     saved: '🎉 You saved {amount} baht', earn: '⭐ +{points} points for this bill', cash_title: 'Cash payment', cash_sub: 'ชำระด้วยเงินสด', received: '💵 Received',
@@ -98,7 +100,7 @@ export const TEXT_I18N = {
   },
   zh: {
     idle_pill: '🍜 请到柜台点餐 · 감사합니다', order_kicker: 'Your order', order_title: '您的订单', dine_in: '🍽️ 堂食', takeaway: '🥡 外带',
-    mixed: '🍽️ 堂食 + 🥡', takeaway_tag: '外带', dine_question: '堂食还是外带？', table: '🪑 桌号', member_hello: '您好', member_tier: '会员',
+    mixed: '🍽️ 堂食 + 🥡', takeaway_tag: '外带', dine_question: '堂食还是外带？', table: '🪑 桌号', member_hello: '您好', queue_chip: '🎫 号码', done_eta: '⏱ 预计 {time} 左右出餐（约 {mins} 分钟）', member_tier: '会员',
     member_points: '积分', latest: '最新', last_added: '🆕 刚加入', more_up: '▲ 上方还有 {n} 项', more_down: '▼ 下方还有 {n} 项', subtotal: '餐费小计',
     discount: '折扣', packaging: '打包费', vat: '增值税', total: '合计', count: '{lines} 项 · {pcs} 件', pay_due: '应付金额', queue: '取餐号',
     saved: '🎉 已为您节省 {amount} 泰铢', earn: '⭐ 本单可得 +{points} 积分', cash_title: '现金支付', cash_sub: 'Cash payment', received: '💵 已收',

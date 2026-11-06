@@ -104,17 +104,25 @@ async function resolveDiscount(cart, staff, items_total, memberId) {
   return { type: 'amount', value: amount + tierAmt, info: { manual: d.value ? { type: d.type, value: d.value, reason: d.reason || '' } : null, tier_pct: tierPct, tier_amount: tierAmt } };
 }
 
-async function allocateQueue(order, terminalId, shiftId) {
-  const s = await getSettings();
-  const q = s.queue;
+async function queueKey(dineType, terminalId, shiftId) {
+  const q = (await getSettings()).queue;
   if (!q.enabled) return null;
-  const series = order.dine_type === 'takeaway' ? 'takeaway' : order.dine_type === 'mixed' ? q.mixed_series : 'dine_in';
+  const series = dineType === 'takeaway' ? 'takeaway' : dineType === 'mixed' ? q.mixed_series : 'dine_in';
   const prefix = q.separate ? (series === 'takeaway' ? q.takeaway_prefix : q.dine_in_prefix) : q.prefix;
   const period = q.reset === 'shift' ? 'shift:' + (shiftId || 'none') : q.reset === 'manual' ? 'manual' : 'day:' + (await businessDateOf());
   const scope = q.scope === 'terminal' ? 'term:' + (terminalId || 'web') : 'shared';
-  const key = `queue:${scope}:${q.separate ? series : 'all'}:${period}:e${q.epoch || 0}`;
-  const n = await nextCounter(key) + (Number(q.start) || 1) - 1;
-  return (prefix || '') + String(n).padStart(Number(q.digits) || 3, '0');
+  return { key: `queue:${scope}:${q.separate ? series : 'all'}:${period}:e${q.epoch || 0}`, fmt: (n) => (prefix || '') + String(n + (Number(q.start) || 1) - 1).padStart(Number(q.digits) || 3, '0') };
+}
+async function allocateQueue(order, terminalId, shiftId) {
+  const k = await queueKey(order.dine_type, terminalId, shiftId);
+  return k ? k.fmt(await nextCounter(k.key)) : null;
+}
+// the number the next bill will most likely get (shown on the customer display while selling; another till can take it first)
+export async function peekQueue(dineType, terminalId, shiftId) {
+  const k = await queueKey(dineType, terminalId, shiftId);
+  if (!k) return null;
+  const r = await db.get('SELECT value FROM counters WHERE key = ?', [k.key]);
+  return k.fmt(Number(r ? r.value : 0) + 1);
 }
 
 async function newBillNo() {

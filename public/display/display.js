@@ -221,8 +221,11 @@ function applyTheme() {
 function onState(s) {
   if (!s || (s.at && state.at && s.at < state.at)) return; // ignore out-of-order updates
   if (prompt && s.cart_id && prompt.cart_id !== s.cart_id) { prompt = null; renderPrompt(); } // bill changed → close member entry
+  const langChanged = (s.lang || 'th') !== (state.lang || 'th');
   state = s;
-  renderAll(); renderDineAsk();
+  // a new language redraws every screen at once (payment / thank-you screens otherwise keep their text)
+  if (langChanged) { document.querySelector('.dine-ask')?.remove(); rerender(); } else renderAll();
+  renderDineAsk();
 }
 // the cashier started a bill: the customer picks ทานที่ร้าน / กลับบ้าน here (or the cashier does on the POS)
 const DINE_CSS = `.dine-ask{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:4vh 4vw;background:rgb(0 0 0 / .55);backdrop-filter:blur(10px);animation:da-in .3s ease-out}
@@ -237,13 +240,13 @@ const noEmoji = (t) => String(t).replace(/^[\p{Extended_Pictographic}\uFE0F\s]+/
 function renderDineAsk() {
   let el = document.querySelector('.dine-ask');
   if (state.phase !== 'dine') { if (el && !el.classList.contains('leaving')) { el.classList.add('leaving'); setTimeout(() => el.remove(), 260); } return; }
-  if (el && el.dataset.cart === state.cart_id && !el.classList.contains('leaving')) return;
+  if (el && el.dataset.cart === state.cart_id && el.dataset.lang === lang() && !el.classList.contains('leaving')) return;
   if (el) el.remove();
   if (!document.getElementById('dine-css')) document.head.appendChild(h('style', { id: 'dine-css' }, DINE_CSS));
   const pick = (d, btn) => { btn.classList.add('picked'); if (sock) sock.emit('display:dine', { cart_id: state.cart_id, dine: d }); };
   const bIn = h('button', { class: 'in', onclick: () => pick('dine_in', bIn) }, h('span', {}, '🍽️'), noEmoji(T('dine_in')));
   const bOut = h('button', { class: 'out', onclick: () => pick('takeaway', bOut) }, h('span', {}, '🥡'), noEmoji(T('takeaway')));
-  document.body.appendChild(h('div', { class: 'dine-ask', 'data-cart': state.cart_id || '' }, h('div', {}, h('div', { class: 'q' }, T('dine_question')), h('div', { class: 'opts' }, bIn, bOut))));
+  document.body.appendChild(h('div', { class: 'dine-ask', 'data-cart': state.cart_id || '', 'data-lang': lang() }, h('div', {}, h('div', { class: 'q' }, T('dine_question')), h('div', { class: 'opts' }, bIn, bOut))));
 }
 
 // settings changed: rebuild everything (the payment and thank-you screens normally keep their DOM)
@@ -496,7 +499,8 @@ function renderPanel() {
   p.replaceChildren(
     h('div', { class: 'ph' }, h('h2', {}, h('small', {}, T('order_kicker')), T('order_title')),
       h('div', { class: 'chips' }, h('span', { class: 'chip-d ' + (s.dine_type === 'takeaway' ? 'takeaway' : 'dinein') }, dineText(s.dine_type)),
-        s.table ? h('span', { class: 'chip-d' }, T('table') + ' ' + s.table) : null)),
+        s.table ? h('span', { class: 'chip-d' }, T('table') + ' ' + s.table) : null,
+        s.queue_no ? h('span', { class: 'chip-d queue' }, T('queue_chip') + ' ', h('b', {}, s.queue_no)) : null)),
     m ? h('div', { class: 'mem' }, h('div', { class: 'av' }, '⭐'), h('div', {}, h('b', {}, `${T('member_hello')} ${m.name}`), h('span', {}, m.tier ? `${T('member_tier')} ${m.tier}` : T('member_tier'))),
       h('div', { class: 'pts' }, Number(m.points || 0).toLocaleString(), h('small', {}, T('member_points')))) : null,
     h('div', { class: 'itemswrap' }, h('div', { class: 'more up' }), h('div', { class: 'items' }, lines.map((l) => {
@@ -579,6 +583,7 @@ function renderDone() {
     h('div', { class: 'card2' },
       h('div', { class: 'toprow' }, check, h('div', { class: 'lead' }, T('done_title'), h('small', {}, T('done_sub')))),
       s.queue_no ? h('div', { class: 'qwrap' }, h('div', { class: 'qlabel' }, T('done_queue')), h('div', { class: 'q' }, h('span', {}, s.queue_no))) : null,
+      s.eta && s.eta.mins > 0 ? h('div', { class: 'eta' }, T('done_eta', { time: s.eta.time, mins: s.eta.mins })) : null,
       h('span', { class: 'chip-d ' + dineCls }, dineText(s.dine_type)),
       h('div', { class: 'stats' }, stats),
       word,
