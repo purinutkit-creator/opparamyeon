@@ -44,9 +44,10 @@ export function modal(title, body, { actions = [], wide = false, onClose = null,
   const onKey = (e) => { if (e.key === 'Escape' && closable) close(); };
   const footer = h('div', { class: 'modal-actions' }, actions.map((a) => h('button', { class: 'btn ' + (a.class || ''), onclick: async (e) => {
     if (a.busy) return;
-    a.busy = true; e.currentTarget.disabled = true;
+    const btn = e.currentTarget; // gone from the event after the first await: keep it to enable the button again
+    a.busy = true; btn.disabled = true;
     try { const r = await a.onClick(close); if (r !== false && a.close !== false) close(); } catch (err) { errToast(err); }
-    finally { a.busy = false; if (e.currentTarget) e.currentTarget.disabled = false; }
+    finally { a.busy = false; btn.disabled = false; }
   } }, a.label)));
   const box = h('div', { class: 'modal' + (wide ? ' wide' : ''), role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
     h('div', { class: 'modal-head' }, h('h3', {}, title), closable && h('button', { class: 'icon-btn', 'aria-label': 'ปิด', onclick: close }, '✕')),

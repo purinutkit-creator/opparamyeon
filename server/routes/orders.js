@@ -30,6 +30,19 @@ r.get('/orders', staffAuth(), ah(async (req, res) => {
     ORDER BY o.created_at DESC LIMIT 200`, st);
   res.json(rows);
 }));
+// bill history at the till: one business day, searchable by bill / queue / customer / table
+r.get('/orders/history', staffAuth('sell'), ah(async (req, res) => {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || '')) ? req.query.date : await businessDateOf();
+  const q = String(req.query.q || '').trim().toUpperCase();
+  const rows = await db.all(`SELECT o.id, o.bill_no, o.queue_no, o.status, o.source, o.dine_type, o.total, o.bowls, o.table_name, o.customer_name, o.created_at, o.paid_at, o.refunded_amount, o.terminal_id,
+    (SELECT name FROM staff s WHERE s.id = o.staff_id) AS staff_name,
+    (SELECT COUNT(*) FROM kitchen_tickets k WHERE k.order_id = o.id AND k.kind <> 'void') AS tickets
+    FROM orders o WHERE (o.paid_business_date = ? OR (o.paid_business_date IS NULL AND o.business_date = ?)) AND o.status IN ('paid', 'void', 'open', 'held', 'pending_payment')
+    ORDER BY o.created_at DESC LIMIT 500`, [date, date]);
+  const hit = q ? rows.filter((o) => [o.bill_no, o.queue_no, o.customer_name, o.table_name].some((x) => String(x || '').toUpperCase().includes(q))) : rows;
+  const paid = rows.filter((o) => o.status === 'paid');
+  res.json({ date, rows: hit, summary: { bills: paid.length, total: paid.reduce((s, o) => s + o.total - (o.refunded_amount || 0), 0), voids: rows.filter((o) => o.status === 'void').length } });
+}));
 // bill barcode on the merchant copy / receipt → look the bill up
 // bill details from the signed QR on the merchant slip: no login, only what is printed on a receipt
 // QR of the bill link (shown in the LINE receipt): only for a valid signed bill token
@@ -253,6 +266,23 @@ r.post('/orders/:id/print', staffAuth(), ah(async (req, res) => {
     requirePerm(req.staff, 'print_mobile_qr');
     const { issueMobileForOrder } = await import('./mobile.js');
     return res.json(await issueMobileForOrder(o.id, req.staff, req.body.mobile || {}));
+  }
+  // kitchen tickets again (as many times as needed): every ticket of the bill, or just one; same printers, marked as a copy
+  if (doc === 'kitchen') {
+    requirePerm(req.staff, 'reprint');
+    const tickets = await db.all("SELECT id FROM kitchen_tickets WHERE order_id = ? AND kind <> 'void'" + (req.body.ticket_id ? ' AND id = ?' : '') + ' ORDER BY created_at',
+      req.body.ticket_id ? [o.id, String(req.body.ticket_id)] : [o.id]);
+    if (!tickets.length) throw bad('บิลนี้ยังไม่มีใบครัว — กดส่งครัวก่อน', 'no_kitchen');
+    const ids = [];
+    for (const t of tickets) {
+      // the first job of each printer for this ticket (not earlier copies)
+      const jobs = await db.all("SELECT id, printer_id FROM print_jobs WHERE ref_id = ? AND doc_type = 'kitchen' AND (dedupe_key IS NULL OR dedupe_key NOT LIKE 'reprint:%') ORDER BY seq", [t.id]);
+      const seen = new Set();
+      for (const j of jobs) { if (seen.has(j.printer_id)) continue; seen.add(j.printer_id); ids.push(await reprint(j.id, req.staff.id)); }
+    }
+    if (!ids.length) throw bad('ไม่พบเครื่องพิมพ์ใบครัวของบิลนี้ — ตรวจการตั้งค่าเครื่องพิมพ์', 'no_printer');
+    await audit(req.staff.id, 'reprint', 'order', o.id, null, { doc, tickets: tickets.length });
+    return res.json({ jobs: ids.length, tickets: tickets.length, reprint: true });
   }
   if (!['receipt', 'queue', 'merchant'].includes(doc)) throw bad('ประเภทเอกสารไม่ถูกต้อง');
   const prev = await db.get('SELECT id FROM print_jobs WHERE ref_id = ? AND doc_type = ? ORDER BY seq LIMIT 1', [o.id, doc]);

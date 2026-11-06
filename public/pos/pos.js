@@ -535,6 +535,7 @@ function renderTop() {
     lateWaiting().length ? h('button', { class: 'btn sm late-chip', onclick: joinDialog }, '⏰ รอเข้างาน: ' + lateWaiting().join(', ')) : null,
     h('span', { class: 'spacer' }),
     h('button', { class: 'btn', onclick: ordersDialog }, '🧾 บิล/ออเดอร์', badge(st.pending.mobile, st.pending.mobile > 0)),
+    h('button', { class: 'btn', onclick: historyDialog }, '📜 ประวัติบิล'),
     can('redeem') && h('button', { class: 'btn', onclick: () => couponDialog() }, '🎁 แลกรางวัล'),
     st.pending.verify ? h('button', { class: 'btn', onclick: verifyDialog }, '🔐 ยืนยันสมาชิก', badge(st.pending.verify, true)) : null,
     can('print_mobile_qr') && h('button', { class: 'btn', onclick: mobileQrDialog }, '📱 QR สั่งอาหาร'),
@@ -1504,6 +1505,39 @@ async function ordersDialog() {
   const dlg = modal('บิลและออเดอร์', body, { wide: true });
   draw().catch(errToast);
 }
+// kitchen tickets again, as often as needed (all of the bill, or one)
+async function reprintKitchen(o, ticketId) {
+  try {
+    const r = await api.post(`/orders/${o.id}/print`, { doc: 'kitchen', ...(ticketId ? { ticket_id: ticketId } : {}) });
+    toast(`🍳 ส่งพิมพ์ใบครัวซ้ำแล้ว ${r.tickets} ใบ (คิว ${o.queue_no || '-'})`, 'ok');
+  } catch (e) { errToast(e); }
+}
+// bill history of a business day at the till: search, open, reprint
+function historyDialog() {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+  const date = h('input', { class: 'input', type: 'date', value: today, max: today, style: { maxWidth: '170px' } });
+  const q = h('input', { class: 'input', placeholder: '🔍 เลขบิล / คิว / ชื่อลูกค้า / โต๊ะ', style: { flex: 1, minWidth: '160px' } });
+  const sum = h('div', { class: 'small muted' }), list = h('div');
+  const SB = { paid: 'ok', void: 'bad' };
+  const load = async () => {
+    list.replaceChildren(h('div', { class: 'muted' }, 'กำลังโหลด…'));
+    const d = await api.get(`/orders/history?date=${date.value}&q=${encodeURIComponent(q.value)}`);
+    sum.textContent = `วันขาย ${d.date} · ชำระแล้ว ${d.summary.bills} บิล · ยอดสุทธิ ${baht(d.summary.total)} ฿${d.summary.voids ? ` · ยกเลิก ${d.summary.voids} บิล` : ''}`;
+    list.replaceChildren(...(d.rows.length ? d.rows.map((o) => h('div', { class: 'order-row' },
+      h('div', {}, h('strong', {}, o.queue_no || '—'), h('div', { class: 'small muted' }, o.bill_no)),
+      h('div', {}, h('div', {}, h('span', { class: 'badge ' + (SB[o.status] || 'warn') }, STATUS_TH[o.status]), ' ', h('span', { class: 'badge ' + (o.dine_type === 'takeaway' ? 'takeaway' : 'info') }, dineLabel(o.dine_type)),
+        o.source !== 'pos' ? h('span', { class: 'badge' }, ' ' + (SOURCE_TH[o.source] || o.source)) : null, o.refunded_amount ? h('span', { class: 'badge warn' }, ' คืนเงิน ' + baht(o.refunded_amount)) : null),
+        h('div', { class: 'small' }, [fmtTime(o.paid_at || o.created_at), o.table_name && 'โต๊ะ ' + o.table_name, o.customer_name, `${o.bowls} ${U()}`, o.staff_name].filter(Boolean).join(' · '))),
+      h('div', { class: 'row end' }, h('strong', { class: 'num' }, baht(o.total)),
+        o.tickets && can('reprint') ? h('button', { class: 'btn', title: 'พิมพ์ใบครัวซ้ำ', onclick: () => reprintKitchen(o) }, '🍳') : null,
+        o.status === 'paid' && can('reprint') ? h('button', { class: 'btn', title: 'พิมพ์ใบเสร็จซ้ำ', onclick: async () => { try { await api.post(`/orders/${o.id}/print`, { doc: 'receipt' }); toast('ส่งพิมพ์ใบเสร็จซ้ำแล้ว', 'ok'); } catch (e) { errToast(e); } } }, '🧾') : null,
+        h('button', { class: 'btn primary', onclick: () => openOrder(o.id) }, 'ดู')))) : [h('div', { class: 'empty' }, 'ไม่พบบิล')]));
+  };
+  date.addEventListener('change', () => load().catch(errToast));
+  q.addEventListener('input', debounce(() => load().catch(errToast), 300));
+  modal('📜 ประวัติบิล', h('div', {}, h('div', { class: 'row', style: { gap: '8px', marginBottom: '.5em' } }, date, q), sum, h('div', { style: { marginTop: '.6em' } }, list)), { wide: true });
+  load().catch(errToast);
+}
 async function openOrder(id, parent) {
   const o = await api.get('/orders/' + id);
   const editable = ['held', 'open', 'pending_payment'].includes(o.status);
@@ -1518,6 +1552,8 @@ async function openOrder(id, parent) {
     acts.push({ label: 'คืนเงิน', onClick: () => refundDialog(o) }, { label: 'ยกเลิกบิล', class: 'danger', onClick: () => voidDialog(o) });
     if (o.source === 'mobile_pickup' && o.prep_status !== 'done') acts.push({ label: 'ลูกค้ารับอาหารแล้ว', class: 'ok', onClick: async () => { await api.post(`/orders/${o.id}/complete`); toast('ปิดรายการ Pick Up แล้ว', 'ok'); } });
   } else if (editable) acts.push({ label: 'ยกเลิกบิล', class: 'danger', onClick: () => voidDialog(o) });
+  const tickets = (o.tickets || []).filter((t) => t.kind !== 'void');
+  if (tickets.length && can('reprint')) acts.unshift({ label: `🍳 พิมพ์ใบครัวซ้ำ (${tickets.length} ใบ)`, close: false, onClick: () => reprintKitchen(o) });
   modal(`บิล ${o.bill_no} · คิว ${o.queue_no || '-'}`, h('div', {},
     h('p', {}, h('span', { class: 'badge' }, STATUS_TH[o.status]), ' ', h('span', { class: 'badge' }, SOURCE_TH[o.source]), ' ', dineLabel(o.dine_type), o.table_name ? ` · โต๊ะ ${o.table_name}` : '', o.customer_name ? ` · ${o.customer_name}` : ''),
     h('table', { class: 'table' }, h('tbody', {}, o.items.map((i) => h('tr', {}, h('td', {}, `${i.qty - i.void_qty} x ${i.name}`, h('div', { class: 'small muted' }, i.options.map((x) => x.name).join(', '), i.refunded_qty ? ` · คืนแล้ว ${i.refunded_qty}` : '', i.void_qty ? ` · ยกเลิก ${i.void_qty}` : '')),
@@ -1525,6 +1561,8 @@ async function openOrder(id, parent) {
     row('ยอดสุทธิ', baht(o.total)), o.refunded_amount ? row('คืนเงินแล้ว', '-' + baht(o.refunded_amount)) : null, row(('จำนวน' + U()), o.bowls),
     o.payments.length ? h('p', { class: 'small' }, 'ชำระ: ', o.payments.map((p) => `${p.method} ${baht(p.amount)}${p.status !== 'paid' ? ' (' + p.status + ')' : ''}`).join(', ')) : null,
     o.payments.some((p) => p.slip_file) ? h('p', {}, o.payments.filter((p) => p.slip_file).map((p) => h('a', { href: p.slip_file, target: '_blank' }, 'ดูสลิป'))) : null,
+    tickets.length && can('reprint') ? h('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap', margin: '.4em 0' } }, h('span', { class: 'small muted' }, 'ใบครัวทีละใบ:'),
+      tickets.map((t, i) => h('button', { class: 'btn sm', onclick: () => reprintKitchen(o, t.id) }, `🍳 ใบที่ ${i + 1} · ${fmtTime(t.created_at)}${t.kind === 'add' ? ' (สั่งเพิ่ม)' : ''}`))) : null,
     h('details', {}, h('summary', {}, 'ประวัติการส่งครัว/พิมพ์'), h('ul', { class: 'small' }, o.print_jobs.map((j) => h('li', {}, `${fmtTime(j.created_at)} · ${j.doc_type} · ${JOB_TH[j.status] || j.status}${j.error ? ' · ' + j.error : ''} `,
       ['failed', 'unknown'].includes(j.status) ? h('button', { class: 'btn sm', onclick: async () => { await api.post(`/print/jobs/${j.id}/retry`).then(() => toast('ส่งพิมพ์ใหม่แล้ว', 'ok')).catch(errToast); } }, 'ลองใหม่') : null))))), { wide: true, actions: acts });
   if (o.status === 'pending_payment' && o.verify_status === 'pending') api.get(`/orders/${o.id}/slips`).then((s) => { const img = s.find((x) => x.url); if (img) window.open(img.url, '_blank'); }).catch(() => {});

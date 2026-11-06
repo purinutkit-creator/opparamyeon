@@ -169,6 +169,7 @@ export async function billDetail(id, after) {
     const reason = prompt('เหตุผลการยกเลิก'); if (!reason) return false;
     await api.post(`/orders/${o.id}/void`, { reason }); toast('ยกเลิกแล้ว', 'ok'); after && after();
   } });
+  if ((o.tickets || []).some((t) => t.kind !== 'void') && can('reprint')) acts.push({ label: '🍳 พิมพ์ใบครัวซ้ำ', close: false, onClick: async () => { try { const r = await api.post(`/orders/${o.id}/print`, { doc: 'kitchen' }); toast(`ส่งพิมพ์ใบครัวซ้ำแล้ว ${r.tickets} ใบ`, 'ok'); } catch (e) { errToast(e); } } });
   if (o.status === 'paid' && can('reprint')) acts.push({ label: 'พิมพ์ใบเสร็จซ้ำ', close: false, onClick: async () => { await api.post(`/orders/${o.id}/print`, { doc: 'receipt' }); toast('ส่งพิมพ์ซ้ำแล้ว', 'ok'); } });
   modal(`บิล ${o.bill_no}`, h('div', {},
     h('p', {}, h('span', { class: 'badge' }, STATUS_TH[o.status]), ' ', SOURCE_TH[o.source], ' · ', dineLabel(o.dine_type), o.table_name ? ` · โต๊ะ ${o.table_name}` : '', ' · คิว ', o.queue_no || '-'),
