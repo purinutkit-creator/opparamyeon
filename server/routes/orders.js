@@ -4,7 +4,7 @@ import { db, J, S } from '../db.js';
 import { ah, id, now, bad, notFound, conflict, emit, audit, getSettings, businessDateOf } from '../lib/util.js';
 import { staffAuth, staffForAction, can, requirePerm } from '../lib/auth.js';
 import { peekQueue, saveOrder, payOrder, checkout, voidOrder, refundItems, orderFull, getOrder, sendKitchen, freeTableIfIdle, idemRetry } from '../lib/orders.js';
-import { enqueue, orderDocData, reprint, retry, feedMerchantRoll } from '../lib/print.js';
+import { enqueue, orderDocData, receiptDocData, reprint, retry, feedMerchantRoll } from '../lib/print.js';
 import { cookerStatus, finishTicket, finishOrder, voidOrderJobs } from '../lib/cookers.js';
 import { billFromToken, shiftToken, shiftFromToken, slipPass, slipPassCheck } from '../lib/billlink.js';
 import { joinShiftCrew, verifyOnDuty, clockIn, printAttendance, selfieOf, needSelfie } from '../lib/crew.js';
@@ -263,7 +263,7 @@ r.post('/orders/:id/print', staffAuth(), ah(async (req, res) => {
     await audit(req.staff.id, 'reprint', 'order', o.id, null, { doc });
     return res.json({ job_id: nid, reprint: true });
   }
-  const jobs = await enqueue(doc, o.id, await orderDocData(o), { dedupe: `${doc}:${o.id}` });
+  const jobs = await enqueue(doc, o.id, doc === 'receipt' ? await receiptDocData(o) : await orderDocData(o), { dedupe: `${doc}:${o.id}` });
   res.json({ jobs });
 }));
 

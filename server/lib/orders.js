@@ -4,7 +4,7 @@ import { id, now, getSettings, businessDateOf, nextCounter, bad, conflict, notFo
 import { can } from './auth.js';
 import { notifyLow } from './line.js';
 import { computeTotals, orderDineType, splitTickets, countBowls, dineLabel, isAddon, renamedLine, markOf, parseSlipQr } from '../../public/shared/core.js';
-import { enqueue, orderDocData, fmtDate, printerOptions, templateFor } from './print.js';
+import { enqueue, orderDocData, receiptDocData, fmtDate, printerOptions, templateFor } from './print.js';
 import { awardOrder, reverseForRefund } from './members.js';
 import { assignCooker, cookerCfg, changed as cookersChanged, jobsOf } from './cookers.js';
 import { COMPACT_MERCHANT, COMPACT_MERCHANT_NAME } from './templates.js';
@@ -209,6 +209,8 @@ export async function saveOrder({ orderId = null, cart, staff, terminalId = null
     const newStatus = action === 'hold' ? 'held' : order.status === 'held' ? 'open' : order.status;
     await db.run('UPDATE orders SET table_id = ?, table_name = ?, customer_name = ?, customer_phone = ?, note = ?, member_id = ?, status = ?, updated_at = ?, version = version + 1 WHERE id = ?',
       [fields.table_id, fields.table_name, fields.customer_name, fields.customer_phone, fields.note, fields.member_id, newStatus, t, order.id]);
+    // the customer's language (customer display / ordering page): their receipt prints in it
+    if (['th', 'en', 'zh', 'ja', 'ko'].includes(cart.lang)) await db.run('UPDATE orders SET lang = ? WHERE id = ?', [cart.lang, order.id]);
     order = await recalc(order.id, cart, staff);
     if (voided.length) await kitchenTickets(order, voided, 'void', staff);
     if (action === 'send') await sendKitchen(order, staff, terminalId, shiftId);
@@ -286,9 +288,10 @@ async function enqueueMerchant(orderId, P, skip = new Set()) {
 // "ใบสรุปร้านค้าต่อท้ายใบเสร็จ": on a printer that prints both, the merchant slip rides in the receipt's job (no second round trip)
 async function receiptWithMerchant(orderId, P) {
   const m = await merchantTarget(P);
-  const data = await orderDocData(await getOrder(orderId));
+  const order = await getOrder(orderId);
+  const data = await orderDocData(order);
   const merged = new Set();
-  await enqueue('receipt', orderId, data, { dedupe: `receipt:${orderId}`, then: async (p) => {
+  await enqueue('receipt', orderId, await receiptDocData(order), { dedupe: `receipt:${orderId}`, then: async (p) => {
     if (!m.ids.includes(p.id)) return null;
     merged.add(p.id);
     const copies = Math.max(0, Number(printerOptions(p).copies_by_doc.merchant ?? 1));
@@ -492,7 +495,8 @@ export async function payOrder({ orderId, payments, staff, terminalId, shiftId, 
       if (!want[doc]) continue;
       if (doc === 'receipt' && together) { merged = await receiptWithMerchant(orderId, P); continue; }
       if (doc === 'merchant') { await enqueueMerchant(orderId, P, merged); continue; }
-      await enqueue(doc, orderId, await orderDocData(await getOrder(orderId)), { dedupe: `${doc}:${orderId}` });
+      const o2 = await getOrder(orderId);
+      await enqueue(doc, orderId, doc === 'receipt' ? await receiptDocData(o2) : await orderDocData(o2), { dedupe: `${doc}:${orderId}` });
     }
     order = await getOrder(orderId);
     return { order };

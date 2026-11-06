@@ -867,9 +867,9 @@ function previewTotals() {
 // cart lines glide to their new places when one is added or removed
 function renderCart() { flip(() => $('#cart .lines'), renderCartNow, { enter: false }); renderGate(); }
 // ---------------- customer display language (ไทย / English / 中文), chosen per bill by the cashier ----------------
-const DLANGS = [['th', 'ไทย'], ['en', 'EN'], ['zh', '中文']];
-const METHOD_I18N = { cash: { en: 'Cash', zh: '现金' }, promptpay: { en: 'PromptPay QR', zh: 'PromptPay 扫码' }, card: { en: 'Card', zh: '刷卡' }, transfer: { en: 'Bank transfer', zh: '银行转账' }, other: { en: 'Other', zh: '其他' } };
-const SPICE_I18N = { en: ['Not spicy', 'Mild', 'Medium', 'Hot', 'Very hot', 'Extreme'], zh: ['不辣', '微辣', '中辣', '辣', '很辣', '特辣'] };
+const DLANGS = [['th', 'ไทย'], ['en', 'EN'], ['zh', '中文'], ['ja', '日本語'], ['ko', '한국어']];
+const METHOD_I18N = { cash: { en: 'Cash', zh: '现金', ja: '現金', ko: '현금' }, promptpay: { en: 'PromptPay QR', zh: 'PromptPay 扫码', ja: 'PromptPay QR', ko: 'PromptPay QR' }, card: { en: 'Card', zh: '刷卡', ja: 'カード', ko: '카드' }, transfer: { en: 'Bank transfer', zh: '银行转账', ja: '銀行振込', ko: '계좌이체' }, other: { en: 'Other', zh: '其他', ja: 'その他', ko: '기타' } };
+const SPICE_I18N = { en: ['Not spicy', 'Mild', 'Medium', 'Hot', 'Very hot', 'Extreme'], zh: ['不辣', '微辣', '中辣', '辣', '很辣', '特辣'], ja: ['辛くない', '少し辛い', '中辛', '辛口', 'とても辛い', '激辛'], ko: ['안 매움', '약간 매움', '중간 매운맛', '매움', '아주 매움', '극강 매운맛'] };
 // switches the customer display at once, whatever it shows: while paying it stays on the payment screen
 function setLang(code, after) {
   const paying = lastPhase === 'pay' && st.lastPay ? st.lastPay : null; // renderCart re-sends the cart: remember the payment screen first
@@ -904,7 +904,7 @@ function translateState(s) {
   if (s.latest) s.latest = det(s.latest, st.latest && st.latest._opts);
   s.spice_words = [0, 1, 2, 3, 4, 5].map((i) => ((((TR.spice || {})[String(i)] || {})[lang] || {}).name) || SPICE_I18N[lang][i]);
   if (s.methods) s.methods = s.methods.map((nm) => { const m = st.settings.sale.payment_methods.find((x) => x.name === nm); return (m && METHOD_I18N[m.id] && METHOD_I18N[m.id][lang]) || nm; });
-  const DISC = { en: ['Member discount', 'Discount'], zh: ['会员折扣', '折扣'] }[lang];
+  const DISC = { en: ['Member discount', 'Discount'], zh: ['会员折扣', '折扣'], ja: ['会員割引', '割引'], ko: ['회원 할인', '할인'] }[lang];
   s.discounts = (s.discounts || []).map((d) => ({ ...d, label: String(d.label).replace(/^ส่วนลดสมาชิก/, DISC[0]).replace(/^ส่วนลด/, DISC[1]) }));
 }
 // ---------------- start of a bill: "▶ เริ่มขาย" → big ทานที่ร้าน / กลับบ้าน (the customer can pick on their display too) ----------------
@@ -1050,7 +1050,7 @@ function cartPayload() {
   const c = st.cart;
   return { lines: c.lines.map((l) => (l.id ? { id: l.id, qty: l.qty } : { product_id: l.product_id, qty: l.qty, options: (l.options || []).map((o) => ({ group_id: o.group_id, id: o.id })),
     note: l.note, dine_type: l.dine_type, bowl_group: l.bowl_group, price_override: l.price_override })),
-  table_id: c.table_id, customer_name: c.customer_name, note: c.note, member_id: c.member ? c.member.id : null, discount: c.discount || { value: 0 }, version: c.version };
+  table_id: c.table_id, customer_name: c.customer_name, note: c.note, member_id: c.member ? c.member.id : null, discount: c.discount || { value: 0 }, version: c.version, lang: c.lang || 'th' };
 }
 async function saveOrder(action) {
   try {

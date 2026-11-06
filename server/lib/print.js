@@ -54,6 +54,32 @@ export async function storeData() {
 }
 
 // Build a printable data snapshot for an order (receipt / queue / refund).
+// the customer's copy in the language they used (order.lang); merchant / kitchen copies stay Thai
+export async function receiptDocData(order, extra = {}) {
+  const d = await orderDocData(order, extra);
+  const lang = order.lang;
+  if (!lang || lang === 'th') return d;
+  const { translationMap, uiDict } = await import('./translate.js');
+  const [tm, dict] = [await translationMap(), await uiDict(lang)];
+  const tr = (kind, id, field, fb) => ((((tm[kind] || {})[id] || {})[lang] || {})[field]) || fb;
+  const ui = (s) => dict[s] || s;
+  const rows = await db.all('SELECT product_id, qty, void_qty FROM order_items WHERE order_id = ? ORDER BY seq', [order.id]);
+  const live = rows.filter((i) => i.qty - i.void_qty > 0);
+  d.items = d.items.map((it, i) => {
+    const pid = live[i] && live[i].product_id;
+    const all = it.options || [];
+    return { ...it, name: tr('product', pid, 'name', it.name),
+      options: all.map((o) => ({ ...o, name: tr('option', o.id, 'name', o.name), group: o.group_id ? tr('group', o.group_id, 'name', o.group) : o.group })) };
+  });
+  d.dine_label = ui(d.dine_label);
+  d.count_unit = ui(d.count_unit);
+  d.payments = d.payments.map((p) => ({ ...p, method: ui(p.method) }));
+  d.pay_methods = d.payments.map((p) => p.method).join(' + ');
+  if (d.points_note) d.points_note = ui(d.points_note);
+  d.i18n = dict;
+  d.lang = lang;
+  return d;
+}
 export async function orderDocData(order, extra = {}) {
   const s = await getSettings();
   const items = await db.all('SELECT * FROM order_items WHERE order_id = ? ORDER BY seq', [order.id]);

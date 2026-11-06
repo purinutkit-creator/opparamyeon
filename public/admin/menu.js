@@ -339,7 +339,8 @@ const flagEl = (f, size = '1.6em') => (/^(\/|https:)/.test(f || '') ? h('img', {
 // English / Chinese names for the customer display: AI translates everything at once, the shop can correct any line
 function langTab() {
   const box = h('div', {}, h('div', { class: 'muted' }, 'กำลังโหลด…'));
-  const KIND = { product: 'เมนู', option: 'ตัวเลือก', country: 'ประเทศ', spice: 'ระดับเผ็ด' };
+  const KIND = { product: 'เมนู', option: 'ตัวเลือก', group: 'กลุ่มตัวเลือก', category: 'หมวดหมู่', country: 'ประเทศ', spice: 'ระดับเผ็ด', ui: 'ข้อความหน้าเว็บ/ใบเสร็จ' };
+  const LN = { en: '🇬🇧 English', zh: '🇨🇳 中文', ja: '🇯🇵 日本語', ko: '🇰🇷 한국어' };
   let filter = '', only = '';
   const load = async () => {
     const d = await api.get('/translations');
@@ -374,7 +375,7 @@ function langTab() {
         const ins = Object.fromEntries(fields.map((f) => [f, f === 'description' || f === 'highlights'
           ? h('textarea', { class: 'input', rows: 2, placeholder: LBL[f], value: t[f] || '' }) : h('input', { class: 'input', placeholder: LBL[f], value: t[f] || '' })]));
         const save = h('button', { class: 'btn sm', onclick: async () => { try { await api.put('/translations', { kind: it.kind, ref: it.ref, lang: l, data: Object.fromEntries(fields.map((f) => [f, ins[f].value])) }); toast('บันทึกแล้ว', 'ok', 1200); it.tr[l] = Object.fromEntries(fields.map((f) => [f, ins[f].value])); } catch (e) { errToast(e); } } }, 'บันทึก');
-        return h('div', { class: 'tr-cell' }, h('b', {}, l === 'en' ? '🇬🇧 English' : '🇨🇳 中文'), ...fields.map((f) => ins[f]), save);
+        return h('div', { class: 'tr-cell' }, h('b', {}, LN[l] || l), ...fields.map((f) => ins[f]), save);
       });
       return h('div', { class: 'tr-row' + (d.langs.every((l) => it.tr[l]) ? '' : ' miss') },
         h('div', { class: 'tr-src' }, h('span', { class: 'badge' }, KIND[it.kind]), h('b', {}, it.name), it.topic ? h('small', {}, it.topic) : null, it.rename_to ? h('small', {}, '→ ' + it.rename_to) : null,
@@ -387,9 +388,9 @@ function langTab() {
     q.addEventListener('input', () => { filter = q.value; drawList(); });
     sel.addEventListener('change', () => { only = sel.value; drawList(); });
     drawList();
-    box.replaceChildren(h('style', {}, `.tr-row{display:grid;grid-template-columns:minmax(180px,1fr) 1fr 1fr;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}.tr-row.miss .tr-src b{color:var(--warn)}
-.tr-src,.tr-cell{display:grid;gap:5px;align-content:start}.tr-src small{color:var(--muted)}.tr-cell .btn{justify-self:start}@media(max-width:800px){.tr-row{grid-template-columns:1fr}}`),
-      h('p', { class: 'muted' }, 'ที่หน้าขาย POS แคชเชียร์กด 🌐 ไทย / EN / 中文 (ตั้งแต่หน้า "เริ่มขาย") แล้วจอลูกค้าเปลี่ยนภาษาทั้งหมด: ชื่อเมนู ตัวเลือก คำอธิบาย สรรพคุณ ประเทศ ระดับเผ็ด ยอดเงิน และข้อความทุกส่วน · รายการที่ยังไม่แปลแสดงเป็นภาษาไทย'),
+    box.replaceChildren(h('style', {}, `.tr-row{display:grid;grid-template-columns:minmax(160px,1fr) repeat(4,1fr);gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}.tr-row.miss .tr-src b{color:var(--warn)}
+.tr-src,.tr-cell{display:grid;gap:5px;align-content:start}.tr-src small{color:var(--muted)}.tr-cell .btn{justify-self:start}@media(max-width:1100px){.tr-row{grid-template-columns:1fr 1fr}}@media(max-width:700px){.tr-row{grid-template-columns:1fr}}`),
+      h('p', { class: 'muted' }, '5 ภาษา: ไทย · English · 中文 · 日本語 · 한국어 — ใช้กับจอลูกค้า (แคชเชียร์กด 🌐 ที่ POS), ใบเสร็จลูกค้า (พิมพ์ตามภาษาที่เลือก ใบสรุปร้านค้า/ใบครัวเป็นไทยเสมอ), หน้าสั่งอาหาร Mobile Ordering, เว็บไซต์สมาชิก และเว็บไซต์ร้าน (ลูกค้าเลือกภาษาเองมุมบน) · รายการที่ยังไม่แปลแสดงเป็นภาษาไทย'),
       h('div', { class: 'bar' }, aiBtn, redo, q, sel), prog,
       h('div', { class: 'small muted' }, `แปลแล้ว ${st.done}/${st.total} รายการ · ใช้ Claude API Key เดียวกับผู้ช่วยเพิ่มสินค้า · แก้ชื่อเมนูภาษาไทยแล้ว รายการนั้นจะขึ้นว่า "ยังไม่ได้แปล" ให้แปลใหม่`), list);
   };

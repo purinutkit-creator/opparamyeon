@@ -164,7 +164,7 @@ r.post('/m/orders', ah(async (req, res) => {
     // single-use QR: the conditional increment is the lock — two phones submitting together cannot both pass
     const use = await db.run(`UPDATE mobile_sessions SET used_count = used_count + 1 WHERE id = ? AND status = 'active' AND (single_use = 0 OR used_count = 0)`, [ms.id]);
     if (!use.changes) throw forbidden('QR นี้ใช้ส่งออเดอร์ไปแล้ว', 'session_used');
-    const { order } = await saveOrder({ cart: { lines, table_id: tableId, customer_name: b.customer_name, customer_phone: b.customer_phone, note: b.note },
+    const { order } = await saveOrder({ cart: { lines, table_id: tableId, customer_name: b.customer_name, customer_phone: b.customer_phone, note: b.note, lang: b.lang },
       source: mode === 'table' ? 'mobile_table' : 'mobile_pickup', mobileSessionId: ms.id, idempotencyKey: 'm:' + b.idempotency_key, action: 'save', payMode });
     const kitchenRule = mode === 'table' ? s.mobile.table_kitchen : s.mobile.pickup_kitchen;
     await db.run("UPDATE orders SET status = 'pending_payment', expires_at = ?, prep_status = 'none' WHERE id = ?",

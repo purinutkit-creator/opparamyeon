@@ -7,7 +7,7 @@ import { adjustStock } from '../lib/stock.js';
 import { lookupBarcode, suggestCategory, fetchImage } from '../lib/productlookup.js';
 import { aiKeys, identifyWithClaude, researchProduct, findImages, basicNames, mineNames, nameVariants, AiError, AI_MODEL } from '../lib/productai.js';
 import { saveFile } from './system.js';
-import { translationMap, translationStatus, translateBatch, saveTranslation, sources as translationSources, LANGS } from '../lib/translate.js';
+import { translationMap, translationStatus, translateBatch, saveTranslation, sources as translationSources, LANGS, uiDict } from '../lib/translate.js';
 import { labelCfg, labelRowDots } from '../../public/shared/labels.js';
 import { isEan13, ean13Check } from '../../public/shared/core.js';
 import { staffAuth, can } from '../lib/auth.js';
@@ -18,6 +18,12 @@ const changed = () => { emit('shop', 'catalog:changed', {}); emit('mobile', 'cat
 r.get('/translations', staffAuth('manage_menu'), ah(async (req, res) => {
   const [list, map, status] = [await translationSources(), await translationMap(), await translationStatus()];
   res.json({ status, langs: LANGS, items: list.map((o) => ({ ...o, tr: (map[o.kind] && map[o.kind][o.ref]) || {} })) });
+}));
+// interface text of the customer pages in one language: { thai: translated }
+r.get('/public/i18n/:lang', ah(async (req, res) => {
+  if (!LANGS.includes(req.params.lang)) return res.json({});
+  res.set('Cache-Control', 'public, max-age=60');
+  res.json(await uiDict(req.params.lang));
 }));
 r.post('/translations/ai', staffAuth('manage_menu'), ah(async (req, res) => {
   rateLimit('tr:' + req.staff.id, 60, 3600e3);

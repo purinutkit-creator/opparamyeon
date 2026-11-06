@@ -81,7 +81,7 @@ export const DISPLAY_STYLE_DEFAULTS = {
 
 // The customer display in English / Chinese (the cashier switches it per bill on the POS).
 // Shop edits (settings.display.texts) are Thai; these are the built-in other languages.
-export const LANG_NAMES = { th: 'ไทย', en: 'English', zh: '中文' };
+export const LANG_NAMES = { th: 'ไทย', en: 'English', zh: '中文', ja: '日本語', ko: '한국어' };
 export const TEXT_I18N = {
   en: {
     idle_pill: '🍜 Order at the counter · 감사합니다', order_kicker: 'Your order', order_title: 'Your order', dine_in: '🍽️ Dine in', takeaway: '🥡 Take away',
@@ -112,5 +112,37 @@ export const TEXT_I18N = {
     hint_queue: '请稍候叫号 🙏', hint_noqueue: '祝您用餐愉快 🍜', bye: '欢迎再次光临', bye_sub: 'See you again · 또 만나요',
     from_country: '产地', pop_kicker: '✨ 了解这道菜', welcome: '欢迎光临', thanks: '谢谢！', unit: '碗',
     spice: ['不辣', '微辣', '中辣', '辣', '很辣', '特辣'],
+  },
+  ja: {
+    idle_pill: '🍜 ご注文はカウンターで · 감사합니다', order_kicker: 'Your order', order_title: 'ご注文内容', dine_in: '🍽️ 店内', takeaway: '🥡 お持ち帰り',
+    mixed: '🍽️ 店内 + 🥡', takeaway_tag: 'お持ち帰り', dine_question: '店内でお召し上がりですか？お持ち帰りですか？', table: '🪑 テーブル', member_hello: 'こんにちは', member_tier: '会員',
+    queue_chip: '🎫 番号', done_eta: '⏱ {time}頃にお渡し予定（約{mins}分）',
+    member_points: 'ポイント', latest: '最新', last_added: '🆕 追加しました', more_up: '▲ 上にあと{n}品', more_down: '▼ 下にあと{n}品', subtotal: '小計',
+    discount: '割引', packaging: '容器代', vat: '消費税(VAT)', total: '合計', count: '{lines}品 · {pcs}点', pay_due: 'お支払い金額', queue: '番号',
+    saved: '🎉 {amount}バーツお得', earn: '⭐ このお会計で+{points}ポイント', cash_title: '現金でのお支払い', cash_sub: 'Cash payment', received: '💵 お預かり',
+    short: 'あと{amount}バーツ不足', paid_exact: '✓ ちょうどお預かりしました', change: '💰 おつり', status_wait: 'お支払い待ち',
+    status_wait_qr: 'お支払い待ち · どの銀行アプリでも読み取れます', status_paid: 'お支払い完了', status_paid_change: 'お支払い完了 · おつりをお受け取りください',
+    qr_title: 'THAI QR PAYMENT', qr_sub: 'PromptPay', qr_loading: 'QRコードを作成中', qr_error: 'QRコードを表示できません · スタッフにお知らせください', qr_account: '口座名義',
+    qr_scan: 'スキャンして支払う', qr_banks: 'すべての銀行アプリに対応', done_title: 'お支払い完了', done_sub: 'Payment complete', done_queue: 'あなたの番号',
+    done_total: 'お支払い', done_method: 'お支払い方法', done_change: 'おつり', done_saved: 'お得額', done_points: '獲得ポイント', thanks_more: 'ありがとうございます！|감사합니다|Thank you!',
+    hint_queue: '番号が呼ばれるまでお待ちください 🙏', hint_noqueue: 'ごゆっくりどうぞ 🍜', bye: 'またのお越しをお待ちしております', bye_sub: 'See you again · 또 만나요',
+    from_country: '原産国', pop_kicker: '✨ このメニューについて', welcome: 'いらっしゃいませ', thanks: 'ありがとうございます！', unit: '杯',
+    spice: ['辛くない', '少し辛い', '中辛', '辛口', 'とても辛い', '激辛'],
+  },
+  ko: {
+    idle_pill: '🍜 카운터에서 주문해 주세요 · 감사합니다', order_kicker: 'Your order', order_title: '주문 내역', dine_in: '🍽️ 매장 식사', takeaway: '🥡 포장',
+    mixed: '🍽️ 매장 + 🥡', takeaway_tag: '포장', dine_question: '매장에서 드시나요, 포장하시나요?', table: '🪑 테이블', member_hello: '안녕하세요', member_tier: '회원',
+    queue_chip: '🎫 번호', done_eta: '⏱ {time}쯤 준비 예정 (약 {mins}분)',
+    member_points: '포인트', latest: '최근', last_added: '🆕 방금 추가', more_up: '▲ 위에 {n}개 더', more_down: '▼ 아래에 {n}개 더', subtotal: '소계',
+    discount: '할인', packaging: '포장비', vat: '부가세(VAT)', total: '합계', count: '{lines}개 메뉴 · {pcs}개', pay_due: '결제 금액', queue: '번호',
+    saved: '🎉 {amount}바트 절약', earn: '⭐ 이번 주문 +{points} 포인트', cash_title: '현금 결제', cash_sub: 'Cash payment', received: '💵 받은 금액',
+    short: '{amount}바트 부족', paid_exact: '✓ 정확히 받았습니다 · 거스름돈 없음', change: '💰 거스름돈', status_wait: '결제 대기 중',
+    status_wait_qr: '결제 대기 중 · 모든 은행 앱으로 스캔 가능', status_paid: '결제 완료', status_paid_change: '결제 완료 · 거스름돈을 받아 주세요',
+    qr_title: 'THAI QR PAYMENT', qr_sub: 'PromptPay', qr_loading: 'QR 코드 생성 중', qr_error: 'QR 코드를 불러오지 못했습니다 · 직원에게 알려 주세요', qr_account: '예금주',
+    qr_scan: '스캔하여 결제', qr_banks: '모든 은행 앱에서 사용 가능', done_title: '결제 완료', done_sub: 'Payment complete', done_queue: '고객님 번호',
+    done_total: '결제 금액', done_method: '결제 수단', done_change: '거스름돈', done_saved: '절약 금액', done_points: '적립 포인트', thanks_more: '감사합니다!|Thank you!|谢谢',
+    hint_queue: '번호를 부를 때까지 잠시만 기다려 주세요 🙏', hint_noqueue: '맛있게 드세요 🍜', bye: '또 오세요', bye_sub: 'See you again · またね',
+    from_country: '원산지', pop_kicker: '✨ 메뉴 소개', welcome: '어서 오세요', thanks: '감사합니다!', unit: '그릇',
+    spice: ['안 매움', '약간 매움', '중간 매운맛', '매움', '아주 매움', '극강 매운맛'],
   },
 };

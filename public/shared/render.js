@@ -52,10 +52,14 @@ export function wrap(ctx, text, maxW) {
   return out;
 }
 
+// a receipt printed in the customer's language: data.i18n = { thai text: translated } (merchant / kitchen copies stay Thai)
+const fillArgs = (s, a) => String(s).replace(/\{(\d+)\}/g, (m, i) => (a[i] ?? ''));
+const trOf = (d) => (s, ...a) => fillArgs((d && d.i18n && d.i18n[s]) || s, a);
 function valueOf(field, d) {
+  const tr = trOf(d);
   switch (field) {
     case 'dine_type': return d.dine_label || dineLabel(d.dine_type);
-    case 'bowls': return d.bowls ? `${d.bowls} ${d.count_unit || 'ชาม'}` : '';
+    case 'bowls': return d.bowls ? tr('{0} {1}', d.bowls, d.count_unit || tr('ชาม')) : '';
     case 'print_time': return d.print_time_now || d.print_time || '';
     case 'refund_amount': return d.refund_amount ? `${d.refund_amount} บาท` : '';
     default: return d[field] ?? '';
@@ -64,6 +68,7 @@ function valueOf(field, d) {
 
 export async function renderDoc(tpl, data, opts = {}) {
   const width = opts.width || tpl.width_dots || paperDots(tpl.paper);
+  const tr = trOf(data);
   let margin = Number(tpl.margin ?? 8);
   let inner = width - margin * 2; // narrowed while drawing inside a framed element (e.box)
   const baseFamily = opts.font || tpl.font || 'Sarabun'; // opts.font: the shop's font for printed documents (may be a TH/EN stack)
@@ -156,10 +161,10 @@ export async function renderDoc(tpl, data, opts = {}) {
           const v = valueOf(e.field, data);
           if (v === '' || v === null || v === undefined) break;
           const inv = e.invert || (e.invert_if && data.dine_type === e.invert_if);
-          text((e.label || '') + v, e, { invert: inv });
+          text((e.label ? tr(e.label) : '') + v, e, { invert: inv });
           break;
         }
-        case 'text': { const v = fillVars(e.text, vars); if (v.trim()) text(v, e, { invert: !!e.invert }); break; }
+        case 'text': { const v = fillVars(tr(e.text), vars); if (v.trim()) text(v, e, { invert: !!e.invert }); break; }
         case 'divider': {
           const st = e.style || 'dash';
           if (draw) {
@@ -189,7 +194,7 @@ export async function renderDoc(tpl, data, opts = {}) {
               const y0 = y;
               font(e, size, e.weight || 700);
               if (draw) { ctx.fillStyle = '#000'; ctx.textBaseline = 'top'; ctx.fillText(String(it.qty), margin, y + (lh(size) - size * SC) / 2); }
-              const take = e.show_dine && it.dine_type === 'takeaway' && (mixed || data.takeaway_mark) ? ' (กลับบ้าน)' : '';
+              const take = e.show_dine && it.dine_type === 'takeaway' && (mixed || data.takeaway_mark) ? tr(' (กลับบ้าน)') : '';
               text(it.name + take, e, { size, weight: e.weight || 700, x0: margin + qtyW, w: inner - qtyW });
               if (e.show_options !== false) {
                 // choices (noodle, spice...) readable; add-ons printed as black bands so the kitchen can't miss them
@@ -203,7 +208,7 @@ export async function renderDoc(tpl, data, opts = {}) {
                     ctx.fillStyle = '#fff'; const bar = Math.max(2, Math.round(box * 0.16)), arm = Math.round(box * 0.62);
                     ctx.fillRect(bx + (box - arm) / 2, by + (box - bar) / 2, arm, bar); ctx.fillRect(bx + (box - bar) / 2, by + (box - arm) / 2, bar, arm);
                   }
-                  text(`เพิ่ม ${o.name}`, e, { size: asz, weight: 700, x0: bx + box + 8, w: inner - qtyW - box - 8 });
+                  text(tr('เพิ่ม {0}', o.name), e, { size: asz, weight: 700, x0: bx + box + 8, w: inner - qtyW - box - 8 });
                 }
               }
               if (e.show_note !== false && it.note) text(`⚠ ${it.note}`, e, { size: Math.round(size * 0.62), weight: 800, x0: margin + qtyW, w: inner - qtyW, invert: true });
@@ -217,7 +222,7 @@ export async function renderDoc(tpl, data, opts = {}) {
             // name (bold) ........ price  /  small "2 × 39.50" and choices underneath
             items.forEach((it, idx) => {
               const price = e.show_price !== false && it.line_total !== null && it.line_total !== undefined ? baht(it.line_total) : '';
-              const dine = e.show_dine && it.dine_type === 'takeaway' && (mixed || data.takeaway_mark) ? '  · กลับบ้าน' : '';
+              const dine = e.show_dine && it.dine_type === 'takeaway' && (mixed || data.takeaway_mark) ? tr('  · กลับบ้าน') : '';
               twoCol(it.name, price, e, { size, weight: 700 });
               const small = Math.round(size * 0.78);
               const unit = it.line_total && it.qty ? baht(Math.round(it.line_total / it.qty)) : '';
@@ -232,11 +237,11 @@ export async function renderDoc(tpl, data, opts = {}) {
             if (e.group_by_bowl && it.bowl_label && it.bowl_label !== lastGroup) { text(`[ ${it.bowl_label} ]`, e, { size: Math.round(size * 0.85), weight: 800 }); lastGroup = it.bowl_label; }
             const price = e.show_price !== false && it.line_total !== null && it.line_total !== undefined ? baht(it.line_total) : '';
             // a takeaway bill already says so at the top: the per-item mark only where the bill mixes both (or the shop turns "สัญลักษณ์กลับบ้าน" on)
-            const dine = e.show_dine && (mixed || data.takeaway_mark) ? (it.dine_type === 'takeaway' ? ' [กลับบ้าน]' : mixed ? ' [ทานที่ร้าน]' : '') : '';
+            const dine = e.show_dine && (mixed || data.takeaway_mark) ? (it.dine_type === 'takeaway' ? tr(' [กลับบ้าน]') : mixed ? tr(' [ทานที่ร้าน]') : '') : '';
             twoCol(`${it.qty} x ${it.name}${dine}`, price, e, { size, weight: e.weight });
             if (e.show_options !== false) for (const o of it.options || []) {
               const extra = e.show_price !== false && o.price ? ` (+${baht(o.price)})` : '';
-              if (isAddon(o)) text(`   + เพิ่ม ${o.name}${extra}`, e, { size: Math.round(size * 0.85), weight: 700 });
+              if (isAddon(o)) text(tr('   + เพิ่ม {0}', o.name) + extra, e, { size: Math.round(size * 0.85), weight: 700 });
               else text(`   ${o.group ? o.group + ': ' : '- '}${o.name}${extra}`, e, { size: Math.round(size * 0.85), weight: e.weight });
             }
             if (e.show_note !== false && it.note) text(`   * ${it.note}`, e, { size: Math.round(size * 0.9), weight: 800, invert: data.ticket_kind !== undefined });
@@ -245,7 +250,7 @@ export async function renderDoc(tpl, data, opts = {}) {
         }
         case 'totals': {
           const t = data.totals || {};
-          const L = { items_total: 'รวมสินค้า', discount: 'ส่วนลด', packaging: 'ค่าบรรจุภัณฑ์', tax: data.tax_inclusive ? `VAT ${data.tax_rate || 7}% (รวมในราคา)` : `VAT ${data.tax_rate || 7}%`, total: 'ยอดสุทธิ' };
+          const L = { items_total: tr('รวมสินค้า'), discount: tr('ส่วนลด'), packaging: tr('ค่าบรรจุภัณฑ์'), tax: data.tax_inclusive ? tr('VAT {0}% (รวมในราคา)', data.tax_rate || 7) : `VAT ${data.tax_rate || 7}%`, total: tr('ยอดสุทธิ') };
           for (const k of e.show || ['items_total', 'discount', 'total']) {
             if (k !== 'total' && k !== 'items_total' && !t[k]) continue;
             twoCol(L[k], (k === 'discount' ? '-' : '') + baht(t[k] || 0), e, k === 'total' ? { size: e.total_size || 32, weight: 800, invert: !!e.total_invert } : {});
@@ -255,7 +260,7 @@ export async function renderDoc(tpl, data, opts = {}) {
         case 'payments': {
           for (const p of data.payments || []) {
             twoCol(p.method, baht(p.amount + (p.change || 0)), e);
-            if (p.change) twoCol('เงินทอน', baht(p.change), e);
+            if (p.change) twoCol(tr('เงินทอน'), baht(p.change), e);
           }
           break;
         }
@@ -273,23 +278,23 @@ export async function renderDoc(tpl, data, opts = {}) {
           const size = e.size || 24, pad = 14, x0 = margin + pad, w = inner - pad * 2, y0 = y;
           const band = (t) => { y += 6; text(t, e, { size: Math.round(size * 1.15), weight: 800, align: 'center', x0: margin + 6, w: inner - 12, invert: true }); y += 4; };
           if (mode === 'claim') {
-            band(e.title || '★ สแกนสะสมแต้ม ★');
+            band(tr(e.title || '★ สแกนสะสมแต้ม ★'));
             if (data.claim_points > 0) {
-              text('บิลนี้รับได้', e, { size, weight: 600, align: 'center', x0, w });
-              text(`${data.claim_points} แต้ม`, e, { size: Math.round(size * 2), weight: 800, align: 'center', x0, w });
+              text(tr('บิลนี้รับได้'), e, { size, weight: 600, align: 'center', x0, w });
+              text(tr('{0} แต้ม', data.claim_points), e, { size: Math.round(size * 2), weight: 800, align: 'center', x0, w });
             }
             const m = images.get(e);
             if (m) qrAt(m, e.size_mm || 30, 'center', x0, w);
-            text(e.caption || 'สแกนด้วยกล้องมือถือ รับแต้มทันที ไม่ต้องกรอกรหัส', e, { size: Math.round(size * 0.85), weight: 700, align: 'center', x0, w });
-            text('ยังไม่เป็นสมาชิก? สแกนแล้วสมัครได้เลย', e, { size: Math.round(size * 0.78), align: 'center', x0, w });
-            if (data.claim_deadline) text(`รับแต้มได้ถึง ${data.claim_deadline}`, e, { size: Math.round(size * 0.75), align: 'center', x0, w });
+            text(tr(e.caption || 'สแกนด้วยกล้องมือถือ รับแต้มทันที ไม่ต้องกรอกรหัส'), e, { size: Math.round(size * 0.85), weight: 700, align: 'center', x0, w });
+            text(tr('ยังไม่เป็นสมาชิก? สแกนแล้วสมัครได้เลย'), e, { size: Math.round(size * 0.78), align: 'center', x0, w });
+            if (data.claim_deadline) text(tr('รับแต้มได้ถึง {0}', data.claim_deadline), e, { size: Math.round(size * 0.75), align: 'center', x0, w });
           } else {
-            band(e.member_title || '★ คะแนนสมาชิก ★');
+            band(tr(e.member_title || '★ คะแนนสมาชิก ★'));
             if (data.member_display) text(data.member_display, e, { size, weight: 700, align: 'center', x0, w });
-            if (data.member_tier) text(`ระดับ ${data.member_tier}`, e, { size: Math.round(size * 0.8), align: 'center', x0, w });
+            if (data.member_tier) text(tr('ระดับ {0}', data.member_tier), e, { size: Math.round(size * 0.8), align: 'center', x0, w });
             y += 4;
-            pair('ได้รับจากบิลนี้', `+${data.points_earned || 0} แต้ม`, e, { size: Math.round(size * 1.1), weight: 800, x0, w });
-            pair('แต้มสะสมทั้งหมด', `${data.member_points ?? 0} แต้ม`, e, { size: Math.round(size * 1.1), weight: 800, x0, w });
+            pair(tr('ได้รับจากบิลนี้'), tr('+{0} แต้ม', data.points_earned || 0), e, { size: Math.round(size * 1.1), weight: 800, x0, w });
+            pair(tr('แต้มสะสมทั้งหมด'), tr('{0} แต้ม', data.member_points ?? 0), e, { size: Math.round(size * 1.1), weight: 800, x0, w });
             if (data.points_earned === 0 && data.points_note) text(data.points_note, e, { size: Math.round(size * 0.75), align: 'center', x0, w });
           }
           y += 8;
@@ -382,7 +387,7 @@ export async function renderDoc(tpl, data, opts = {}) {
       }
       if (e.gap ?? tpl.section_gap) y += (y > startY ? Number(e.gap ?? tpl.section_gap) : 0);
     }
-    if (data.copies > 1) text(`สำเนา ${data.copy}/${data.copies}`, { align: 'center' }, { size: 18 });
+    if (data.copies > 1) text(tr('สำเนา {0}/{1}', data.copy, data.copies), { align: 'center' }, { size: 18 });
     return y + margin;
   };
   const probe = (opts.canvas ? opts.canvas : document.createElement('canvas'));

@@ -466,7 +466,7 @@ function renderPromo() {
   show(0);
 }
 const timeText = () => new Date().toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-const dateText = () => new Date().toLocaleDateString(({ en: 'en-GB', zh: 'zh-CN' })[lang()] || 'th-TH', { timeZone: 'Asia/Bangkok', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const dateText = () => new Date().toLocaleDateString(({ en: 'en-GB', zh: 'zh-CN', ja: 'ja-JP', ko: 'ko-KR' })[lang()] || 'th-TH', { timeZone: 'Asia/Bangkok', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 setInterval(() => { const c = $('#gclock'); if (c) { c.firstChild.textContent = timeText(); c.lastChild.textContent = dateText(); } }, 1000);
 let prevQty = new Map(), prevTotal = null, latestKey = null, lastAdd = null;
 function renderPanel() {
