@@ -130,8 +130,20 @@ class BridgeT {
 }
 
 // Pair a printer on this device (needs a user gesture)
+// iPad / iPhone (every iOS browser is Safari inside) and Safari / Firefox have no WebUSB, Web Serial or Web Bluetooth
+const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+export function unsupportedReason(conn) {
+  const has = { usb: !!navigator.usb, serial: !!navigator.serial, bluetooth: !!navigator.bluetooth || !!window.OppaBridge }[conn];
+  if (has !== false) return null;
+  const what = { usb: 'USB', serial: 'Serial', bluetooth: 'Bluetooth' }[conn];
+  return IOS
+    ? `iPad/iPhone เชื่อมเครื่องพิมพ์ ${what} จากเว็บไม่ได้ (Apple ไม่เปิดให้ทุกเบราว์เซอร์บน iPad) — ต่อเครื่องพิมพ์เข้ากับคอม/แท็บเล็ต Android/เครื่องจอลูกค้า แล้วกดเชื่อมที่เครื่องนั้นแทน งานพิมพ์จาก iPad จะไปออกที่เครื่องนั้นเอง หรือใช้เครื่องพิมพ์ LAN ผ่าน Print Agent`
+    : `เบราว์เซอร์นี้เชื่อมเครื่องพิมพ์ ${what} ไม่ได้ — ใช้ Google Chrome หรือ Microsoft Edge (คอมพิวเตอร์ หรือ Android)`;
+}
 export async function pairPrinter(printer) {
   let t;
+  const why = unsupportedReason(printer.conn);
+  if (why) throw new Error(why);
   if (printer.conn === 'usb') t = await UsbT.pick();
   else if (printer.conn === 'serial') t = await SerialT.pick();
   else if (printer.conn === 'bluetooth') t = window.OppaBridge ? new BridgeT(printer) : await BleT.pick();
