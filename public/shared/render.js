@@ -179,7 +179,7 @@ export async function renderDoc(tpl, data, opts = {}) {
         case 'items': {
           const size = e.size || tpl.size || 24;
           const items = data.items || [];
-          const mixed = new Set(items.map((i) => i.dine_type)).size > 1;
+          const mixed = new Set(items.map((i) => i.dine_type)).size > 1 || data.dine_type === 'mixed' || (data.dine_type && data.dine_type !== 'takeaway' && items.some((i) => i.dine_type === 'takeaway'));
           let lastGroup;
           if (e.style === 'kitchen') {
             // big "qty   item" rows like a kitchen printer: qty column on the left, options/notes indented under the name
@@ -189,7 +189,7 @@ export async function renderDoc(tpl, data, opts = {}) {
               const y0 = y;
               font(e, size, e.weight || 700);
               if (draw) { ctx.fillStyle = '#000'; ctx.textBaseline = 'top'; ctx.fillText(String(it.qty), margin, y + (lh(size) - size * SC) / 2); }
-              const take = e.show_dine && it.dine_type === 'takeaway' && data.dine_type !== 'takeaway' ? ' (กลับบ้าน)' : '';
+              const take = e.show_dine && it.dine_type === 'takeaway' && (mixed || data.takeaway_mark) ? ' (กลับบ้าน)' : '';
               text(it.name + take, e, { size, weight: e.weight || 700, x0: margin + qtyW, w: inner - qtyW });
               if (e.show_options !== false) {
                 // choices (noodle, spice...) readable; add-ons printed as black bands so the kitchen can't miss them
@@ -217,7 +217,7 @@ export async function renderDoc(tpl, data, opts = {}) {
             // name (bold) ........ price  /  small "2 × 39.50" and choices underneath
             items.forEach((it, idx) => {
               const price = e.show_price !== false && it.line_total !== null && it.line_total !== undefined ? baht(it.line_total) : '';
-              const dine = e.show_dine && (mixed || it.dine_type === 'takeaway') && it.dine_type === 'takeaway' ? '  · กลับบ้าน' : '';
+              const dine = e.show_dine && it.dine_type === 'takeaway' && (mixed || data.takeaway_mark) ? '  · กลับบ้าน' : '';
               twoCol(it.name, price, e, { size, weight: 700 });
               const small = Math.round(size * 0.78);
               const unit = it.line_total && it.qty ? baht(Math.round(it.line_total / it.qty)) : '';
@@ -231,7 +231,8 @@ export async function renderDoc(tpl, data, opts = {}) {
           for (const it of items) {
             if (e.group_by_bowl && it.bowl_label && it.bowl_label !== lastGroup) { text(`[ ${it.bowl_label} ]`, e, { size: Math.round(size * 0.85), weight: 800 }); lastGroup = it.bowl_label; }
             const price = e.show_price !== false && it.line_total !== null && it.line_total !== undefined ? baht(it.line_total) : '';
-            const dine = e.show_dine && (mixed || it.dine_type === 'takeaway') ? (it.dine_type === 'takeaway' ? ' [กลับบ้าน]' : mixed ? ' [ทานที่ร้าน]' : '') : '';
+            // a takeaway bill already says so at the top: the per-item mark only where the bill mixes both (or the shop turns "สัญลักษณ์กลับบ้าน" on)
+            const dine = e.show_dine && (mixed || data.takeaway_mark) ? (it.dine_type === 'takeaway' ? ' [กลับบ้าน]' : mixed ? ' [ทานที่ร้าน]' : '') : '';
             twoCol(`${it.qty} x ${it.name}${dine}`, price, e, { size, weight: e.weight });
             if (e.show_options !== false) for (const o of it.options || []) {
               const extra = e.show_price !== false && o.price ? ` (+${baht(o.price)})` : '';

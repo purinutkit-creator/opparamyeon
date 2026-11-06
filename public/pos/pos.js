@@ -21,7 +21,7 @@ const st = {
 };
 const U = () => (st.settings && st.settings.sale.count_unit) || 'ชาม'; // unit name (ชาม/จาน/ที่…) set by the shop
 const can = (p) => st.staff && st.staff.perms.includes(p);
-const newCart = () => ({ cart_id: uid(), order_id: null, version: null, lines: [], dine_type: 'dine_in', table_id: null, customer_name: '', note: '', member: null, discount: null, idem: uid() });
+const newCart = () => ({ cart_id: uid(), started: false, order_id: null, version: null, lines: [], dine_type: 'dine_in', table_id: null, customer_name: '', note: '', member: null, discount: null, idem: uid() });
 
 // ---------------- boot ----------------
 async function boot() {
@@ -436,6 +436,7 @@ async function connect() {
     const m = document.querySelector('.member-prompt-wait'); if (m) m.closest('.modal-back').remove();
   });
   s.on('display:paired', () => toast('เชื่อมต่อจอลูกค้าแล้ว', 'ok'));
+  s.on('display:dine', (e) => { if (e.cart_id === st.cart.cart_id && gateOn() && gateStep() === 'dine') startDine(e.dine); });
   st.host = new PrintHost({ api, sock: s, terminalId: st.terminal.id, settings: st.settings, device: 'pos', onChange: () => {} });
   st.host.start().catch(errToast);
   // dual screen on the same device: the customer window listens on this channel too
@@ -863,7 +864,33 @@ function previewTotals() {
   return { ...computeTotals(lines, sale, { type: 'amount', value: manual + tierAmt }), tierAmt };
 }
 // cart lines glide to their new places when one is added or removed
-function renderCart() { flip(() => $('#cart .lines'), renderCartNow, { enter: false }); }
+function renderCart() { flip(() => $('#cart .lines'), renderCartNow, { enter: false }); renderGate(); }
+// ---------------- start of a bill: "▶ เริ่มขาย" → big ทานที่ร้าน / กลับบ้าน (the customer can pick on their display too) ----------------
+const gateOn = () => st.settings && st.settings.sale.start_gate !== false && st.cart && st.cart.started === false && !st.cart.order_id && !st.cart.lines.length;
+const gateStep = () => (st.gate && st.gate.cart === st.cart.cart_id ? st.gate.step : 'start');
+function startDine(d) {
+  if (!gateOn()) return;
+  st.cart.dine_type = d; st.cart.started = true; st.gate = null;
+  saveCart(); renderCart(); pushDisplay();
+  toast(d === 'takeaway' ? '🥡 กลับบ้าน' : '🍽️ ทานที่ร้าน', 'ok', 1200);
+}
+function renderGate() {
+  const main = document.querySelector('.pos .main'); if (!main) return;
+  let g = main.querySelector('.start-gate');
+  if (!gateOn()) { if (g) { g.classList.add('leaving'); setTimeout(() => g.remove(), 260); } return; }
+  const step = gateStep();
+  if (g && g.dataset.step === step && g.dataset.cart === st.cart.cart_id) return;
+  const body = step === 'start'
+    ? [h('div', { class: 'sg-title' }, 'บิลใหม่'), h('button', { class: 'sg-start', onclick: () => { st.gate = { cart: st.cart.cart_id, step: 'dine' }; renderGate(); pushDisplay(); } }, '▶ เริ่มขาย'),
+      h('div', { class: 'sg-sub' }, 'กดเพื่อเริ่มรับออเดอร์ลูกค้าคนถัดไป')]
+    : [h('div', { class: 'sg-title' }, 'ทานที่ร้าน หรือ กลับบ้าน?'),
+      h('div', { class: 'sg-pick' }, h('button', { class: 'sg-dine', onclick: () => startDine('dine_in') }, h('span', {}, '🍽️'), 'ทานที่ร้าน'),
+        h('button', { class: 'sg-take', onclick: () => startDine('takeaway') }, h('span', {}, '🥡'), 'กลับบ้าน')),
+      h('div', { class: 'sg-sub' }, 'ลูกค้ากดเลือกที่จอลูกค้าได้ด้วย'),
+      h('button', { class: 'btn ghost', onclick: () => { st.gate = null; renderGate(); pushDisplay(); } }, '← ย้อนกลับ')];
+  const ng = h('div', { class: 'start-gate', 'data-step': step, 'data-cart': st.cart.cart_id }, h('div', { class: 'sg-card' }, ...body));
+  if (g) g.replaceWith(ng); else main.appendChild(ng);
+}
 function renderCartNow() {
   const c = $('#cart'); if (!c) return;
   const cart = st.cart;
@@ -1292,7 +1319,7 @@ function pushDisplay(extra = {}) {
   // keep the thank-you screen until the cashier finishes (or starts keying the next bill)
   if (st.displayHold && !extra.phase) { if (!st.cart.lines.length) return; st.displayHold = false; }
   const t = previewTotals();
-  const phase = extra.phase || (st.cart.lines.length ? 'cart' : 'idle');
+  const phase = extra.phase || (st.cart.lines.length ? 'cart' : gateOn() && gateStep() === 'dine' ? 'dine' : 'idle');
   lastPhase = phase;
   const m = st.cart.member;
   const state = { cart_id: st.cart.cart_id, phase, dine_type: orderDineType(st.cart.lines.length ? st.cart.lines : [{ qty: 1, dine_type: st.cart.dine_type }]),

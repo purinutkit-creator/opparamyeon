@@ -218,7 +218,28 @@ function onState(s) {
   if (!s || (s.at && state.at && s.at < state.at)) return; // ignore out-of-order updates
   if (prompt && s.cart_id && prompt.cart_id !== s.cart_id) { prompt = null; renderPrompt(); } // bill changed → close member entry
   state = s;
-  renderAll();
+  renderAll(); renderDineAsk();
+}
+// the cashier started a bill: the customer picks ทานที่ร้าน / กลับบ้าน here (or the cashier does on the POS)
+const DINE_CSS = `.dine-ask{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:4vh 4vw;background:rgb(0 0 0 / .55);backdrop-filter:blur(10px);animation:da-in .3s ease-out}
+.dine-ask.leaving{animation:da-out .25s ease-in forwards}@keyframes da-in{from{opacity:0}}@keyframes da-out{to{opacity:0}}
+.dine-ask .q{color:#fff;font-weight:800;font-size:clamp(28px,5vw,64px);text-align:center;margin-bottom:4vh;text-shadow:0 4px 20px rgb(0 0 0 / .4)}
+.dine-ask .opts{display:grid;grid-template-columns:1fr 1fr;gap:3vw;width:min(1200px,92vw)}
+.dine-ask button{font:inherit;font-weight:800;font-size:clamp(28px,4.6vw,60px);min-height:46vh;border:0;border-radius:36px;color:#fff;cursor:pointer;display:grid;place-content:center;gap:2vh;box-shadow:0 24px 60px rgb(0 0 0 / .35);transition:transform .15s}
+.dine-ask button:active{transform:scale(.96)}.dine-ask button span{font-size:2em;line-height:1}
+.dine-ask .in{background:linear-gradient(135deg,#16a34a,#0f766e)}.dine-ask .out{background:linear-gradient(135deg,#f59e0b,#ea580c)}
+.dine-ask button.picked{outline:6px solid #fff;transform:scale(1.03)}`;
+const noEmoji = (t) => String(t).replace(/^[\p{Extended_Pictographic}\uFE0F\s]+/u, '');
+function renderDineAsk() {
+  let el = document.querySelector('.dine-ask');
+  if (state.phase !== 'dine') { if (el && !el.classList.contains('leaving')) { el.classList.add('leaving'); setTimeout(() => el.remove(), 260); } return; }
+  if (el && el.dataset.cart === state.cart_id && !el.classList.contains('leaving')) return;
+  if (el) el.remove();
+  if (!document.getElementById('dine-css')) document.head.appendChild(h('style', { id: 'dine-css' }, DINE_CSS));
+  const pick = (d, btn) => { btn.classList.add('picked'); if (sock) sock.emit('display:dine', { cart_id: state.cart_id, dine: d }); };
+  const bIn = h('button', { class: 'in', onclick: () => pick('dine_in', bIn) }, h('span', {}, '🍽️'), noEmoji(T('dine_in')));
+  const bOut = h('button', { class: 'out', onclick: () => pick('takeaway', bOut) }, h('span', {}, '🥡'), noEmoji(T('takeaway')));
+  document.body.appendChild(h('div', { class: 'dine-ask', 'data-cart': state.cart_id || '' }, h('div', {}, h('div', { class: 'q' }, T('dine_question')), h('div', { class: 'opts' }, bIn, bOut))));
 }
 
 // settings changed: rebuild everything (the payment and thank-you screens normally keep their DOM)

@@ -133,6 +133,11 @@ export async function createApp(opts = {}) {
         if (!p) { sock.emit('display:revoked', {}); return sock.disconnect(true); }
         sock.join('display:' + p.terminal_id); sock.join('display'); sock.join('displaytoken:' + p.id);
         sock.on('print:watch', (ids) => { for (const pid of [].concat(ids || []).slice(0, 20)) sock.join('print:' + pid); }); // a printer beside the display
+        // the customer picked ทานที่ร้าน / กลับบ้าน on the display → the paired POS
+        sock.on('display:dine', (e = {}) => {
+          if (!['dine_in', 'takeaway'].includes(e.dine) || typeof e.cart_id !== 'string') return;
+          io.to('terminal:' + p.terminal_id).emit('display:dine', { cart_id: e.cart_id.slice(0, 64), dine: e.dine });
+        });
         const st = lastCart.get(p.terminal_id);
         if (st) sock.emit('display:state', st);
         const open = await db.get("SELECT * FROM member_prompts WHERE terminal_id = ? AND status = 'open' AND expires_at > ?", [p.terminal_id, now()]);

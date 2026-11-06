@@ -308,7 +308,7 @@ export function publicSettings(s) {
     slip_required: !!s.payment.slip_required, slip_method: s.payment.slip_method || 'ai',
     beam: !!(s.payment.providers.beam && s.payment.providers.beam.enabled), mock: !!s.payment.mock_enabled };
   out.sale = { payment_methods: s.sale.payment_methods, count_unit: s.sale.count_unit || 'ชาม', tax_rate: s.sale.tax_rate, tax_inclusive: s.sale.tax_inclusive, packaging_fee: s.sale.packaging_fee,
-    packaging_mode: s.sale.packaging_mode, kitchen_send: s.sale.kitchen_send, auto_lock_minutes: s.sale.auto_lock_minutes, max_discount_pct: s.sale.max_discount_pct };
+    packaging_mode: s.sale.packaging_mode, kitchen_send: s.sale.kitchen_send, start_gate: s.sale.start_gate !== false, auto_lock_minutes: s.sale.auto_lock_minutes, max_discount_pct: s.sale.max_discount_pct };
   out.sound = s.sound;
   out.print = s.print;
   out.version = VERSION;

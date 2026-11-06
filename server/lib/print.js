@@ -68,7 +68,7 @@ export async function orderDocData(order, extra = {}) {
   const memberName = member ? `${member.first_name || member.nickname || ''} ${member.last_name || ''}`.trim() + ` (${member.member_no})` : '';
   return {
     ...(await storeData()),
-    bill_no: order.bill_no, queue_no: order.queue_no || '', dine_type: order.dine_type, dine_label: dineLabel(order.dine_type),
+    bill_no: order.bill_no, queue_no: order.queue_no || '', dine_type: order.dine_type, dine_label: dineLabel(order.dine_type), takeaway_mark: !!(s.print || {}).takeaway_mark,
     table: order.table_name || '', customer: order.customer_name || '', member: s.members.show_on_receipt ? memberName : '',
     member_name: memberName, staff: staff ? staff.name : (order.source !== 'pos' ? 'Mobile Ordering' : ''), datetime: fmtDate(order.paid_at || order.created_at),
     order_note: order.note || '', bowls: order.bowls,

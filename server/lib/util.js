@@ -38,6 +38,7 @@ export const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)
 export const DEFAULT_SETTINGS = {
   store: { name: 'Oppa Ramyeon', branch: 'สาขาหลัก', address: '', phone: '', tax_id: '', logo: '', footer: 'ขอบคุณที่อุดหนุน 감사합니다', contact_line: '' },
   sale: { tax_rate: 0, tax_inclusive: true, packaging_fee: 0, packaging_mode: 'per_bowl', service_charge: 0,
+    start_gate: true, // every new bill starts with "▶ เริ่มขาย" then a big ทานที่ร้าน / กลับบ้าน choice (also on the customer display)
     payment_methods: [{ id: 'cash', name: 'เงินสด', enabled: true }, { id: 'promptpay', name: 'QR พร้อมเพย์/โอน', enabled: true },
       { id: 'card', name: 'บัตร', enabled: true }, { id: 'other', name: 'อื่น ๆ', enabled: false }],
     kitchen_send: 'after_payment', auto_lock_minutes: 5, count_unit: 'ชาม', max_discount_pct: { cashier: 10, manager: 50, owner: 100 } },
@@ -76,7 +77,7 @@ export const DEFAULT_SETTINGS = {
     hours_note: '', map_url: '', facebook: '', instagram: '', tiktok: '', line_url: '', grab_url: '', lineman_url: '',
     show_menu: true, show_prices: true, featured: [] },
   theme: {},
-  print: { order: ['receipt', 'kitchen', 'merchant', 'queue'], auto_receipt: true, auto_merchant: true, auto_queue: false, kitchen_every_order: true, payqr_auto: 'no_display', mark_additions: false,
+  print: { order: ['receipt', 'kitchen', 'merchant', 'queue'], auto_receipt: true, auto_merchant: true, auto_queue: false, kitchen_every_order: true, payqr_auto: 'no_display', mark_additions: false, takeaway_mark: false,
     // merchant summary: 'normal' = the usual slip, 'compact' = short block on a continuous roll; printer '' = printers with the merchant role
     merchant_style: 'normal', merchant_printer_id: '', merchant_template_id: '',
     // compact roll at shift close: feed this many lines so it can be torn off; also cut when the printer has a cutter and this is on

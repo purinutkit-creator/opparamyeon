@@ -14,6 +14,7 @@ export async function settingsPage() {
     { k: 'footer', label: 'ข้อความท้ายบิล', wide: true }, { k: 'contact_line', label: 'LINE ID / ช่องทางติดต่อ' }, { k: 'logo', label: 'โลโก้', type: 'image' }], s.store);
   const sale = form([{ k: 'tax_rate', label: 'VAT %', type: 'number' }, { k: 'tax_inclusive', label: 'ราคารวม VAT แล้ว', type: 'bool' }, { k: 'packaging_fee', label: 'ค่าบรรจุภัณฑ์กลับบ้าน (บาท)', type: 'money' },
     { k: 'packaging_mode', label: 'คิดค่าบรรจุภัณฑ์', type: 'select', options: [['per_bowl', 'ต่อชามกลับบ้าน'], ['per_order', 'ต่อออเดอร์ที่มีกลับบ้าน']] },
+    { k: 'start_gate', label: '▶ ทุกบิลใหม่ต้องกด "เริ่มขาย" แล้วเลือก ทานที่ร้าน / กลับบ้าน (ลูกค้ากดเลือกที่จอลูกค้าได้)', type: 'bool', wide: true },
     { k: 'kitchen_send', label: 'ส่งครัว', type: 'select', options: [['after_payment', 'อัตโนมัติหลังรับชำระ'], ['manual', 'พนักงานกดส่งครัวก่อนชำระได้ (ที่ยังไม่ส่งจะส่งตอนชำระ)']] },
     { k: 'count_unit', label: 'ชื่อหน่วยที่นับ (แทนคำว่า "ชาม")', placeholder: 'ชาม / จาน / ที่ / แก้ว', hint: 'ใช้ในหน้าขาย ใบครัว ใบเสร็จ จอลูกค้า และรายงาน' }], s.sale);
   const pm = s.sale.payment_methods.map((m) => ({ ...m }));
@@ -88,6 +89,7 @@ function printOrderCard(s) {
   draw();
   const f = form([{ k: 'auto_receipt', label: 'พิมพ์ใบเสร็จลูกค้าอัตโนมัติหลังชำระ', type: 'bool' }, { k: 'auto_merchant', label: 'พิมพ์ใบสรุปร้านค้าอัตโนมัติ (มีบาร์โค้ดเลขบิล + QR รายละเอียด)', type: 'bool' },
     { k: 'auto_queue', label: 'พิมพ์ใบเลขคิวอัตโนมัติ', type: 'bool' },
+    { k: 'takeaway_mark', label: '🥡 สัญลักษณ์กลับบ้าน — พิมพ์ "กลับบ้าน" บนทุกรายการ แม้ทั้งบิลเป็นกลับบ้าน (ปิด = บอกที่หัวบิลครั้งเดียว · บิลที่มีทั้งทานที่ร้านและกลับบ้านยังบอกรายรายการ)', type: 'bool', wide: true },
     { k: 'payqr_auto', label: 'พิมพ์ใบ QR ชำระเงิน (พร้อมเพย์) เมื่อเลือกจ่ายด้วย QR', type: 'select', wide: true, options: [['no_display', 'อัตโนมัติ เฉพาะเครื่องที่ไม่มีจอลูกค้าเชื่อมอยู่ (แนะนำ)'], ['always', 'อัตโนมัติทุกครั้ง'], ['off', 'ไม่พิมพ์เอง (กดปุ่มพิมพ์ในหน้าชำระเงินเมื่อต้องการ)']],
       hint: 'ใบ QR มีแค่ QR พร้อมเพย์และยอดเงิน ให้ลูกค้าสแกนจ่าย · ปุ่ม "🖨 พิมพ์ QR ชำระเงิน" ในหน้าชำระเงินกดพิมพ์ได้ทุกเมื่อ' }], { payqr_auto: 'no_display', ...P });
   return card(h('h3', {}, 'ลำดับและเอกสารที่พิมพ์หลังชำระเงิน'),

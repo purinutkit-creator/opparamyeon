@@ -322,7 +322,7 @@ export async function kitchenTickets(order, lines, kind, staff) {
       const content = {
         kind: kind === 'add' && !markAdd ? 'new' : kind, kind_label: kind === 'void' ? '*** ยกเลิกรายการ ***' : markAdd ? '+++ สั่งเพิ่ม +++' : 'ออเดอร์ใหม่',
         bowl_part: bowlPart, cooker: cooker ? cooker.name : '', cooker_no: cooker ? cooker.no : null, cooker_ready: cooker ? new Date(cooker.end_at).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' }) + ' น.' : '',
-        queue_no: order.queue_no, bill_no: order.bill_no, dine_type: order.dine_type, dine_label: dineLabel(order.dine_type), table: order.table_name || '',
+        queue_no: order.queue_no, bill_no: order.bill_no, dine_type: order.dine_type, dine_label: dineLabel(order.dine_type), takeaway_mark: !!(settings.print || {}).takeaway_mark, table: order.table_name || '',
         customer: order.customer_name || '', staff: staffName, created_at: now(), datetime: fmtDate(now()), note: order.note || '', source: order.source,
         station: station.name, station_id: station.id, part_label: part.label, part: parts.length > 1 ? `ใบที่ ${part.index}/${part.count}` + (part.label ? ` · ${part.label}` : '') : part.label || '',
         lines: part.lines.map((l) => { const rn = renamedLine(l.name, l.options || [], 'kitchen'); return { name: rn.name, qty: l.qty, options: rn.options.map((o) => ({ group: o.group, name: o.name, price: o.price, addon: isAddon(o) })), note: l.note, dine_type: l.dine_type,
@@ -345,7 +345,7 @@ export async function kitchenTickets(order, lines, kind, staff) {
 }
 async function kitchenDocData(c) {
   return { store_name: '', ticket_kind: c.kind_label, not_new: c.kind !== 'new', bowl_part: c.bowl_part || '', cooker: c.cooker ? `ต้มโดย ${c.cooker}` : '', cooker_ready: c.cooker_ready ? `คาดว่าจะเสร็จตอน ${c.cooker_ready}` : '', queue_no: c.queue_no, received_time: c.received_time, count_unit: c.count_unit,
-    table_or_type: c.table ? `โต๊ะ: ${c.table}` : c.dine_type === 'takeaway' ? 'กลับบ้าน' : c.dine_label, dine_type: c.dine_type, dine_label: c.dine_label, table: c.table, customer: c.customer,
+    table_or_type: c.table ? `โต๊ะ: ${c.table}` : c.dine_type === 'takeaway' ? 'กลับบ้าน' : c.dine_label, dine_type: c.dine_type, dine_label: c.dine_label, takeaway_mark: !!c.takeaway_mark, table: c.table, customer: c.customer,
     station: c.station, ticket_part: c.part, bill_no: c.bill_no, datetime: c.datetime, staff: c.staff, order_note: c.note, bowls: c.bowls, reason: c.ref,
     items: c.lines.map((l) => ({ ...l, line_total: null })) };
 }
