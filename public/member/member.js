@@ -201,6 +201,15 @@ async function claimPage(tok) {
 }
 
 // ---------- pages ----------
+const tile = (href, icon, label, sub, badge = 0, onclick = null) => h('a', { class: 'tile', href, ...(onclick ? { onclick } : {}) },
+  h('b', { class: 'ti' }, icon, badge ? h('em', {}, String(badge)) : null), h('span', { class: 'tl' }, label), h('small', {}, sub));
+// the member barcode big and bright for the scanner at the counter
+function bigBarcode(m) {
+  const c = h('canvas', { width: 900, height: 220 });
+  const ov = h('div', { class: 'bc-full', onclick: () => ov.remove() }, h('div', { class: 'bc-sheet' }, h('div', { class: 'bc-head' }, h('b', {}, cfg.store.name), h('span', {}, tx('แตะเพื่อปิด'))),
+    c, h('div', { class: 'bc-no big' }, m.member_no), h('div', { class: 'muted' }, `${m.first_name || ''} ${m.last_name || ''}`.trim()), h('div', { class: 'small muted' }, tx('ให้พนักงานสแกน หรือเพิ่มความสว่างหน้าจอถ้าสแกนไม่ติด'))));
+  document.body.append(ov); drawBarcode(c, m.member_no);
+}
 function homePage() {
   const m = me;
   const tier = m.tier || {};
@@ -209,6 +218,7 @@ function homePage() {
   shell(
     suggest ? h('div', { class: 'card', style: { background: 'var(--warn-soft)' } }, h('strong', {}, tx('แนะนำให้เปลี่ยนรหัสผ่าน')), h('p', { class: 'small' }, tx('คุณยังใช้รหัสเริ่มต้น (4 ตัวท้ายของเบอร์) — เปลี่ยนตอนนี้หรือภายหลังก็ได้')),
       h('div', { class: 'row' }, h('a', { class: 'btn sm primary', href: '#/account' }, tx('เปลี่ยนตอนนี้')), h('button', { class: 'btn sm', onclick: () => { store.del('suggest_pw'); homePage(); } }, tx('ไว้ภายหลัง')))) : null,
+    h('div', { class: 'home-cols' }, h('div', { class: 'col' },
     h('div', { class: 'mcard', id: 'mcard', style: `--tier:${/^#[0-9a-f]{3,8}$/i.test(tier.color || '') ? tier.color : '#e8321f'}` }, h('i', { class: 'holo' }),
       h('div', { class: 'row between' }, h('div', { class: 'chip' }), h('span', { class: 'badge', style: { background: '#fff', color: '#111' } }, tier.icon || '⭐', ' ', tier.name || 'Member')),
       h('div', { style: { marginTop: '1em' } }, h('div', { class: 'small' }, tx('แต้มคงเหลือ')), h('div', { class: 'pts', id: 'mpts' }, '0'),
@@ -217,16 +227,23 @@ function homePage() {
       h('div', { class: 'no', style: { marginTop: '1em' } }, `${m.first_name || ''} ${m.last_name || ''} · ${m.member_no}`),
       pr ? h('div', { style: { marginTop: '.6em' } }, h('div', { class: 'small' }, tx('ความคืบหน้าสู่ {0} {1}%', pr.name, m.progress.pct)), h('div', { class: 'prog' }, h('i', { style: `--w:${Math.max(0, Math.min(100, Number(m.progress.pct) || 0))}%` })),
         h('div', { class: 'small' }, m.progress.need.map((n) => (n.kind === 'spent' ? tx('ยอดซื้อ {0}/{1} บาท', baht(n.have), baht(n.need)) : tx('มาใช้บริการ {0}/{1} ครั้ง', n.have, n.need))).join(' · '))) : h('div', { class: 'small', style: { marginTop: '.6em' } }, tx('คุณอยู่ระดับสูงสุดแล้ว 🎉'))),
-    h('div', { class: 'barcode-card' }, h('canvas', { id: 'mbc', width: 320, height: 70 }), h('div', { class: 'small muted' }, tx('แสดงบาร์โค้ดนี้หรือบอกเบอร์โทรเพื่อสะสมแต้มที่ร้าน'))),
+    // tap the barcode → full screen, easy for the cashier's scanner
+    h('button', { class: 'barcode-card', type: 'button', onclick: () => bigBarcode(m) },
+      h('div', { class: 'bc-head' }, h('span', {}, tx('บัตรสมาชิก')), h('span', { class: 'bc-zoom' }, tx('แตะเพื่อขยาย ⤢'))),
+      h('canvas', { id: 'mbc', width: 360, height: 76 }), h('div', { class: 'bc-no' }, m.member_no),
+      h('div', { class: 'small muted' }, tx('แสดงบาร์โค้ดนี้หรือบอกเบอร์โทรเพื่อสะสมแต้มที่ร้าน'))),
+    ), h('div', { class: 'col' },
     h('a', { class: 'scan-cta', href: '#/scan' }, h('span', { class: 'ic' }, scanIcon()),
       h('span', {}, h('b', {}, tx('สแกน QR ใบเสร็จ สะสมแต้ม')), h('small', {}, tx('เปิดกล้องแล้วส่องที่ QR ท้ายใบเสร็จ รับแต้มทันที'))), h('span', { class: 'go' }, '›')),
+    h('div', { class: 'sec-title' }, tx('เมนูลัด')),
     h('div', { class: 'quick' },
-      h('a', { class: 'btn', href: '#/rewards' }, h('b', {}, '🎁'), tx('แลกของรางวัล')),
-      h('a', { class: 'btn', href: '#/history' }, h('b', {}, '🧾'), tx('ประวัติการซื้อ')),
-      h('a', { class: 'btn', href: '#/coupons' }, h('b', {}, '🎟️'), tx('คูปอง ({0})', m.coupons_active)),
-      cfg.mobile ? h('a', { class: 'btn', href: '#/contact', onclick: (e) => { e.preventDefault(); toast(tx('สแกน QR สั่งอาหารที่โต๊ะ หรือขอใบ QR จากพนักงาน'), 'info', 5000); } }, h('b', {}, '🍜'), tx('สั่งอาหาร')) : null,
-      h('a', { class: 'btn', href: '#/points' }, h('b', {}, '⭐'), tx('ประวัติแต้ม')),
-      h('a', { class: 'btn', href: '#/benefits' }, h('b', {}, '👑'), tx('สิทธิประโยชน์'))));
+      tile('#/rewards', '🎁', tx('แลกของรางวัล'), tx('ใช้แต้มแลกของ')),
+      tile('#/coupons', '🎟️', tx('คูปองของฉัน'), m.coupons_active ? tx('ใช้ได้ {0} ใบ', m.coupons_active) : tx('ยังไม่มีคูปอง'), m.coupons_active),
+      tile('#/history', '🧾', tx('ประวัติการซื้อ'), tx('บิลและแต้มที่ได้')),
+      tile('#/points', '⭐', tx('ประวัติแต้ม'), tx('รับ · ใช้ · หมดอายุ')),
+      tile('#/benefits', '👑', tx('สิทธิประโยชน์'), tier.name ? tx('ระดับ {0}', tier.name) : tx('ระดับสมาชิก')),
+      cfg.mobile ? tile('#/contact', '🍜', tx('สั่งอาหาร'), tx('สแกน QR ที่โต๊ะ'), 0, (e) => { e.preventDefault(); toast(tx('สแกน QR สั่งอาหารที่โต๊ะ หรือขอใบ QR จากพนักงาน'), 'info', 5000); })
+        : tile('#/contact', '📍', tx('ติดต่อร้าน'), tx('ที่อยู่ · เบอร์โทร'))))));
   drawBarcode($('#mbc'), m.member_no);
   // points count up from what the member saw last time (first visit: from 0)
   const pts = $('#mpts'); const seen = Number(store.get('seen_points') ?? 0);
