@@ -513,8 +513,8 @@ function renderCartEta() {
   const el = $('#cartEta'); if (!el) return;
   const e = cartEta();
   el.hidden = !e;
-  if (e) el.replaceChildren(h('span', {}, '⏱'), h('div', {}, h('b', {}, `ส่งตอนนี้ คาดว่าจะเสร็จตอน ${clockAt(e.at.getTime() + cookSkew)} น.`),
-    h('small', {}, `${e.bowls} ${U()} → ${e.machines.map((no) => (st.cookers.machines[no - 1] || {}).name || 'เครื่อง ' + no).join(' + ')}`)));
+  if (e) { el.title = `${e.bowls} ${U()} → ${e.machines.map((no) => (st.cookers.machines[no - 1] || {}).name || 'เครื่อง ' + no).join(' + ')}`;
+    el.replaceChildren('🍜 ใช้เวลา ~', h('b', {}, e.mins), ' นาที · เสร็จ ', h('b', {}, clockAt(e.at.getTime() + cookSkew))); }
 }
 // after ส่งครัว / payment: which cooker each bowl went to
 function cookerPopup(jobs, title) {
@@ -914,7 +914,7 @@ const gateOn = () => st.settings && st.settings.sale.start_gate !== false && st.
 const gateStep = () => (st.gate && st.gate.cart === st.cart.cart_id ? st.gate.step : 'start');
 function startDine(d) {
   if (!gateOn()) return;
-  st.cart.dine_type = d; st.cart.started = true; st.gate = null;
+  st.cart.dine_type = d; st.cart.started = true; st.gate = null; st.cart.opened_at = Date.now();
   saveCart(); renderCart(); pushDisplay();
   toast(d === 'takeaway' ? '🥡 กลับบ้าน' : '🍽️ ทานที่ร้าน', 'ok', 1200);
 }
@@ -935,22 +935,35 @@ function renderGate() {
   const ng = h('div', { class: 'start-gate', 'data-step': step, 'data-cart': st.cart.cart_id, 'data-lang': st.cart.lang || 'th' }, h('div', { class: 'sg-card' }, ...body));
   if (g) g.replaceWith(ng); else main.appendChild(ng);
 }
+// "mm:ss" (or "h:mm:ss") since the bill was started
+function elapsed(cart) {
+  if (!cart.opened_at) return '0:00';
+  const s = Math.max(0, Math.floor((Date.now() - cart.opened_at) / 1000)), hh = Math.floor(s / 3600), mm = Math.floor((s % 3600) / 60), ss = String(s % 60).padStart(2, '0');
+  return hh ? `${hh}:${String(mm).padStart(2, '0')}:${ss}` : `${mm}:${ss}`;
+}
+setInterval(() => { const el = $('#cartClock'); if (el && st.cart) el.textContent = '⏱ ' + elapsed(st.cart); }, 1000);
 function renderCartNow() {
   const c = $('#cart'); if (!c) return;
   const cart = st.cart;
+  if (cart.lines.length && !cart.opened_at) { cart.opened_at = Date.now(); saveCart(); }
+  const qNext = cart.queue_no ? '' : queuePreview('cart');
   const t = previewTotals();
   const ch = lineChanges(cart.lines, fxKey);
   const mc = $('#mcart'); if (mc) mc.textContent = `ตะกร้า ${cart.lines.reduce((s, l) => s + l.qty, 0)} รายการ · ${baht(t.total)} ฿`;
   const setDine = (d) => { cart.dine_type = d; for (const l of cart.lines) if (!l.sent_qty) l.dine_type = d; saveCart(); renderCart(); };
   const tables = st.tables || [];
   c.replaceChildren(
-    h('div', { class: 'cart-head' },
-      h('div', { class: 'row between' }, h('strong', {}, cart.order_id ? `บิล ${cart.bill_no || ''}` : 'บิลใหม่', cart.queue_no ? h('span', { class: 'badge brand' }, ' คิว ' + cart.queue_no) : null),
+    h('div', { class: 'cart-head compact' },
+      // queue number first (the one this bill will get, until it is paid), how long the bill has been open
+      h('div', { class: 'ch-top' },
+        h('div', { class: 'ch-q' + (cart.queue_no ? '' : ' next') }, h('small', {}, cart.queue_no ? 'คิว' : 'คิวถัดไป'), h('b', { id: 'cartQ' }, cart.queue_no || qNext || '—')),
+        h('div', { class: 'ch-bill' }, h('b', {}, cart.order_id ? `บิล ${cart.bill_no || ''}` : 'บิลใหม่'), h('span', { class: 'ch-clock', id: 'cartClock', title: 'เปิดบิลมาแล้ว' }, '⏱ ' + elapsed(cart))),
         h('button', { class: 'btn sm', onclick: clearCart }, cart.order_id ? 'ปิดบิลนี้' : 'ล้างบิล')),
-      h('div', { class: 'seg' }, h('button', { class: cart.dine_type === 'dine_in' ? 'on' : '', onclick: () => setDine('dine_in') }, '🍽️ ทานที่ร้าน'),
-        h('button', { class: cart.dine_type === 'takeaway' ? 'on takeaway' : '', onclick: () => setDine('takeaway') }, '🥡 กลับบ้าน')),
-      langBar(false),
-      h('div', { class: 'row' },
+      h('div', { class: 'ch-row' },
+        h('div', { class: 'seg' }, h('button', { class: cart.dine_type === 'dine_in' ? 'on' : '', onclick: () => setDine('dine_in') }, '🍽️ ทานที่ร้าน'),
+          h('button', { class: cart.dine_type === 'takeaway' ? 'on takeaway' : '', onclick: () => setDine('takeaway') }, '🥡 กลับบ้าน')),
+        h('select', { class: 'lang-sel', title: 'ภาษาจอลูกค้า', onchange: (e) => setLang(e.target.value) }, DLANGS.map(([cd, n]) => h('option', { value: cd, selected: (cart.lang || 'th') === cd }, '🌐 ' + n)))),
+      h('div', { class: 'row ch-chips' },
         h('button', { class: 'chip', onclick: pickTable }, cart.table_name ? `โต๊ะ ${cart.table_name}` : '+ โต๊ะ'),
         h('button', { class: 'chip', onclick: async () => { const v = await promptBox('ชื่อลูกค้า', { value: cart.customer_name, required: false }); if (v !== null) { cart.customer_name = v; saveCart(); renderCart(); } } }, cart.customer_name ? `👤 ${cart.customer_name}` : '+ ชื่อลูกค้า'),
         h('button', { class: 'chip', onclick: async () => { const v = await promptBox('หมายเหตุออเดอร์', { value: cart.note, required: false }); if (v !== null) { cart.note = v; saveCart(); renderCart(); } } }, cart.note ? `📝 ${cart.note}` : '+ หมายเหตุ'),
@@ -958,13 +971,15 @@ function renderCartNow() {
       cart.member ? memberBox(cart, t) : null),
     h('div', { class: 'lines' }, cart.lines.length ? cart.lines.map((l) => lineView(l, ch))
       : h('div', { class: 'cart-empty' }, h('img', { src: '/assets/bowl.svg', alt: '' }), h('b', {}, 'ยังไม่มีสินค้าในบิล'), h('span', {}, 'แตะเมนูทางซ้าย หรือสแกนบาร์โค้ดได้เลย'))),
-    h('div', { class: 'cart-eta', id: 'cartEta', hidden: true }),
+    h('div', { class: 'cart-sum' },
+      h('span', {}, h('b', {}, cart.lines.length), ' รายการ'), h('span', {}, h('b', {}, cart.lines.reduce((s, l) => s + l.qty, 0)), ' ชิ้น'), h('span', {}, h('b', {}, t.bowls), ' ' + U()),
+      h('span', { class: 'cart-eta', id: 'cartEta', hidden: true })),
     h('div', { class: 'totals' },
-      row('รวมสินค้า', baht(t.items_total)),
+      t.items_total !== t.total ? row('รวมสินค้า', baht(t.items_total)) : null,
       t.discount ? row('ส่วนลด' + (t.tierAmt ? ' (รวมสิทธิ์ Tier)' : ''), '-' + baht(t.discount)) : null,
       t.packaging ? row('ค่าบรรจุภัณฑ์', baht(t.packaging)) : null,
       t.tax ? row(st.settings.sale.tax_inclusive ? 'VAT (รวมในราคา)' : 'VAT', baht(t.tax)) : null,
-      row(h('span', {}, ('จำนวน' + U() + ' '), h('strong', {}, t.bowls)), h('span', { class: 'grand num', id: 'cartGrand' }, baht(prevGrand ?? t.total) + ' ฿'))),
+      row(h('span', { class: 'muted' }, 'ยอดสุทธิ'), h('span', { class: 'grand num', id: 'cartGrand' }, baht(prevGrand ?? t.total) + ' ฿'))),
     h('div', { class: 'actions' },
       h('button', { class: 'btn', onclick: () => saveOrder('hold'), disabled: !cart.lines.length }, '⏸ พักบิล'),
       h('button', { class: 'btn', onclick: () => saveOrder('send'), disabled: !cart.lines.length }, '🔥 ส่งครัว'),
@@ -1074,7 +1089,7 @@ function loadOrderIntoCart(o) {
     member: o.member ? { ...o.member, tier: null } : null, discount: o.discount_info && o.discount_info.manual ? { type: o.discount_info.manual.type, value: o.discount_info.manual.value } : null,
     lines: o.items.filter((i) => i.qty - i.void_qty > 0).map((i) => ({ key: i.id, id: i.id, id_locked: true, product_id: i.product_id, name: i.name, qty: i.qty - i.void_qty, unit_price: i.unit_price,
       options: i.options, note: i.note, dine_type: i.dine_type, bowl_group: i.bowl_group, bowl_count: i.bowl_count, sent_qty: i.sent_qty })), source: o.source, status: o.status,
-    cook_tickets: (o.cooker_jobs || []).map((j) => j.ticket_id) };
+    cook_tickets: (o.cooker_jobs || []).map((j) => j.ticket_id), opened_at: Date.parse(o.created_at) || Date.now() };
   st.sock && st.sock.emit('display:cart_changed', { cart_id: st.cart.cart_id });
 }
 
@@ -1366,6 +1381,7 @@ function queuePreview(phase) {
     st.qpeekBusy = true;
     api.get('/queue/peek?dine=' + dine).then((r) => {
       st.qpeek = { dine, no: r.queue_no || '', at: Date.now() };
+      const qel = $('#cartQ'); if (qel && !st.cart.queue_no) qel.textContent = st.qpeek.no || '—';
       if (st.qpeek.no !== (qp && qp.no) && !st.displayHold && ['cart', 'pay', 'dine'].includes(lastPhase)) pushDisplay(lastPhase === 'pay' && st.lastPay ? st.lastPay : {});
     }).catch(() => {}).finally(() => { st.qpeekBusy = false; });
   }
