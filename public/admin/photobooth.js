@@ -19,7 +19,24 @@ export async function photoboothPage() {
     { k: 'min_spend', label: 'ยอดซื้อขั้นต่ำต่อใบเสร็จ (บาท)', type: 'number' },
     { k: 'sessions_per_receipt', label: 'ถ่ายได้กี่ครั้งต่อใบเสร็จ', type: 'number' },
     { k: 'receipt_hours', label: 'ใบเสร็จใช้แลกได้ภายใน (ชั่วโมงหลังชำระ)', type: 'number' },
+    { k: 'coupon_code', label: 'บนใบเสร็จพิมพ์เป็น', type: 'select', options: [['qr', 'QR Code'], ['barcode', 'บาร์โค้ด'], ['both', 'ทั้ง QR และบาร์โค้ด']] },
+    { k: 'coupon_layout', label: 'จัดวางกรอบสิทธิ์ถ่ายรูป', type: 'select', options: [['center', 'ตรงกลาง (QR ใหญ่กลางกรอบ)'], ['side', 'QR ด้านซ้าย ข้อความด้านขวา']] },
   ], v);
+  // what the coupon looks like at the end of a receipt, drawn by the same code the printer uses
+  const prev58 = h('div'), prev80 = h('div');
+  const drawPreview = async () => {
+    const { renderDoc } = await import('/shared/render.js');
+    const pv = promo.value();
+    const data = { photo_url: location.origin + '/photo/#r=B261107-0005.4072f2e65dd1', photo_amount: '207.00', photo_min: baht(Math.round(Number(pv.min_spend || 0) * 100)),
+      photo_terms: `ใช้ได้ ${pv.sessions_per_receipt || 1} ครั้ง${Number(pv.receipt_hours) ? ` ภายใน ${pv.receipt_hours} ชม.` : ''}`, photo_kind: pv.coupon_code || 'qr', photo_layout: pv.coupon_layout || 'center', photo_code: '992611070005123456' };
+    for (const [box, paper] of [[prev58, 58], [prev80, 80]]) {
+      const r = await renderDoc({ paper, elements: [{ type: 'photo', size_mm: 28, size: 24 }] }, data);
+      r.canvas.style.width = paper === 58 ? '192px' : '288px'; r.canvas.style.border = '1px solid var(--line)'; r.canvas.style.background = '#fff';
+      box.replaceChildren(h('div', { class: 'small muted' }, `${paper} มม.`), r.canvas);
+    }
+  };
+  promo.addEventListener('change', () => drawPreview().catch(() => {}));
+  drawPreview().catch(() => {});
   const shoot = form([
     { k: 'countdown', label: 'นับถอยหลังเริ่มต้น (วินาที)', type: 'select', options: [['3', '3'], ['5', '5'], ['10', '10']] },
     { k: 'gap', label: 'เวลาระหว่างรูป (วินาที)', type: 'number' },
@@ -81,7 +98,8 @@ export async function photoboothPage() {
   const pg = page('📸 ตู้ถ่ายรูป (Photobooth)',
     card(h('h3', {}, 'วันนี้'), h('div', { class: 'cards' }, st(rep.today)), h('p', { class: 'small muted' }, `ทั้งหมด ${rep.total.sessions} ครั้ง · พิมพ์ ${rep.total.prints} ใบ · กระดาษ ${(rep.total.paper_mm / 1000).toFixed(2)} ม.`)),
     card(h('h3', {}, '🎁 โปรโมชั่น: ซื้อครบ แล้วถ่ายรูปฟรี'), promo,
-      h('p', { class: 'small muted' }, 'ใบเสร็จที่ยอดถึงเกณฑ์จะพิมพ์ QR "📸 ถ่ายรูปฟรี" ให้อัตโนมัติ · ลูกค้าสแกนที่ตู้ ระบบตรวจว่าเป็นบิลจริง ชำระแล้ว ยอดถึง และยังไม่เคยใช้ แล้วให้ถ่ายได้ทันที · QR สะสมแต้มบนใบเสร็จก็ใช้ได้')),
+      h('div', { class: 'row', style: { gap: '18px', alignItems: 'flex-start', margin: '.6em 0' } }, prev58, prev80),
+      h('p', { class: 'small muted' }, 'ใบเสร็จที่ยอดถึงเกณฑ์จะพิมพ์กรอบสิทธิ์ถ่ายรูปท้ายใบให้อัตโนมัติ (บาร์โค้ด = ตัวเลข 18 หลักที่มีรหัสยืนยัน ปลอมไม่ได้) · ลูกค้าสแกนที่ตู้ ระบบตรวจว่าเป็นบิลจริง ชำระแล้ว ยอดถึง และยังไม่เคยใช้ แล้วให้ถ่ายได้ทันที · QR สะสมแต้มบนใบเสร็จก็ใช้ได้')),
     card(h('h3', {}, '🎞 การถ่าย'), shoot, h('div', { style: { marginTop: '.6em' } }, h('b', {}, 'แบบรูปที่ให้เลือก'), layBox)),
     card(h('h3', {}, '🎨 หน้าตาและข้อความบนรูป'), look),
     card(h('h3', {}, '🖨 เครื่องพิมพ์'), prn, h('p', { class: 'small muted' }, 'เลือกเครื่องพิมพ์ของ POS ได้เลย — รูปจะออกที่เครื่องพิมพ์ชื่อนั้น ผ่านเครื่อง POS ที่เชื่อมเครื่องพิมพ์นั้นและเปิดหน้าขายอยู่ (ใช้ร่วมกับใบเสร็จได้ เรียงคิวกันไม่ชนกัน) · หรือเชื่อมที่ตัวตู้: แตะชื่อร้านบนตู้รัว ๆ 5 ครั้ง · ใช้ความกว้างจริงของเครื่อง (58 มม. = 384 จุด, 80 มม. = 576 จุด) · ถ้ายังไม่มีเครื่องพิมพ์ ตู้จะขึ้น DEMO และไม่บอกว่าพิมพ์สำเร็จ')),

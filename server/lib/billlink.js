@@ -95,3 +95,10 @@ export async function slipPassCheck(tok, amount) {
   const want = Buffer.from(crypto.createHmac('sha256', await secret()).update(`slip:${m[1]}.${m[2]}.${m[3]}`).digest('hex').slice(0, 20));
   return want.length === m[4].length && crypto.timingSafeEqual(want, Buffer.from(m[4])) ? m[1] : null;
 }
+
+// photo booth barcode on the receipt: 18 digits "99" + 10 digits of the bill number + 6-digit signature (narrow Code128 set C)
+export async function photoCode(billNo) {
+  const d = String(billNo).replace(/\D/g, '').slice(-10).padStart(10, '0');
+  const sig = parseInt(crypto.createHmac('sha256', await secret()).update('pb:' + billNo).digest('hex').slice(0, 8), 16) % 1e6;
+  return '99' + d + String(sig).padStart(6, '0');
+}

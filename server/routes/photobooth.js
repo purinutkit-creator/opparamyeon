@@ -7,7 +7,7 @@ import { db } from '../db.js';
 import { ah, id, now, token, bad, notFound, conflict, forbidden, getSettings, randomDigits, rateLimit, audit, addMinutes } from '../lib/util.js';
 import { staffAuth, can } from '../lib/auth.js';
 import { enqueue, publicPrinter, printerOptions, reprint } from '../lib/print.js';
-import { billFromToken } from '../lib/billlink.js';
+import { billFromToken, photoCode } from '../lib/billlink.js';
 import { saveFile } from './system.js';
 
 const r = Router();
@@ -90,6 +90,15 @@ async function orderFromCode(raw) {
   let m = /[#&?]r=([^&\s]+)/.exec(s) || /\/b\/#([^\s]+)/.exec(s);
   const signed = m ? decodeURIComponent(m[1]) : /^[A-Z0-9-]+\.[\w-]+$/i.test(s) ? s : null;
   if (signed) { const bill = await billFromToken(signed); if (bill) return db.get('SELECT * FROM orders WHERE bill_no = ?', [bill]); }
+  // the barcode: find the recent bill with those digits, then check the signature
+  m = /^99(\d{10})(\d{6})$/.exec(s.replace(/\s+/g, ''));
+  if (m) {
+    const since = new Date(Date.now() - 31 * 86400e3).toISOString();
+    for (const o of await db.all("SELECT * FROM orders WHERE status = 'paid' AND paid_at > ? AND bill_no LIKE ? ORDER BY paid_at DESC LIMIT 50", [since, '%' + m[1].slice(-4)])) {
+      if (await photoCode(o.bill_no) === m[0]) return o;
+    }
+    return null;
+  }
   m = /\/claim\/([A-Za-z0-9_-]{10,})/.exec(s);
   if (m) return db.get('SELECT * FROM orders WHERE claim_token = ?', [m[1]]);
   return null;

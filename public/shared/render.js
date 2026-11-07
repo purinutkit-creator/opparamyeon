@@ -275,19 +275,45 @@ export async function renderDoc(tpl, data, opts = {}) {
           break;
         }
         case 'photo': {
-          // photo booth coupon at the end of a receipt that reached the amount: a bold double frame so nobody misses it
-          const m = images.get(e);
-          if (!m) break;
+          // photo booth coupon at the end of a receipt that reached the amount: a bold double frame so nobody misses it.
+          // code: QR / barcode / both · layout: centred, or the code on the left with the details beside it
+          const kind = data.photo_kind || 'qr', side = data.photo_layout === 'side';
+          const m = kind !== 'barcode' ? images.get(e) : null;
+          const bc = kind !== 'qr' && data.photo_code ? data.photo_code : null;
+          if (!m && !bc) break;
           const size = e.size || 24, pad = 14, x0 = margin + pad, w = inner - pad * 2, y0 = y;
+          const barcodeAt = (v, bx, bw, bh) => {
+            const mods = code128(v), total = mods.reduce((a, b) => a + b, 0) + 16, mw = Math.max(1, Math.floor(bw / total));
+            let x = bx + Math.round((bw - (total - 16) * mw) / 2);
+            if (draw) { ctx.fillStyle = '#000'; mods.forEach((wd, k) => { if (k % 2 === 0) ctx.fillRect(x, y, wd * mw, bh); x += wd * mw; }); }
+            y += bh + 2;
+            text(v.replace(/(\d{2})(\d{10})(\d{6})/, '$1 $2 $3'), e, { size: Math.round(size * 0.7), align: 'center', x0: bx, w: bw });
+          };
           y += 8;
-          text(e.title ? tr(e.title) : '★ THERMAL PHOTO BOOTH ★', e, { size: Math.round(size * 1.1), weight: 800, align: 'center', x0: margin + 6, w: inner - 12, invert: true });
+          text(e.title ? tr(e.title) : '★ THERMAL PHOTO BOOTH ★', e, { size: Math.round(size * (inner < 420 ? 0.82 : 1.05)), weight: 800, align: 'center', x0: margin + 6, w: inner - 12, invert: true });
           y += 6;
-          text(tr('คุณได้สิทธิ์ถ่ายรูปฟรี!'), e, { size: Math.round(size * 1.45), weight: 800, align: 'center', x0, w });
-          if (data.photo_amount) text(tr('ยอดซื้อ {0} บาท ถึงเกณฑ์ {1} บาท', data.photo_amount, data.photo_min), e, { size: Math.round(size * 0.8), align: 'center', x0, w });
-          y += 4;
-          qrAt(m, e.size_mm || 28, 'center', x0, w);
-          text(e.caption ? tr(e.caption) : tr('สแกน QR นี้ที่ตู้ถ่ายรูป'), e, { size: Math.round(size * 0.95), weight: 700, align: 'center', x0, w });
-          if (data.photo_terms) text(data.photo_terms, e, { size: Math.round(size * 0.72), align: 'center', x0, w });
+          const details = (tx0, tw, align) => {
+            text(tr('คุณได้สิทธิ์ถ่ายรูปฟรี!'), e, { size: Math.round(size * (side ? 1.15 : 1.45)), weight: 800, align, x0: tx0, w: tw });
+            if (data.photo_amount) text(tr('ยอดซื้อ {0} บาท', data.photo_amount), e, { size: Math.round(size * 0.82), align, x0: tx0, w: tw });
+            if (data.photo_min) text(tr('ถึงเกณฑ์ {0} บาท', data.photo_min), e, { size: Math.round(size * 0.82), align, x0: tx0, w: tw });
+            if (data.photo_terms) text(data.photo_terms, e, { size: Math.round(size * 0.72), align, x0: tx0, w: tw });
+          };
+          if (side && m) {
+            // like a loyalty card: QR in a box with a black label on the left, the details on the right
+            const colW = Math.round(w * 0.46), gapX = Math.round(w * 0.05), top = y;
+            qrAt(m, colW / DOTS_PER_MM, 'center', x0, colW);
+            text(e.caption ? tr(e.caption) : tr('สแกนที่ตู้ถ่ายรูป'), e, { size: Math.round(size * 0.72), weight: 800, align: 'center', x0, w: colW, invert: true });
+            const leftEnd = y; y = top + 4;
+            details(x0 + colW + gapX, w - colW - gapX, 'left');
+            y = Math.max(leftEnd, y) + 6;
+            if (bc) barcodeAt(bc, x0, w, Math.round(size * 2.4));
+          } else {
+            details(x0, w, 'center');
+            y += 4;
+            if (m) qrAt(m, e.size_mm || 28, 'center', x0, w);
+            if (bc) { y += m ? 4 : 0; barcodeAt(bc, x0, w, Math.round(size * 2.6)); }
+            text(e.caption ? tr(e.caption) : tr('สแกนที่ตู้ถ่ายรูป'), e, { size: Math.round(size * 0.95), weight: 700, align: 'center', x0, w });
+          }
           y += 10;
           if (draw) {
             ctx.strokeStyle = '#000';

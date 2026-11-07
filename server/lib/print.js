@@ -1,7 +1,7 @@
 import { db, J, S } from '../db.js';
 import { id, now, nextCounter, emit, getSettings, notFound, conflict, bad } from './util.js';
 import { DEFAULT_TEMPLATES } from './templates.js';
-import { billToken } from './billlink.js';
+import { billToken, photoCode } from './billlink.js';
 import { previewPoints } from './members.js';
 import { dineLabel, baht, maskPhone } from '../../public/shared/core.js';
 
@@ -62,6 +62,9 @@ export async function receiptDocData(order, extra = {}) {
   if (pb.enabled && pb.require_receipt && order.status === 'paid' && order.total - (order.refunded_amount || 0) >= (pb.min_spend || 0)) {
     d.photo_url = `${process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || ''}/photo/#r=${await billToken(order.bill_no)}`;
     d.photo_amount = baht(order.total - (order.refunded_amount || 0)); d.photo_min = baht(pb.min_spend || 0);
+    d.photo_kind = ['qr', 'barcode', 'both'].includes(pb.coupon_code) ? pb.coupon_code : 'qr';
+    d.photo_layout = pb.coupon_layout === 'side' ? 'side' : 'center';
+    if (d.photo_kind !== 'qr') d.photo_code = await photoCode(order.bill_no);
     d.photo_terms = `ใช้ได้ ${pb.sessions_per_receipt || 1} ครั้ง${pb.receipt_hours ? ` ภายใน ${pb.receipt_hours} ชม.` : ''}`;
   }
   const lang = order.lang;

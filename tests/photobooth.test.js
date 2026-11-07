@@ -46,6 +46,15 @@ test('ตู้ถ่ายรูป: ซื้อครบได้ QR บน�
   const fin2 = (await S.call('POST', `/api/photobooth/sessions/${qr2.session_id}/finish`, { print_image: PNG, consent: false }, { token: booth })).body;
   assert.equal(fin2.download_url, null);
   assert.equal((await S.call('GET', '/api/public/photo/' + qr2.download_url.split('#d=')[1])).status, 404);
+  // barcode on the receipt (18 digits, signed): the booth accepts it, a made-up one is refused
+  await S.call('PUT', '/api/settings/photobooth', { value: { coupon_code: 'both', coupon_layout: 'side' } }, { token: owner });
+  const o3 = (await S.call('POST', '/api/orders/checkout', { idempotency_key: key(), cart: { lines: [line('p_d001', 1)] }, payments: [{ method: 'cash', amount: 1e6, received: 1e6 }], print: { receipt: true } }, { token: owner, terminal: 'pos1' })).body;
+  const d3 = JSON.parse((await db.get("SELECT payload FROM print_jobs WHERE ref_id = ? AND doc_type = 'receipt'", [o3.id])).payload).data;
+  assert.match(d3.photo_code, /^99\d{16}$/); assert.equal(d3.photo_layout, 'side'); assert.equal(d3.photo_kind, 'both');
+  const fake = d3.photo_code.slice(0, 12) + String((Number(d3.photo_code.slice(12)) + 1) % 1e6).padStart(6, '0');
+  assert.equal((await S.call('POST', '/api/photobooth/redeem', { code: fake }, { token: booth })).body.code, 'bad_code');
+  const r3 = await S.call('POST', '/api/photobooth/redeem', { code: d3.photo_code }, { token: booth });
+  assert.equal(r3.status, 200, JSON.stringify(r3.body)); assert.equal(r3.body.bill_no, o3.bill_no);
   // report + reprint
   const rep = (await S.call('GET', '/api/photobooth/report', undefined, { token: owner })).body;
   assert.ok(rep.today.sessions >= 2 && rep.today.prints >= 2);
