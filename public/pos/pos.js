@@ -958,6 +958,7 @@ function renderCartNow() {
       h('div', { class: 'ch-top' },
         h('div', { class: 'ch-q' + (cart.queue_no ? '' : ' next') }, h('small', {}, cart.queue_no ? 'คิว' : 'คิวถัดไป'), h('b', { id: 'cartQ' }, cart.queue_no || qNext || '—')),
         h('div', { class: 'ch-bill' }, h('b', {}, cart.order_id ? `บิล ${cart.bill_no || ''}` : 'บิลใหม่'), h('span', { class: 'ch-clock', id: 'cartClock', title: 'เปิดบิลมาแล้ว' }, '⏱ ' + elapsed(cart))),
+        memberCta(cart, t),
         h('button', { class: 'btn sm', onclick: clearCart }, cart.order_id ? 'ปิดบิลนี้' : 'ล้างบิล')),
       h('div', { class: 'ch-row' },
         h('div', { class: 'seg' }, h('button', { class: cart.dine_type === 'dine_in' ? 'on' : '', onclick: () => setDine('dine_in') }, '🍽️ ทานที่ร้าน'),
@@ -967,8 +968,7 @@ function renderCartNow() {
         h('button', { class: 'chip', onclick: pickTable }, cart.table_name ? `โต๊ะ ${cart.table_name}` : '+ โต๊ะ'),
         h('button', { class: 'chip', onclick: async () => { const v = await promptBox('ชื่อลูกค้า', { value: cart.customer_name, required: false }); if (v !== null) { cart.customer_name = v; saveCart(); renderCart(); } } }, cart.customer_name ? `👤 ${cart.customer_name}` : '+ ชื่อลูกค้า'),
         h('button', { class: 'chip', onclick: async () => { const v = await promptBox('หมายเหตุออเดอร์', { value: cart.note, required: false }); if (v !== null) { cart.note = v; saveCart(); renderCart(); } } }, cart.note ? `📝 ${cart.note}` : '+ หมายเหตุ'),
-        cart.member ? null : h('button', { class: 'chip', onclick: memberDialog }, '+ สมาชิก')),
-      cart.member ? memberBox(cart, t) : null),
+        null)),
     h('div', { class: 'lines' }, cart.lines.length ? cart.lines.map((l) => lineView(l, ch))
       : h('div', { class: 'cart-empty' }, h('img', { src: '/assets/bowl.svg', alt: '' }), h('b', {}, 'ยังไม่มีสินค้าในบิล'), h('span', {}, 'แตะเมนูทางซ้าย หรือสแกนบาร์โค้ดได้เลย'))),
     h('div', { class: 'cart-sum' },
@@ -1004,6 +1004,17 @@ function previewEarn(cart, t) {
   const items = cart.lines.map((l) => ({ product_id: l.product_id, qty: l.qty, void_qty: 0, refunded_qty: 0, line_total: lineTotal(l) }));
   return pointsFor({ items_total: t.items_total, discount: t.discount, packaging: t.packaging, tax: t.tax }, items, { ...P, tax_inclusive: st.settings.sale.tax_inclusive },
     cart.member.tier ? Number(cart.member.tier.multiplier) || 1 : 1).points;
+}
+// the member box in the cart head: ask "member?" big and bright, or show who it is
+function memberCta(cart, t) {
+  const m = cart.member;
+  if (!m) return h('button', { class: 'mcta', onclick: memberDialog }, h('span', { class: 'mi' }, '⭐'), h('span', { class: 'mt' }, h('b', {}, 'สมาชิก?'), h('small', {}, 'สะสมแต้ม · แตะเพื่อค้นหา')));
+  const earn = st.settings.points && st.settings.points.enabled ? previewEarn(cart, t) : 0;
+  return h('div', { class: 'mcta on', style: m.tier && m.tier.color ? { '--tc': m.tier.color } : {} },
+    h('span', { class: 'mi' }, (m.first_name || m.nickname || '⭐').slice(0, 1)),
+    h('span', { class: 'mt' }, h('b', {}, m.first_name || m.nickname || m.member_no, m.tier ? h('em', {}, m.tier.name) : null),
+      h('small', {}, `${Number(m.points).toLocaleString()} แต้ม${earn ? ` · +${earn}` : ''}`)),
+    h('button', { class: 'mx', title: 'นำสมาชิกออก', onclick: () => { cart.member = null; saveCart(); renderCart(); } }, '×'));
 }
 function memberBox(cart, t) {
   const m = cart.member, earn = previewEarn(cart, t);

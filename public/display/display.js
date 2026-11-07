@@ -621,15 +621,29 @@ function renderPrompt() {
   const tick = () => { const s = Math.max(0, Math.round((new Date(prompt.expires_at) - Date.now()) / 1000)); left.textContent = `ปิดอัตโนมัติใน ${s} วินาที`; };
   tick(); const t = setInterval(() => { if (!document.body.contains(left)) return clearInterval(t); tick(); }, 1000);
   const box = h('div', { class: 'box' });
+  let searching = false;
   const search = async () => {
+    if (searching || !inp.value) return;
+    searching = true;
     try {
       const r2 = await api.post('/member-prompt/lookup', { prompt_id: prompt.id, q: inp.value });
-      prompt.results = r2.results; drawResults();
+      prompt.results = r2.results;
+      // exactly one member for this number: it is them — no need to pick
+      if (r2.results.length === 1) return found(r2.results[0]);
+      drawResults();
     } catch (e) { errToast(e); if (e.code === 'prompt_closed') { prompt = null; renderPrompt(); } }
+    finally { searching = false; }
+  };
+  const found = async (m) => {
+    box.replaceChildren(h('div', { class: 'mfound' }, h('div', { class: 'ok' }, '✓'), h('h2', {}, 'พบสมาชิกแล้ว'), h('div', { class: 'who' }, m.name), h('div', { class: 'small muted' }, `${m.phone} · ${m.member_no}`)));
+    try { await api.post('/member-prompt/confirm', { prompt_id: prompt.id, member_id: m.id }); setTimeout(() => { prompt = null; renderPrompt(); }, 1600); }
+    catch (er) { errToast(er); prompt.results = [m]; drawResults(); }
   };
   const drawKeys = () => {
     const proxy = document.createElement('input'); proxy.value = inp.value;
-    proxy.addEventListener('input', () => { inp.value = proxy.value.replace(/\D/g, '').slice(0, 10); prompt.value = inp.value; val.textContent = inp.value || ' '; });
+    proxy.addEventListener('input', () => { inp.value = proxy.value.replace(/\D/g, '').slice(0, 10); prompt.value = inp.value; val.textContent = inp.value || ' ';
+      // a full mobile number: look it up straight away
+      if (/^0\d{9}$/.test(inp.value)) search(); });
     box.replaceChildren(h('h2', {}, 'กรอกเบอร์โทร หรือ หมายเลขสมาชิก'), val, keypad(proxy, { onEnter: search }), left,
       h('p', { class: 'small muted' }, 'ใช้เพื่อระบุสมาชิกสำหรับบิลนี้เท่านั้น'));
   };
