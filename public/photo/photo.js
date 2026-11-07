@@ -168,15 +168,46 @@ function scanScreen() {
     const ch = keyFromCode(e); if (ch) { e.preventDefault(); inp.value += ch; }
   });
   inp.addEventListener('paste', (e) => { e.preventDefault(); check((e.clipboardData || window.clipboardData).getData('text')); });
+  // the booth's own camera reads the receipt QR / barcode by itself while this screen is open
+  const video = h('video', { playsinline: true, muted: true, autoplay: true, class: 'scan-video' });
+  const camMsg = h('div', { class: 'scan-msg' }, tx('กำลังเปิดกล้อง…'));
+  const camBox = h('div', { class: 'scan-cam' }, video, h('i', { class: 'scan-frame' }), h('i', { class: 'scan-laser' }), camMsg);
+  const camSel = h('select', { class: 'chip', style: { display: 'none' }, onchange: () => { store.set('photo_scan_cam', camSel.value); startScanCam(); } });
+  const flipBtn = h('button', { class: 'btn', onclick: () => { store.set('photo_scan_cam', ''); store.set('photo_scan_facing', store.get('photo_scan_facing', 'user') === 'user' ? 'environment' : 'user'); startScanCam(); } }, tx('🔄 สลับกล้อง'));
+  let timer = null, lastCode = '', lastAt = 0; // the same receipt held in view is read once every few seconds, not every frame
+  const startScanCam = async () => {
+    stopCamera(); clearInterval(timer);
+    const dev = store.get('photo_scan_cam', ''), facing = store.get('photo_scan_facing', 'user');
+    try { stream = await navigator.mediaDevices.getUserMedia({ video: { ...(dev ? { deviceId: { exact: dev } } : { facingMode: facing }), width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }); }
+    catch { try { stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false }); } catch { camMsg.textContent = tx('เปิดกล้องไม่ได้ — อนุญาตการใช้กล้อง หรือใช้เครื่องยิงสแกน'); return; } }
+    video.srcObject = stream; await video.play().catch(() => {});
+    const tr = stream.getVideoTracks()[0], st2 = tr && tr.getSettings ? tr.getSettings() : {};
+    video.classList.toggle('mirror', st2.facingMode !== 'environment');
+    camMsg.textContent = tx('ถือใบเสร็จให้ QR หรือบาร์โค้ดอยู่ในกรอบ ห่างกล้องประมาณ 15–25 ซม.');
+    const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+    camSel.replaceChildren(...cams.map((d, i) => h('option', { value: d.deviceId, selected: d.deviceId === st2.deviceId }, '📷 ' + (d.label || tx('กล้อง {0}', i + 1)))));
+    camSel.style.display = cams.length > 1 ? '' : 'none';
+    const { makeReader } = await import('/shared/barcodecam.js');
+    const read = await makeReader().catch(() => null);
+    if (!read) { camMsg.textContent = tx('อุปกรณ์นี้อ่านบาร์โค้ดจากกล้องไม่ได้ — ใช้เครื่องยิงสแกน'); return; }
+    let reading = false;
+    timer = setInterval(async () => {
+      if (screen !== 'scan') { clearInterval(timer); return; }
+      if (reading || busy || !video.videoWidth) return;
+      reading = true;
+      try { const code = await read(video); if (code && !(code === lastCode && Date.now() - lastAt < 5000)) { lastCode = code; lastAt = Date.now(); camBox.classList.add('hit'); setTimeout(() => camBox.classList.remove('hit'), 900); await check(code); } }
+      catch { /* next frame */ } finally { reading = false; }
+    }, 200);
+  };
   go('scan', topBar(printerPill()),
-    h('div', { class: 'center' }, h('div', { class: 'scanbox' }, h('div', { class: 'qrhint' }, '🧾'),
+    h('div', { class: 'center' }, h('div', { class: 'scanbox' },
       h('h2', {}, tx('กรุณาสแกนใบเสร็จเพื่อแลกสิทธิ์')),
-      h('div', { class: 'sub' }, tx('ยิง QR บนใบเสร็จที่เครื่องสแกน หรือกดใช้กล้อง · ยอดซื้อครบ {0} บาท ถ่ายรูปฟรี', baht(cfg.min_spend))),
-      h('div', { class: 'row' }, h('button', { class: 'btn pri', onclick: async () => { const { scanWithCamera } = await import('/shared/barcodecam.js'); scanWithCamera((c) => check(c), { title: tx('📷 สแกน QR บนใบเสร็จ') }); } }, tx('📷 ใช้กล้องสแกน')),
-        h('button', { class: 'btn', onclick: welcome }, tx('← กลับ'))),
+      h('div', { class: 'sub' }, tx('ถือ QR หรือบาร์โค้ดท้ายใบเสร็จหน้ากล้อง หรือยิงเครื่องสแกน · ยอดซื้อครบ {0} บาท ถ่ายรูปฟรี', baht(cfg.min_spend))),
+      camBox, h('div', { class: 'row' }, camSel, flipBtn, h('button', { class: 'btn', onclick: welcome }, tx('← กลับ'))),
       out, inp)),
     h('div'));
-  const keep = () => { if (screen === 'scan' && document.activeElement !== inp && !document.querySelector('.bc-modal, .modal-back')) inp.focus(); };
+  startScanCam().catch(() => {});
+  const keep = () => { if (screen === 'scan' && document.activeElement !== inp && !['SELECT', 'INPUT'].includes((document.activeElement || {}).tagName)) inp.focus(); };
   setTimeout(keep, 50); const t = setInterval(() => (screen === 'scan' ? keep() : clearInterval(t)), 800);
 }
 async function redeem(code, out) {
@@ -200,7 +231,7 @@ async function redeem(code, out) {
 
 // --- 2. layout ---
 function layoutScreen() {
-  redraw = layoutScreen;
+  redraw = layoutScreen; stopCamera();
   const allowed = (cfg.layouts || Object.keys(LAYOUTS)).filter((k) => LAYOUTS[k]);
   const grid = h('div', { class: 'layouts' }, allowed.map((k) => {
     const L = LAYOUTS[k], cv = h('canvas');

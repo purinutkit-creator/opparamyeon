@@ -9,7 +9,7 @@ const loadZX = () => (zxLoad ||= new Promise((res, rej) => {
   const s = document.createElement('script'); s.src = '/vendor/zxing.min.js'; s.onload = () => res(window.ZXing); s.onerror = rej; document.head.append(s);
 }));
 
-async function makeReader() {
+export async function makeReader() {
   if ('BarcodeDetector' in window) {
     try {
       const sup = await window.BarcodeDetector.getSupportedFormats();
@@ -21,13 +21,18 @@ async function makeReader() {
   const reader = new ZX.MultiFormatReader();
   const hints = new Map();
   hints.set(ZX.DecodeHintType.POSSIBLE_FORMATS, [ZX.BarcodeFormat.EAN_13, ZX.BarcodeFormat.EAN_8, ZX.BarcodeFormat.UPC_A, ZX.BarcodeFormat.UPC_E, ZX.BarcodeFormat.CODE_128, ZX.BarcodeFormat.CODE_39, ZX.BarcodeFormat.ITF, ZX.BarcodeFormat.QR_CODE]);
+  hints.set(ZX.DecodeHintType.TRY_HARDER, true);
   reader.setHints(hints);
   const c = document.createElement('canvas');
+  let turn = 0;
+  // every other frame: the middle of the picture enlarged (small codes on receipts held further away)
   return async (video) => {
-    const w = Math.min(960, video.videoWidth), k = w / video.videoWidth;
-    c.width = w; c.height = Math.round(video.videoHeight * k);
-    c.getContext('2d', { willReadFrequently: true }).drawImage(video, 0, 0, c.width, c.height);
-    try { return reader.decode(new ZX.BinaryBitmap(new ZX.HybridBinarizer(new ZX.HTMLCanvasElementLuminanceSource(c)))).getText(); } catch { return null; }
+    const vw = video.videoWidth, vh = video.videoHeight, crop = (turn++ % 2) === 1;
+    const sx = crop ? vw * 0.18 : 0, sy = crop ? vh * 0.18 : 0, sw = crop ? vw * 0.64 : vw, sh = crop ? vh * 0.64 : vh;
+    const w = Math.min(1100, Math.max(640, sw)), k = w / sw;
+    c.width = Math.round(w); c.height = Math.round(sh * k);
+    c.getContext('2d', { willReadFrequently: true }).drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    try { return reader.decode(new ZX.BinaryBitmap(new ZX.HybridBinarizer(new ZX.HTMLCanvasElementLuminanceSource(c)))).getText(); } catch { reader.reset && reader.reset(); return null; }
   };
 }
 
