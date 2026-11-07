@@ -28,8 +28,11 @@ const DITHER_NAME = () => ({ floyd: 'Floyd–Steinberg', atkinson: 'Atkinson', b
 
 // ---------------- helpers ----------------
 const go = (name, ...kids) => { screen = name; app.replaceChildren(h('div', { class: 'screen scr-' + name }, ...kids)); };
+let taps = [];
+// 5 quick taps on the shop name → booth settings (link the printer); nothing visible for customers
+const secretTap = () => { const t = Date.now(); taps = [...taps.filter((x) => t - x < 2500), t]; if (taps.length >= 5) { taps = []; settingsSheet(); } };
 const topBar = (...extra) => h('div', { class: 'top' },
-  h('div', { class: 'brand' }, cfg.logo || cfg.store.logo ? h('img', { src: cfg.logo || cfg.store.logo, alt: '' }) : h('span', { style: { fontSize: '28px' } }, '📸'), h('b', {}, cfg.store.name || 'PHOTO BOOTH')),
+  h('div', { class: 'brand', onclick: secretTap }, cfg.logo || cfg.store.logo ? h('img', { src: cfg.logo || cfg.store.logo, alt: '' }) : h('span', { style: { fontSize: '28px' } }, '📸'), h('b', {}, cfg.store.name || 'PHOTO BOOTH')),
   ...extra, langPicker(h, () => redraw(), { maxWidth: '120px' }));
 let redraw = () => welcome();
 const printerPill = () => (cfg.printer ? h('span', { class: 'pill ok' }, h('i'), '🖨 ', cfg.printer.name, ` · ${cfg.printer.paper}mm`) : h('span', { class: 'pill demo' }, tx('DEMO · ยังไม่ได้ตั้งเครื่องพิมพ์')));
@@ -43,6 +46,8 @@ function shutterSound() {
   } catch { /* no sound */ }
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const UIF = () => cfg.font || 'Prompt';
+const STRIPF = () => cfg.strip_font || UIF();
 const qrCache = new Map();
 const qrMatrix = (text) => { if (!qrCache.has(text)) qrCache.set(text, fetch('/api/qr-matrix?d=' + encodeURIComponent(text)).then((r) => r.json()).catch(() => null)); return qrCache.get(text); };
 
@@ -68,7 +73,7 @@ async function compose(W, { thermal = false } = {}) {
   const x = c.getContext('2d');
   x.fillStyle = '#fff'; x.fillRect(0, 0, W, c.height); x.fillStyle = '#000'; x.textAlign = 'center'; x.textBaseline = 'top';
   let y = pad;
-  const line = (txt, size, weight = 700, font = 'Prompt') => { x.font = `${weight} ${size}px ${font}, Sarabun, sans-serif`; x.fillText(txt, W / 2, y, W - pad * 2); y += size * 1.3; };
+  const line = (txt, size, weight = 700, font = `"${STRIPF()}"`) => { x.font = `${weight} ${size}px ${font}, Sarabun, sans-serif`; x.fillText(txt, W / 2, y, W - pad * 2); y += size * 1.3; };
   const dash = () => { x.save(); x.setLineDash([Math.max(4, W * 0.015), Math.max(4, W * 0.012)]); x.lineWidth = Math.max(2, W / 200); x.beginPath(); x.moveTo(pad, y); x.lineTo(W - pad, y); x.stroke(); x.restore(); y += gap; };
   if (L.receipt) {
     line(cfg.store.name || 'PHOTO BOOTH', fs(0.06), 800, "'Space Mono'"); line('*** PHOTO RECEIPT ***', fs(0.045), 700, "'Space Mono'"); line(when, fs(0.04), 400, "'Space Mono'"); dash();
@@ -99,7 +104,7 @@ async function compose(W, { thermal = false } = {}) {
     x.fillText(`SMILE x${L.n}`, pad, y); x.textAlign = 'right'; x.fillText('PRICELESS', W - pad, y); y += fs(0.05) * 1.4; x.textAlign = 'center';
     line(foot || 'THANK YOU FOR SMILING', fs(0.05), 800, "'Space Mono'");
   }
-  for (const t of footLines) line(t, fs(0.045), t === foot ? 800 : 400, L.receipt ? "'Space Mono'" : 'Prompt');
+  for (const t of footLines) line(t, fs(0.045), t === foot ? 800 : 400, L.receipt ? "'Space Mono'" : `"${STRIPF()}"`);
   if (qr) {
     const m = Math.floor(qrPx / (qr.size + 2)), size = m * (qr.size + 2), qx = Math.round((W - size) / 2);
     x.fillStyle = '#fff'; x.fillRect(qx, y, size, size); x.fillStyle = '#000';
@@ -177,7 +182,7 @@ function scanScreen() {
 async function redeem(code, out) {
   try {
     const r = await api.post('/photobooth/redeem', { code });
-    S = { ...r, layout: (cfg.layouts || [])[0] || 'strip4', photos: [], filter: 'original', tone: { brightness: 0, contrast: 10, exposure: 0, gamma: 1, sharpness: 0.4 }, method: cfg.dither || 'floyd', strength: 1, consent: false };
+    S = { ...r, layout: (cfg.layouts || [])[0] || 'strip4', photos: [], filter: cfg.filter || 'original', tone: { brightness: 0, contrast: 10, exposure: 0, gamma: 1, sharpness: 0.4 }, method: cfg.dither || 'floyd', strength: 1, consent: false };
     if (out) {
       out.replaceChildren(h('div', { class: 'result ok' }, h('div', {}, tx('✅ ใบเสร็จถูกต้อง · บิล {0}', r.bill_no || '')), h('div', { class: 'amt' }, baht(r.amount), ' ฿'),
         h('div', { class: 'muted' }, tx('ถึงเกณฑ์ {0} บาท — ถ่ายรูปได้เลย!', baht(r.min)))));
@@ -247,15 +252,18 @@ function cameraScreen() {
       if (k < which.length - 1) await sleep(Math.max(0, (cfg.gap ?? 2) * 1000));
     }
     running = false; startBtn.disabled = false;
-    if (S.photos.filter(Boolean).length >= L.n) { await sleep(500); editScreen(); }
+    // auto print: straight to the printer with the shop's look, nothing to choose; otherwise the filter screen
+    if (S.photos.filter(Boolean).length >= L.n) { await sleep(500); if (cfg.auto_print !== false) printNow(); else editScreen(); }
   };
   const startBtn = h('button', { class: 'btn acc big', onclick: () => shoot(Array.from({ length: L.n }, (_, i) => i).filter((i) => !S.photos[i])) }, tx('📸 เริ่มถ่าย'));
   const cdChips = h('div', { class: 'chips' }, [3, 5, 10].map((n) => h('button', { class: 'chip' + (cd === n ? ' on' : ''), onclick: (e) => { cd = n; store.set('photo_countdown', n); [...e.target.parentNode.children].forEach((b) => b.classList.toggle('on', b === e.target)); } }, `⏱ ${n}s`)));
   const mirBtn = h('button', { class: 'chip' + (mirror ? ' on' : ''), onclick: () => { mirror = !mirror; store.set('photo_mirror', mirror); video.classList.toggle('mirror', mirror); mirBtn.classList.toggle('on', mirror); } }, tx('🪞 กลับด้าน'));
   const camSel = h('select', { class: 'chip', onchange: async () => { store.set('photo_cam', camSel.value); await openCamera(video).catch(errToast); } });
+  const consent = cfg.store_photos && cfg.auto_print !== false ? h('label', { class: 'consent', style: { justifyContent: 'center' } }, h('input', { type: 'checkbox', checked: S.consent, onchange: (e) => { S.consent = e.target.checked; } }),
+    h('span', {}, cfg.consent_text || tx('ยินยอมให้ร้านเก็บรูปนี้ไว้ {0} ชั่วโมง เพื่อให้ดาวน์โหลดผ่าน QR แล้วลบอัตโนมัติ (ไม่ติ๊ก = พิมพ์อย่างเดียว ไม่เก็บรูป)', cfg.link_hours || 24))) : null;
   go('camera', topBar(camState),
     h('div', { class: 'cam' }, video, count),
-    h('div', { style: { display: 'grid', gap: '10px' } }, thumbs, h('div', { class: 'row' }, cdChips, mirBtn, camSel), h('div', { class: 'row' }, startBtn, h('button', { class: 'btn', onclick: layoutScreen }, tx('← เปลี่ยนแบบ')))));
+    h('div', { style: { display: 'grid', gap: '10px' } }, thumbs, consent, h('div', { class: 'row' }, cdChips, mirBtn, camSel), h('div', { class: 'row' }, startBtn, h('button', { class: 'btn', onclick: layoutScreen }, tx('← เปลี่ยนแบบ')))));
   drawThumbs();
   openCamera(video).then(async () => {
     camState.className = 'pill ok'; camState.replaceChildren(h('i'), tx('กล้องพร้อม'));
@@ -308,10 +316,10 @@ function editScreen() {
 async function printNow() {
   redraw = () => {};
   const W = (cfg.printer && cfg.printer.dots) || 384;
-  const status = h('div', { class: 'status' }, tx('กำลังเตรียมรูป…'));
+  const status = h('div', { class: 'status' }, tx('รอสักครู่ กำลังพิมพ์รูปให้นะคะ…'));
   const bar = h('div', { class: 'bar' }, h('i'));
   const prev = h('canvas', { class: 'thermal', style: { width: 'min(230px, 40vw)', boxShadow: '0 16px 34px rgb(0 0 0 / .14)', imageRendering: 'pixelated' } });
-  go('print', topBar(printerPill()), h('div', { class: 'center' }, prev, status, bar), h('div'));
+  go('print', topBar(printerPill()), h('div', { class: 'center' }, h('h2', {}, tx('🖨 รอสักครู่ กำลังพิมพ์')), prev, status, bar, h('div', { class: 'muted' }, tx('รับรูปที่เครื่องพิมพ์ได้เลย'))), h('div'));
   try {
     const pc = await compose(W, { thermal: true });
     prev.width = pc.width; prev.height = pc.height; prev.getContext('2d').drawImage(pc, 0, 0);
@@ -437,6 +445,11 @@ async function boot() {
   try { cfg = await api.get('/photobooth/config'); }
   catch (e) { if (e.status === 401 || e.status === 403) { store.del('photo_token'); return pairing(tx('ตู้นี้ถูกยกเลิกการจับคู่แล้ว')); } throw e; }
   const root = document.documentElement.style;
+  // the shop's fonts: page and printed strip (Google or uploaded; Thai falls back to Sarabun)
+  try { const { loadFont } = await import('/shared/fonts.js'); await Promise.all([loadFont(UIF(), [400, 700]), loadFont(STRIPF(), [400, 700])]);
+    // a canvas never asks for a font itself: load every weight the strip draws with before the first photo
+    await Promise.race([Promise.all(['400', '700', '800'].map((w) => document.fonts.load(`${w} 40px "${STRIPF()}"`, 'กขค Aa 123'))), sleep(4000)]); } catch { /* built-in look */ }
+  document.body.style.fontFamily = `"${UIF()}", Prompt, Sarabun, sans-serif`;
   if (cfg.accent) root.setProperty('--accent', cfg.accent);
   if (cfg.bg) root.setProperty('--bg', cfg.bg);
   if (cfg.background) root.setProperty('--bgimg', `url(${cfg.background})`);
@@ -444,7 +457,6 @@ async function boot() {
   sock = await socket({ kind: 'display', token: store.get('photo_token') }).catch(() => null);
   if (sock) sock.on('settings:changed', async () => { const c = await api.get('/photobooth/config').catch(() => null); if (c) { cfg = c; if (screen === 'welcome') welcome(); } });
   startPrinting().catch((e) => console.warn('[booth print]', e.message));
-  document.body.append(h('button', { class: 'gear', title: 'settings', onclick: settingsSheet }, '⚙️'));
   welcome();
 }
 boot().catch((e) => app.replaceChildren(h('div', { class: 'screen' }, h('div'), h('div', { class: 'center' }, h('h2', {}, '⚠️'), h('div', {}, e.message)), h('div'))));

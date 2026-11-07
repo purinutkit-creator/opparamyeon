@@ -3,13 +3,15 @@
 import { h, toast, errToast, fmtTime } from '/shared/ui.js';
 import { baht } from '/shared/core.js';
 import { api, ctx, can, page, card, form, kpi, saveBtn } from './common.js';
+import { GOOGLE_FONTS, fontCatalog } from '/shared/fonts.js';
 
 const LAYOUT_NAMES = { single: 'รูปเดี่ยว', strip2: 'แถบ 2 รูป', strip3: 'แถบ 3 รูป', strip4: 'แถบ 4 รูป', grid4: 'เกาหลี 2×2', grid6: 'ตาราง 6 รูป', grid8: 'ปุริคุระ 8 รูป', receipt: 'ใบเสร็จคลาสสิก' };
 
 export async function photoboothPage() {
   const s = await api.get('/settings');
   const pb = { ...s.photobooth };
-  const printers = (await api.get('/printers')).filter((p) => p.active);
+  const printers = await api.get('/photobooth/printers');
+  const fonts = [...new Set([...(await fontCatalog().catch(() => [])).map((f) => f.family), ...GOOGLE_FONTS.map(([f]) => f)])];
   const v = { ...pb, min_spend: (pb.min_spend || 0) / 100 };
   const promo = form([
     { k: 'enabled', label: '📸 เปิดใช้ตู้ถ่ายรูป', type: 'bool' },
@@ -24,6 +26,8 @@ export async function photoboothPage() {
     { k: 'mirror', label: 'กล้องกลับด้านเหมือนกระจก', type: 'bool' },
     { k: 'dither', label: 'วิธีแปลงขาวดำเริ่มต้น', type: 'select', options: [['floyd', 'Floyd–Steinberg (ละเอียด)'], ['atkinson', 'Atkinson (คม สว่าง)'], ['bayer', 'Bayer (ลายตาราง เรโทร)'], ['threshold', 'ขาว/ดำ ล้วน']] },
     { k: 'idle_seconds', label: 'ไม่มีคนใช้กี่วินาทีให้กลับหน้าแรก', type: 'number' },
+    { k: 'auto_print', label: '⚡ ถ่ายเสร็จแล้วพิมพ์ทันที (ลูกค้าไม่ต้องเลือกอะไร — ปิด = ให้ลูกค้าเลือกฟิลเตอร์ก่อนพิมพ์)', type: 'bool', wide: true },
+    { k: 'filter', label: 'ฟิลเตอร์ที่ใช้ (พิมพ์ทันที) / เริ่มต้น', type: 'select', options: [['original', 'ต้นฉบับ'], ['bw', 'ขาวดำ'], ['contrast', 'คมชัด'], ['korean', 'เกาหลี (สว่าง นุ่ม)'], ['vintage', 'วินเทจ'], ['retro', 'เรโทร'], ['film', 'ฟิล์ม'], ['soft', 'ซอฟต์'], ['pixel', 'พิกเซล']] },
   ], { ...v, countdown: String(v.countdown || 3) });
   const lay = new Set(pb.layouts || Object.keys(LAYOUT_NAMES));
   const layBox = h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '8px' } }, Object.entries(LAYOUT_NAMES).map(([k, n]) => {
@@ -33,11 +37,13 @@ export async function photoboothPage() {
   const look = form([
     { k: 'title', label: 'หัวข้อบนรูป / หน้าแรก (เช่น YOUR LITTLE MOMENT)' }, { k: 'footer', label: 'ข้อความท้ายรูป (เช่น THANK YOU FOR SMILING)' },
     { k: 'show_date', label: 'พิมพ์วันที่และเวลา', type: 'bool' }, { k: 'show_qr', label: 'พิมพ์ QR ดาวน์โหลดรูป (เมื่อลูกค้ายินยอมให้เก็บรูป)', type: 'bool' },
+    { k: 'font', label: 'ฟอนต์หน้าตู้', type: 'select', options: [['', 'ค่าเริ่มต้น (Prompt)'], ...fonts.map((f) => [f, f])] },
+    { k: 'strip_font', label: 'ฟอนต์บนรูปที่พิมพ์', type: 'select', options: [['', 'เหมือนหน้าตู้'], ...fonts.map((f) => [f, f])] },
     { k: 'accent', label: 'สีหลัก', type: 'color' }, { k: 'bg', label: 'สีพื้นหลัง', type: 'color' },
     { k: 'logo', label: 'โลโก้ (ว่าง = โลโก้ร้าน)', type: 'image' }, { k: 'background', label: 'ภาพพื้นหลังหน้าตู้', type: 'image' },
   ], v);
   const prn = form([
-    { k: 'printer_id', label: 'เครื่องพิมพ์รูป', type: 'select', options: [['', 'อัตโนมัติ (เครื่องที่ติ๊ก "รูปจากตู้ถ่ายรูป" หรือเครื่องใบเสร็จ)'], ...printers.map((p) => [p.id, `${p.name} · ${p.paper}mm`])] },
+    { k: 'printer_id', label: 'เครื่องพิมพ์รูป', type: 'select', options: [['', 'อัตโนมัติ (เครื่องที่ติ๊ก "รูปจากตู้ถ่ายรูป" หรือเครื่องใบเสร็จ)'], ...printers.map((p) => [p.id, `${p.name} · ${p.paper}mm${p.via ? ` · พิมพ์ผ่าน ${p.via} ล่าสุด` : ''}`])] },
     { k: 'copies', label: 'จำนวนสำเนาต่อครั้ง', type: 'number' },
   ], v);
   const store = form([
@@ -78,7 +84,7 @@ export async function photoboothPage() {
       h('p', { class: 'small muted' }, 'ใบเสร็จที่ยอดถึงเกณฑ์จะพิมพ์ QR "📸 ถ่ายรูปฟรี" ให้อัตโนมัติ · ลูกค้าสแกนที่ตู้ ระบบตรวจว่าเป็นบิลจริง ชำระแล้ว ยอดถึง และยังไม่เคยใช้ แล้วให้ถ่ายได้ทันที · QR สะสมแต้มบนใบเสร็จก็ใช้ได้')),
     card(h('h3', {}, '🎞 การถ่าย'), shoot, h('div', { style: { marginTop: '.6em' } }, h('b', {}, 'แบบรูปที่ให้เลือก'), layBox)),
     card(h('h3', {}, '🎨 หน้าตาและข้อความบนรูป'), look),
-    card(h('h3', {}, '🖨 เครื่องพิมพ์'), prn, h('p', { class: 'small muted' }, 'พิมพ์ผ่านคิวงานพิมพ์ของร้าน: เครื่องพิมพ์ต้องเชื่อมอยู่กับเครื่องใดเครื่องหนึ่งที่เปิดหน้าร้านไว้ (POS / จอลูกค้า / ตัวตู้เองที่ ⚙️ มุมขวาล่าง) · ใช้ความกว้างจริงของเครื่อง (58 มม. = 384 จุด, 80 มม. = 576 จุด) · ถ้ายังไม่มีเครื่องพิมพ์ ตู้จะขึ้น DEMO และไม่บอกว่าพิมพ์สำเร็จ')),
+    card(h('h3', {}, '🖨 เครื่องพิมพ์'), prn, h('p', { class: 'small muted' }, 'เลือกเครื่องพิมพ์ของ POS ได้เลย — รูปจะออกที่เครื่องพิมพ์ชื่อนั้น ผ่านเครื่อง POS ที่เชื่อมเครื่องพิมพ์นั้นและเปิดหน้าขายอยู่ (ใช้ร่วมกับใบเสร็จได้ เรียงคิวกันไม่ชนกัน) · หรือเชื่อมที่ตัวตู้: แตะชื่อร้านบนตู้รัว ๆ 5 ครั้ง · ใช้ความกว้างจริงของเครื่อง (58 มม. = 384 จุด, 80 มม. = 576 จุด) · ถ้ายังไม่มีเครื่องพิมพ์ ตู้จะขึ้น DEMO และไม่บอกว่าพิมพ์สำเร็จ')),
     card(h('h3', {}, '🔒 เก็บรูปและดาวน์โหลด'), store),
     h('div', { style: { margin: '0 0 1em' } }, saveBtn('บันทึกการตั้งค่าตู้ถ่ายรูป', save)),
     card(h('h3', {}, '🔗 เชื่อมตู้ถ่ายรูป'), h('p', { class: 'small muted' }, 'เปิดเว็บ ', h('code', {}, location.origin + '/photo/'), ' บนแท็บเล็ต/คอมที่ใช้เป็นตู้ (มีกล้อง) แล้วกรอกรหัสจับคู่ · เฉพาะตู้ที่จับคู่แล้วเท่านั้นที่แลกสิทธิ์และสั่งพิมพ์ได้'),

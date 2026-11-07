@@ -46,6 +46,18 @@ r.post('/photobooth/devices/:id/revoke', staffAuth('settings'), ah(async (req, r
   await db.run("UPDATE display_pairings SET revoked = 1 WHERE id = ? AND mode = 'photobooth'", [req.params.id]);
   res.json({ ok: true });
 }));
+// printers to choose from, with the device that last printed on each (so "the POS printer named X" is clear)
+r.get('/photobooth/printers', staffAuth('settings'), ah(async (req, res) => {
+  const ps = (await db.all('SELECT * FROM printers WHERE active = 1 ORDER BY name')).map(publicPrinter);
+  const out = [];
+  for (const p of ps) {
+    const j = await db.get("SELECT claimed_by, updated_at FROM print_jobs WHERE printer_id = ? AND claimed_by IS NOT NULL ORDER BY seq DESC LIMIT 1", [p.id]);
+    const t = j && j.claimed_by ? await db.get('SELECT name FROM terminals WHERE id = ?', [j.claimed_by]) : null;
+    const via = !j ? '' : t ? t.name : j.claimed_by === 'photobooth' ? 'ตู้ถ่ายรูป' : String(j.claimed_by).startsWith('display') ? 'จอลูกค้า' : j.claimed_by;
+    out.push({ id: p.id, name: p.name, paper: p.paper, conn: p.conn, roles: p.roles, via, last: j ? j.updated_at : null });
+  }
+  res.json(out);
+}));
 r.get('/photobooth/report', staffAuth(), ah(async (req, res) => {
   const all = await db.all('SELECT * FROM photo_sessions ORDER BY created_at DESC LIMIT 300');
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });

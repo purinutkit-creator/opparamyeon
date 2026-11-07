@@ -275,14 +275,26 @@ export async function renderDoc(tpl, data, opts = {}) {
           break;
         }
         case 'photo': {
-          // photo booth coupon: "free photo — scan at the booth"
+          // photo booth coupon at the end of a receipt that reached the amount: a bold double frame so nobody misses it
           const m = images.get(e);
           if (!m) break;
-          const size = e.size || 24;
-          y += 6; text(e.title ? tr(e.title) : tr('📸 ถ่ายรูปฟรี! สแกนที่ตู้ถ่ายรูป'), e, { size: Math.round(size * 1.05), weight: 800, align: 'center', invert: true }); y += 4;
-          qrAt(m, e.size_mm || 26, 'center', margin, inner);
-          text(e.caption ? tr(e.caption) : tr('ใช้ได้ 1 ครั้ง ภายในวันนี้'), e, { size: Math.round(size * 0.8), align: 'center' });
+          const size = e.size || 24, pad = 14, x0 = margin + pad, w = inner - pad * 2, y0 = y;
+          y += 8;
+          text(e.title ? tr(e.title) : '★ THERMAL PHOTO BOOTH ★', e, { size: Math.round(size * 1.1), weight: 800, align: 'center', x0: margin + 6, w: inner - 12, invert: true });
           y += 6;
+          text(tr('คุณได้สิทธิ์ถ่ายรูปฟรี!'), e, { size: Math.round(size * 1.45), weight: 800, align: 'center', x0, w });
+          if (data.photo_amount) text(tr('ยอดซื้อ {0} บาท ถึงเกณฑ์ {1} บาท', data.photo_amount, data.photo_min), e, { size: Math.round(size * 0.8), align: 'center', x0, w });
+          y += 4;
+          qrAt(m, e.size_mm || 28, 'center', x0, w);
+          text(e.caption ? tr(e.caption) : tr('สแกน QR นี้ที่ตู้ถ่ายรูป'), e, { size: Math.round(size * 0.95), weight: 700, align: 'center', x0, w });
+          if (data.photo_terms) text(data.photo_terms, e, { size: Math.round(size * 0.72), align: 'center', x0, w });
+          y += 10;
+          if (draw) {
+            ctx.strokeStyle = '#000';
+            const rr = (o, r) => { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(margin + o, y0 + o, inner - o * 2, y - y0 - o * 2, r); else ctx.rect(margin + o, y0 + o, inner - o * 2, y - y0 - o * 2); ctx.stroke(); };
+            ctx.lineWidth = 5; rr(2.5, 18); ctx.lineWidth = 2; rr(9, 12);
+          }
+          y += 4;
           break;
         }
         case 'points': {

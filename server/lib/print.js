@@ -61,6 +61,8 @@ export async function receiptDocData(order, extra = {}) {
   const pb = (await getSettings()).photobooth || {};
   if (pb.enabled && pb.require_receipt && order.status === 'paid' && order.total - (order.refunded_amount || 0) >= (pb.min_spend || 0)) {
     d.photo_url = `${process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || ''}/photo/#r=${await billToken(order.bill_no)}`;
+    d.photo_amount = baht(order.total - (order.refunded_amount || 0)); d.photo_min = baht(pb.min_spend || 0);
+    d.photo_terms = `ใช้ได้ ${pb.sessions_per_receipt || 1} ครั้ง${pb.receipt_hours ? ` ภายใน ${pb.receipt_hours} ชม.` : ''}`;
   }
   const lang = order.lang;
   if (!lang || lang === 'th') return d;
