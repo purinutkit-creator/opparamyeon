@@ -514,7 +514,7 @@ function renderCartEta() {
   const e = cartEta();
   el.hidden = !e;
   if (e) { el.title = `${e.bowls} ${U()} → ${e.machines.map((no) => (st.cookers.machines[no - 1] || {}).name || 'เครื่อง ' + no).join(' + ')}`;
-    el.replaceChildren('🍜 ใช้เวลา ~', h('b', {}, e.mins), ' นาที · เสร็จ ', h('b', {}, clockAt(e.at.getTime() + cookSkew))); }
+    el.title = 'ใช้เวลาทำประมาณ · เสร็จตอน — ' + el.title; el.replaceChildren('🍜 ~', h('b', {}, e.mins), ' นาที · ', h('b', {}, clockAt(e.at.getTime() + cookSkew))); }
 }
 // after ส่งครัว / payment: which cooker each bowl went to
 function cookerPopup(jobs, title) {
@@ -974,7 +974,8 @@ function renderCartNow() {
     h('div', { class: 'cart-sum' },
       h('span', {}, h('b', {}, cart.lines.length), ' รายการ'), h('span', {}, h('b', {}, cart.lines.reduce((s, l) => s + l.qty, 0)), ' ชิ้น'), h('span', {}, h('b', {}, t.bowls), ' ' + U()),
       h('span', { class: 'cart-eta', id: 'cartEta', hidden: true })),
-    h('div', { class: 'totals' },
+    // the net amount is on the pay button; this box only when there is something to explain (discount, packaging, VAT)
+    h('div', { class: 'totals', hidden: !(t.discount || t.packaging || t.tax) },
       t.items_total !== t.total ? row('รวมสินค้า', baht(t.items_total)) : null,
       t.discount ? row('ส่วนลด' + (t.tierAmt ? ' (รวมสิทธิ์ Tier)' : ''), '-' + baht(t.discount)) : null,
       t.packaging ? row('ค่าบรรจุภัณฑ์', baht(t.packaging)) : null,
@@ -1026,20 +1027,26 @@ function lineView(l, ch = { fresh: new Set(), more: new Set(), latest: null }) {
   };
   const rn = renamedLine(l.name, l.options || [], 'everywhere');
   const kitchenAs = renamedLine(rn.name, rn.options, 'kitchen');
-  return h('div', { class: 'line' + (ch.fresh.has(k) ? ' fx-new' : ch.more.has(k) ? ' fx-more' : '') + (ch.latest === k ? ' fx-latest' : ''), 'data-k': k },
-    h('div', { class: 'top' }, h('div', { class: 'nm' }, rn.name, kitchenAs.options.length || kitchenAs.name !== rn.name ? h('div', { class: 'optchips' },
-      kitchenAs.name !== rn.name ? h('span', { class: 'oc kitchen', title: 'ชื่อที่พิมพ์ในใบครัว' }, '👩‍🍳 ', kitchenAs.name) : null, kitchenAs.options.map((o) => isAddon(o)
-      ? h('span', { class: 'oc add' }, '+ ', o.name, o.price ? h('small', {}, ` ${baht(o.price)}`) : null)
-      : h('span', { class: 'oc' }, o.name, o.price ? h('small', {}, ` +${baht(o.price)}`) : null))) : null,
-      l.note ? h('div', { class: 'opts' }, '📝 ' + l.note) : null), h('strong', { class: 'num' }, baht(lineTotal(l)))),
-    h('div', { class: 'ctl' },
+  // one short row per item (so 7-8 items fit); tap the item for its other buttons
+  const open = st.openLine === k;
+  const meta = [
+    kitchenAs.name !== rn.name ? '👩‍🍳 ' + kitchenAs.name : null,
+    ...kitchenAs.options.map((o) => (isAddon(o) ? '+' : '') + o.name + (o.price ? ` ${baht(o.price)}` : '')),
+  ].filter(Boolean).join(' · ');
+  const tags = [l.dine_type === 'takeaway' && st.cart.dine_type !== 'takeaway' ? h('span', { class: 'lt take' }, 'กลับบ้าน') : null,
+    l.bowl_group ? h('span', { class: 'lt bowl' }, `${U()}${l.bowl_group}`) : null, sent ? h('span', { class: 'lt sent' }, `ส่งแล้ว ${sent}`) : null, l.note ? h('span', { class: 'lt note' }, '📝') : null].filter(Boolean);
+  return h('div', { class: 'line slim' + (open ? ' open' : '') + (ch.fresh.has(k) ? ' fx-new' : ch.more.has(k) ? ' fx-more' : '') + (ch.latest === k ? ' fx-latest' : ''), 'data-k': k },
+    h('div', { class: 'lrow' },
       h('div', { class: 'qty' }, h('button', { onclick: () => setQty(l.qty - 1), 'aria-label': 'ลด' }, '−'), h('span', {}, l.qty), h('button', { onclick: () => setQty(l.qty + 1), 'aria-label': 'เพิ่ม' }, '+')),
-      h('button', { class: 'chip' + (l.dine_type === 'takeaway' ? ' takeaway' : ''), disabled: !!sent, onclick: () => { l.dine_type = l.dine_type === 'takeaway' ? 'dine_in' : 'takeaway'; saveCart(); renderCart(); } }, l.dine_type === 'takeaway' ? 'กลับบ้าน' : 'ทานที่ร้าน'),
+      h('button', { class: 'lname', onclick: () => { st.openLine = open ? null : k; renderCartNow(); } },
+        h('span', { class: 'nm' }, rn.name, ...tags), meta || l.note ? h('span', { class: 'meta' }, [meta, l.note ? '📝 ' + l.note : ''].filter(Boolean).join(' · ')) : null),
+      h('strong', { class: 'num' }, baht(lineTotal(l)))),
+    open ? h('div', { class: 'ctl' },
+      h('button', { class: 'chip' + (l.dine_type === 'takeaway' ? ' takeaway' : ''), disabled: !!sent, onclick: () => { l.dine_type = l.dine_type === 'takeaway' ? 'dine_in' : 'takeaway'; saveCart(); renderCart(); } }, l.dine_type === 'takeaway' ? '🥡 กลับบ้าน' : '🍽️ ทานที่ร้าน'),
       h('button', { class: 'chip bowl', disabled: !!sent, onclick: () => assignBowl(l) }, l.bowl_group ? `${U()}ที่ ${l.bowl_group}` : ('ไม่ระบุ' + U())),
-      !sent && product(l.product_id) && product(l.product_id).option_groups.length ? h('button', { class: 'chip', onclick: () => optionsDialog(product(l.product_id), l) }, 'แก้ไข') : null,
-      !sent ? h('button', { class: 'chip', onclick: async () => { const v = await promptBox('หมายเหตุรายการ', { value: l.note, required: false }); if (v !== null) { l.note = v; saveCart(); renderCart(); } } }, 'หมายเหตุ') : null,
-      sent ? h('span', { class: 'chip sent' }, `ส่งครัวแล้ว ${sent}`) : null,
-      h('button', { class: 'chip', onclick: () => setQty(0) }, '🗑')));
+      !sent && product(l.product_id) && product(l.product_id).option_groups.length ? h('button', { class: 'chip', onclick: () => optionsDialog(product(l.product_id), l) }, '✏️ แก้ไข') : null,
+      !sent ? h('button', { class: 'chip', onclick: async () => { const v = await promptBox('หมายเหตุรายการ', { value: l.note, required: false }); if (v !== null) { l.note = v; saveCart(); renderCart(); } } }, '📝 หมายเหตุ') : null,
+      h('button', { class: 'chip', onclick: () => setQty(0) }, '🗑 ลบ')) : null);
 }
 async function assignBowl(l) {
   const max = nextBowlGroup();
