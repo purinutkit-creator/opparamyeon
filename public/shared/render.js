@@ -71,6 +71,11 @@ export async function renderDoc(tpl, data, opts = {}) {
   const tr = trOf(data);
   // a receipt that earns a booth photo always shows its QR, also on layouts made before the booth existed
   if (data.photo_url && !tpl.elements.some((e) => e.type === 'photo')) tpl = { ...tpl, elements: [...tpl.elements, { type: 'photo' }] };
+  // a staff meal says so in a black band above the items (any layout)
+  if (data.benefit_label && !tpl.elements.some((e) => e.type === 'benefit')) {
+    const at = tpl.elements.findIndex((e) => e.type === 'items');
+    const els = [...tpl.elements]; els.splice(at < 0 ? els.length : at, 0, { type: 'benefit' }); tpl = { ...tpl, elements: els };
+  }
   let margin = Number(tpl.margin ?? 8);
   let inner = width - margin * 2; // narrowed while drawing inside a framed element (e.box)
   const baseFamily = opts.font || tpl.font || 'Sarabun'; // opts.font: the shop's font for printed documents (may be a TH/EN stack)
@@ -272,6 +277,11 @@ export async function renderDoc(tpl, data, opts = {}) {
           if (!m) break;
           qrAt(m, e.size_mm, e.align, margin, inner);
           if (e.caption) text(fillVars(e.caption, vars), { ...e, align: 'center' }, { size: e.caption_size || 22 });
+          break;
+        }
+        case 'benefit': {
+          if (!data.benefit_label) break;
+          y += 4; text('★ ' + tr(data.benefit_label) + ' ★', e, { size: e.size || 28, weight: 800, align: 'center', invert: true }); y += 4;
           break;
         }
         case 'photo': {

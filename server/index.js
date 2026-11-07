@@ -15,6 +15,7 @@ import orders from './routes/orders.js';
 import system, { serveFile, qrSvg } from './routes/system.js';
 import display, { displayFromToken, closePrompts } from './routes/display.js';
 import photobooth, { cleanupPhotos } from './routes/photobooth.js';
+import staffmeal from './routes/staffmeal.js';
 import mobile from './routes/mobile.js';
 import payments, { webhookRouter } from './routes/payments.js';
 import lineR, { lineWebhook } from './routes/line.js';
@@ -54,7 +55,7 @@ export async function createApp(opts = {}) {
   });
   app.get('/files/:id', (req, res, next) => serveFile(req, res).catch(next));
   app.get('/api/qr.svg', (req, res, next) => qrSvg(req, res).catch(next));
-  for (const r of [staff, catalogR, orders, system, display, photobooth, mobile, payments, members, customer, reports, importer, lineR]) app.use('/api', r);
+  for (const r of [staff, catalogR, orders, system, display, photobooth, staffmeal, mobile, payments, members, customer, reports, importer, lineR]) app.use('/api', r);
   app.use('/api', (req, res) => res.status(404).json({ error: 'ไม่พบ API นี้' }));
   // face check for the clock-in selfie (MediaPipe, served from this app so it needs no outside CDN)
   app.use('/vendor/mediapipe', express.static(path.join(__dirname, '..', 'node_modules', '@mediapipe', 'tasks-vision'), { maxAge: '30d' }));

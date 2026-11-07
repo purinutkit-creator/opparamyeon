@@ -436,6 +436,7 @@ async function connect() {
     const m = document.querySelector('.member-prompt-wait'); if (m) m.closest('.modal-back').remove();
   });
   s.on('display:paired', () => toast('เชื่อมต่อจอลูกค้าแล้ว', 'ok'));
+  s.on('staff_meal:decided', (e) => { if (st.meal && st.meal.id === e.id) st.meal.onDecided(e); });
   s.on('display:dine', (e) => { if (e.cart_id === st.cart.cart_id && gateOn() && gateStep() === 'dine') startDine(e.dine); });
   st.host = new PrintHost({ api, sock: s, terminalId: st.terminal.id, settings: st.settings, device: 'pos', onChange: () => {} });
   st.host.start().catch(errToast);
@@ -1132,6 +1133,7 @@ function payDialog() {
       h('div', { class: 'muted small', style: { textAlign: 'center' } }, `${t.bowls} ${U()} · ${dineLabel(orderDineType(st.cart.lines))}`),
       pays.length ? h('div', { class: 'card', style: { margin: '.6em 0' } }, pays.map((p, i) => row(h('span', {}, methods.find((m) => m.id === p.method).name, ' ', h('button', { class: 'chip', onclick: () => { pays.splice(i, 1); drawLeft(); drawRight(); } }, 'ลบ')),
         baht(p.method === 'cash' ? p.received : p.amount))), row('คงเหลือ', baht(rem))) : null,
+      st.settings.staff_meal && st.settings.staff_meal.enabled !== false ? h('button', { class: 'btn staff-meal-btn', style: { width: '100%', margin: '.4em 0 .6em', borderStyle: 'dashed' }, onclick: () => staffMealDialog(t.total, () => payM.close()) }, '🍱 ใช้สิทธิ์สวัสดิการพนักงาน (ฟรี · เจ้าของอนุมัติทาง LINE)') : null,
       h('div', { class: 'pay-methods' }, methods.map((m) => h('button', { class: 'btn big' + (method === m.id ? ' on' : ''), onclick: () => { method = m.id; fillAmt(); drawLeft(); drawRight(); if (m.id === 'promptpay' && slipCfg().required && st.settings.payment.promptpay_enabled) setTimeout(() => openSlip(), 400); } }, m.name))),
       h('div', { style: { marginTop: '.8em' } }, langBar(false, () => drawLeft())),
       h('div', { style: { marginTop: '1em' } }, h('label', { class: 'switch' }, printReceipt, 'พิมพ์ใบเสร็จ'), ' ', h('label', { class: 'switch' }, printQueue, 'พิมพ์ใบเลขคิว'), ' ',
@@ -1505,6 +1507,54 @@ async function ordersDialog() {
   const dlg = modal('บิลและออเดอร์', body, { wide: true });
   draw().catch(errToast);
 }
+// ---------------- staff meal (free food & drink for a staff member, approved by the owner on LINE) ----------------
+async function staffMealDialog(total, closePay) {
+  let list;
+  try { list = await api.get('/staff-meals/staff'); } catch (e) { return errToast(e); }
+  const q = h('input', { class: 'input', placeholder: '🔍 ค้นหาชื่อพนักงาน' });
+  const grid = h('div', { class: 'meal-staff' });
+  const draw = () => grid.replaceChildren(...list.filter((s) => !q.value || `${s.name} ${s.nickname || ''} ${s.code}`.includes(q.value)).map((s) =>
+    h('button', { class: 'btn', onclick: () => { pick.close(); confirmMeal(s); } }, h('b', {}, s.nickname || s.name), h('small', {}, s.nickname ? s.name : s.code))));
+  q.addEventListener('input', draw); draw();
+  const pick = modal('🍱 สวัสดิการพนักงาน · เลือกพนักงานที่ใช้สิทธิ์', h('div', {}, h('style', {}, MEAL_CSS), q, grid), { wide: true, actions: [{ label: 'ยกเลิก', onClick: () => {} }] });
+  const confirmMeal = (s) => modal('ยืนยันใช้สิทธิ์สวัสดิการ', h('div', { style: { textAlign: 'center' } }, h('style', {}, MEAL_CSS),
+    h('div', { class: 'meal-who' }, '🍱 ', s.nickname ? `${s.name} (${s.nickname})` : s.name),
+    h('p', {}, 'ใช้สิทธิ์สวัสดิการพนักงานสำหรับอาหารและเครื่องดื่มมื้อนี้'), h('div', { class: 'bigsum num' }, baht(total), ' ฿'),
+    h('p', { class: 'small muted' }, 'ส่งคำขอให้เจ้าของร้านอนุมัติทาง LINE · อนุมัติแล้วบิลเป็น 0 บาท พิมพ์ใบเสร็จ "สวัสดิการพนักงาน" และใบเบิกสวัสดิการ')),
+  { actions: [{ label: 'ยกเลิก', onClick: () => {} }, { label: '✓ ยืนยันใช้สิทธิ์', class: 'ok big', onClick: async () => {
+    const r = await api.post('/staff-meals', { staff_id: s.id, order_id: st.cart.order_id, cart: cartPayload(), idempotency_key: st.cart.idem });
+    loadOrderIntoCart(r.order); saveCart(); renderCart();
+    closePay && closePay();
+    waitMeal(r, s);
+  } }] });
+}
+function waitMeal(r, s) {
+  const status = h('div', { class: 'meal-wait' }, h('div', { class: 'sp' }), h('div', {}, r.line_sent ? 'ส่งคำขอไปที่ LINE เจ้าของร้านแล้ว — รออนุมัติ…' : 'ยังไม่ได้เชื่อม LINE เจ้าของร้าน — ให้ผู้จัดการอนุมัติด้วย PIN'));
+  let finished = false;
+  const finish = async (approved) => {
+    if (finished) return; finished = true; clearInterval(poll); st.meal = null; dlg.close();
+    if (approved) { const o = await api.get('/orders/' + r.order.id); toast(`✅ อนุมัติสวัสดิการ ${s.nickname || s.name} แล้ว`, 'ok'); done(o); }
+    else { toast(`❌ เจ้าของร้านไม่อนุมัติสวัสดิการ ${s.nickname || s.name} — รับชำระตามปกติได้`, 'warn', 7000); }
+  };
+  st.meal = { id: r.id, onDecided: (e) => finish(e.approved) };
+  // in case a socket message is missed
+  const poll = setInterval(async () => { const m = await api.get('/staff-meals/' + r.id).catch(() => null); if (m && m.status === 'approved') finish(true); else if (m && m.status === 'rejected') finish(false); }, 5000);
+  const dlg = modal('🍱 รออนุมัติสวัสดิการพนักงาน', h('div', { style: { textAlign: 'center' } }, h('style', {}, MEAL_CSS),
+    h('div', { class: 'meal-who' }, s.nickname ? `${s.name} (${s.nickname})` : s.name), h('div', { class: 'bigsum num' }, baht(r.order.total), ' ฿'), status),
+  { onClose: () => { if (!finished) { clearInterval(poll); st.meal = null; } }, actions: [
+    { label: 'ยกเลิกคำขอ', onClick: async () => { finished = true; clearInterval(poll); st.meal = null; await api.post(`/staff-meals/${r.id}/cancel`).catch(() => {}); toast('ยกเลิกคำขอแล้ว — รับชำระตามปกติได้', 'info'); } },
+    { label: '🔑 อนุมัติด้วย PIN ผู้จัดการ', class: 'primary', close: false, onClick: async () => {
+      const ap = can('void_bill') ? null : await approverDialog('void_bill');
+      if (!can('void_bill') && !ap) return false;
+      await api.post(`/staff-meals/${r.id}/approve`, ap ? { approver: ap } : {});
+      await finish(true);
+    } }] });
+}
+const MEAL_CSS = `.meal-staff{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:10px;max-height:56vh;overflow:auto}
+.meal-staff .btn{display:grid;gap:2px;padding:14px 10px;height:auto}.meal-staff .btn small{color:var(--muted);font-weight:400}
+.meal-who{font-size:1.5em;font-weight:800;margin:.2em 0}.meal-wait{display:grid;gap:10px;justify-items:center;margin-top:12px;color:var(--muted)}
+.meal-wait .sp{width:34px;height:34px;border-radius:50%;border:4px solid var(--line);border-top-color:var(--brand);animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+.staff-meal-btn{width:100%;margin:.6em 0 .2em;border-style:dashed}`;
 // kitchen tickets again, as often as needed (all of the bill, or one)
 async function reprintKitchen(o, ticketId) {
   try {

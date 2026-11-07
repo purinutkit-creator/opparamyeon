@@ -1,7 +1,7 @@
 // Default document templates. The same JSON is rendered by public/shared/render.js for preview and printing.
 export const DOC_TYPES = {
   receipt: 'ใบเสร็จลูกค้า', kitchen: 'ใบครัว', queue: 'ใบเลขคิว', mobile_qr: 'ใบ Mobile Ordering', refund: 'ใบยกเลิก/คืนเงิน',
-  shift: 'ใบสรุปเปิด/ปิดรอบ', redeem: 'หลักฐานการแลกรางวัล', merchant: 'ใบสรุปร้านค้า (สำเนาร้าน)', payqr: 'ใบ QR ชำระเงิน (พร้อมเพย์)',
+  shift: 'ใบสรุปเปิด/ปิดรอบ', redeem: 'หลักฐานการแลกรางวัล', merchant: 'ใบสรุปร้านค้า (สำเนาร้าน)', staff_meal: 'ใบเบิกสวัสดิการพนักงาน', payqr: 'ใบ QR ชำระเงิน (พร้อมเพย์)',
 };
 
 const base = (elements, extra = {}) => ({ paper: 80, margin: 8, line_height: 1.3, section_gap: 6, font: 'Sarabun', size: 24, copies: 1, feed_after: 4, cut: 'full', elements, ...extra });
@@ -113,6 +113,25 @@ export const DEFAULT_TEMPLATES = {
     { type: 'divider', style: 'dash' },
     { type: 'barcode', value: '{bill_no}', height: 70, module: 2 },
     { type: 'qr', value: '{detail_url}', size_mm: 18, align: 'center', caption: 'สแกนดูรายละเอียดบิล (สำหรับพนักงาน)', caption_size: 18 },
+  ], { feed_after: 3 }),
+  // staff meal: printed instead of the merchant summary once the owner approved (keeps the bill barcode)
+  staff_meal: base([
+    { type: 'field', field: 'store_name', align: 'center', size: 28, weight: 800 },
+    { type: 'text', text: 'ใบเบิกสวัสดิการพนักงาน', align: 'center', size: 30, weight: 800, invert: true },
+    { type: 'field', field: 'benefit_staff', label: 'พนักงาน ', align: 'center', size: 34, weight: 800 },
+    { type: 'divider', style: 'dash' },
+    { type: 'field', field: 'queue_no', label: 'คิว ', align: 'center', size: 36, weight: 800 },
+    { type: 'field', field: 'bill_no', label: 'เลขบิล ', size: 22 },
+    { type: 'field', field: 'datetime', label: 'เวลา ', size: 22 },
+    { type: 'field', field: 'staff', label: 'ผู้ทำรายการ ', size: 22 },
+    { type: 'field', field: 'benefit_approved_by', label: 'อนุมัติโดย ', size: 22 },
+    { type: 'divider', style: 'dash' },
+    { type: 'items', show_options: true, show_note: false, show_price: true, show_dine: false, size: 22, col_qty: 12, col_price: 26 },
+    { type: 'divider', style: 'dash' },
+    { type: 'field', field: 'benefit_value', label: 'มูลค่าสวัสดิการ ', align: 'right', size: 28, weight: 800 },
+    { type: 'divider', style: 'dash' },
+    { type: 'barcode', value: '{bill_no}', height: 70, module: 2 },
+    { type: 'text', text: 'ลงชื่อผู้รับ ..................................', align: 'center', size: 22 },
   ], { feed_after: 3 }),
   // printed PromptPay QR for shops without a customer display: just the QR and the amount
   payqr: base([

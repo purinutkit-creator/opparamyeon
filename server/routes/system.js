@@ -304,6 +304,7 @@ const PUBLIC_KEYS = ['store', 'display', 'fonts', 'queue', 'mobile', 'members', 
 export function publicSettings(s) {
   const out = Object.fromEntries(PUBLIC_KEYS.map((k) => [k, s[k]]));
   out.members = { ...s.members, otp_webhook_url: undefined };
+  out.staff_meal = { enabled: (s.staff_meal || {}).enabled !== false };
   out.payment = { promptpay_enabled: !!s.payment.promptpay_id, promptpay_id: s.payment.promptpay_id, promptpay_name: s.payment.promptpay_name, slip_upload: s.payment.slip_upload,
     slip_required: !!s.payment.slip_required, slip_method: s.payment.slip_method || 'ai',
     beam: !!(s.payment.providers.beam && s.payment.providers.beam.enabled), mock: !!s.payment.mock_enabled };

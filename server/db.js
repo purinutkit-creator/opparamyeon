@@ -113,6 +113,9 @@ CREATE TABLE IF NOT EXISTS photo_sessions (id TEXT PRIMARY KEY, order_id TEXT, b
   status TEXT DEFAULT 'started', file_color TEXT, file_print TEXT, dl_token TEXT UNIQUE, prints INTEGER DEFAULT 0, paper_mm INTEGER DEFAULT 0, consent INTEGER DEFAULT 0,
   created_at TEXT, finished_at TEXT, expires_at TEXT);
 CREATE INDEX IF NOT EXISTS photo_sessions_order ON photo_sessions(order_id);
+CREATE TABLE IF NOT EXISTS staff_meals (id TEXT PRIMARY KEY, order_id TEXT NOT NULL, staff_id TEXT, staff_name TEXT, requested_by TEXT, requested_by_name TEXT, value INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'pending', decided_by TEXT, terminal_id TEXT, shift_id TEXT, created_at TEXT, decided_at TEXT);
+CREATE INDEX IF NOT EXISTS staff_meals_order ON staff_meals(order_id);
 CREATE TABLE IF NOT EXISTS translations (kind TEXT NOT NULL, ref TEXT NOT NULL, lang TEXT NOT NULL, data TEXT, src TEXT, updated_at TEXT, PRIMARY KEY (kind, ref, lang));
 `;
 

@@ -57,6 +57,8 @@ export async function storeData() {
 // the customer's copy in the language they used (order.lang); merchant / kitchen copies stay Thai
 export async function receiptDocData(order, extra = {}) {
   const d = await orderDocData(order, extra);
+  // staff meal: "สวัสดิการพนักงาน: name" on the customer's copy
+  Object.assign(d, await (await import('../routes/staffmeal.js')).benefitFields(order));
   // photo booth: a bill of at least the set amount gets a QR to scan at the booth
   const pb = (await getSettings()).photobooth || {};
   if (pb.enabled && pb.require_receipt && order.status === 'paid' && order.total - (order.refunded_amount || 0) >= (pb.min_spend || 0)) {

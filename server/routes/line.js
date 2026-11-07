@@ -102,6 +102,18 @@ async function handle(ev) {
   const p = new URLSearchParams(ev.postback.data || '');
   const a = p.get('a'), who = 'line:' + (src.userId || src.groupId || '');
   if (a === 'report') return lineReply(rt, roleOf(rec) === 'owner' ? await salesReport(rec) : OWNER_ONLY);
+  // staff meal request: only owners decide
+  if (a === 'meal') {
+    if (roleOf(rec) !== 'owner') return lineReply(rt, OWNER_ONLY);
+    const { decideMeal } = await import('./staffmeal.js');
+    const ok = p.get('ok') === '1';
+    try {
+      const out = await decideMeal(p.get('id'), ok, who);
+      const m = out.meal;
+      if (out.already) return lineReply(rt, { type: 'text', text: `คำขอนี้${({ approved: 'อนุมัติไปแล้ว', rejected: 'ไม่อนุมัติไปแล้ว', cancelled: 'ถูกยกเลิกที่เครื่องขายแล้ว' })[m.status] || 'ดำเนินการแล้ว'} (${m.staff_name})` });
+      return lineReply(rt, { type: 'text', text: ok ? `✅ อนุมัติสวัสดิการพนักงานแล้ว\n${m.staff_name} · ${(m.value / 100).toFixed(2)} บาท\nพิมพ์ใบเสร็จและใบเบิกสวัสดิการที่ร้านแล้ว` : `❌ ไม่อนุมัติสวัสดิการ ${m.staff_name} — แจ้งเครื่องขายแล้ว` });
+    } catch (e) { return lineReply(rt, { type: 'text', text: '⚠️ ทำรายการไม่สำเร็จ: ' + e.message }); }
+  }
   if (a === 'top') return lineReply(rt, roleOf(rec) === 'owner' ? await topSellers(rec) : OWNER_ONLY);
   if (a === 'low') return lineReply(rt, lowStockMessage(await lowItems()));
   if (a === 'show') { const x = await itemOf(p.get('t'), p.get('i')); return x ? lineReply(rt, stockCard(x)) : null; }

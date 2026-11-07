@@ -68,6 +68,7 @@ export const DEFAULT_SETTINGS = {
   labels: {},
   // where products come from: [{ id, name, flag }] — flag is an emoji or a picture link; set per product in the menu
   countries: [],
+  staff_meal: { enabled: true }, // free food & drink for staff: requested at the till, approved by the owner on LINE (or a manager PIN)
   // photo booth: a free photo strip for receipts of at least min_spend (scan the receipt QR at the booth)
   photobooth: { enabled: false, require_receipt: true, min_spend: 20000, sessions_per_receipt: 1, receipt_hours: 24, layouts: ['single', 'strip2', 'strip3', 'strip4', 'grid4', 'grid6', 'grid8', 'receipt'],
     countdown: 3, gap: 2, mirror: true, printer_id: '', copies: 1, auto_print: true, store_photos: true, link_hours: 24, title: 'YOUR LITTLE MOMENT', footer: 'THANK YOU FOR SMILING',
