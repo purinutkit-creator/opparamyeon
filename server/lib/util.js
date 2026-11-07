@@ -68,6 +68,10 @@ export const DEFAULT_SETTINGS = {
   labels: {},
   // where products come from: [{ id, name, flag }] — flag is an emoji or a picture link; set per product in the menu
   countries: [],
+  // photo booth: a free photo strip for receipts of at least min_spend (scan the receipt QR at the booth)
+  photobooth: { enabled: false, require_receipt: true, min_spend: 20000, sessions_per_receipt: 1, receipt_hours: 24, layouts: ['single', 'strip2', 'strip3', 'strip4', 'grid4', 'grid6', 'grid8', 'receipt'],
+    countdown: 3, gap: 2, mirror: true, printer_id: '', copies: 1, auto_print: true, store_photos: true, link_hours: 24, title: 'YOUR LITTLE MOMENT', footer: 'THANK YOU FOR SMILING',
+    show_date: true, show_qr: true, idle_seconds: 60, dither: 'floyd', accent: '#ff6b8b', bg: '#fbf7f2', logo: '', background: '', consent_text: '' },
   // what each spice level (0–5 chilies) is called on the customer display / website / product form
   spice_words: ['ไม่เผ็ด', 'เผ็ดน้อย', 'เผ็ดปานกลาง', 'เผ็ดมาก', 'เผ็ดมากๆ', 'เผ็ดที่สุด'],
   // customer website (/web): shop info, hours, menu, map and links — edited in admin → เว็บไซต์ร้าน

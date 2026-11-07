@@ -39,6 +39,7 @@ export const DEFAULT_TEMPLATES = {
     { type: 'payments', size: 22 },
     { type: 'divider', style: 'dash' },
     { type: 'points', size_mm: 30, size: 24 },
+    { type: 'photo', size_mm: 26, size: 24 },
     { type: 'text', text: '{footer}', align: 'center', size: 22 },
   ]),
   // Kitchen ticket (style: staff / received / print time → big table → big "qty  item" rows)

@@ -302,7 +302,7 @@ export async function fontsPage() {
 export async function printersPage() {
   const [printers, tpl, cat, terms, jobs] = await Promise.all([api.get('/printers'), api.get('/templates'), api.get('/catalog?all=1'), api.get('/terminals'), api.get('/print/jobs')]);
   const open = (p) => {
-    const roles = [['receipt', 'ใบเสร็จ'], ['kitchen', 'ใบครัว'], ['merchant', 'ใบสรุปร้านค้า'], ['queue', 'ใบเลขคิว'], ['mobile_qr', 'ใบ Mobile Ordering'], ['refund', 'ใบยกเลิก/คืนเงิน'], ['shift', 'สรุปรอบ'], ['redeem', 'หลักฐานแลกรางวัล'], ['payqr', 'ใบ QR ชำระเงิน (ไม่เลือก = ใช้เครื่องพิมพ์ใบเสร็จ)']];
+    const roles = [['receipt', 'ใบเสร็จ'], ['kitchen', 'ใบครัว'], ['merchant', 'ใบสรุปร้านค้า'], ['queue', 'ใบเลขคิว'], ['mobile_qr', 'ใบ Mobile Ordering'], ['refund', 'ใบยกเลิก/คืนเงิน'], ['shift', 'สรุปรอบ'], ['redeem', 'หลักฐานแลกรางวัล'], ['payqr', 'ใบ QR ชำระเงิน (ไม่เลือก = ใช้เครื่องพิมพ์ใบเสร็จ)'], ['photo', '📸 รูปจากตู้ถ่ายรูป']];
     const f = form([{ k: 'name', label: 'ชื่อเครื่อง' }, { k: 'conn', label: 'ช่องทาง', type: 'select', options: [['usb', 'USB (WebUSB)'], ['lan', 'LAN (IP:Port)'], ['bluetooth', 'Bluetooth'], ['serial', 'Serial/COM'], ['agent_usb', 'USB ผ่าน Print Agent'], ['browser', 'เบราว์เซอร์ (A4/ทั่วไป)']] },
       { k: 'address', label: 'IP / Path' }, { k: 'port', label: 'Port', type: 'number' }, { k: 'paper', label: 'กระดาษ', type: 'select', options: [[80, '80 มม.'], [58, '58 มม.']] }, { k: 'margin', label: 'ระยะขอบ (จุด)', type: 'number' },
       { k: 'copies', label: 'จำนวนสำเนา', type: 'number' }, { k: 'cut_mode', label: 'การตัด', type: 'select', options: [['full', 'ตัดเต็ม'], ['partial', 'ตัดบางส่วน (ถ้ารองรับ)'], ['none', 'ไม่ตัด']] },

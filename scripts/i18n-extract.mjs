@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('..', import.meta.url));
-export const FILES = { 'public/m/m.js': 'tx', 'public/member/member.js': 'tx', 'public/web/web.js': 'tx', 'public/shared/render.js': 'tr' };
+export const FILES = { 'public/m/m.js': 'tx', 'public/member/member.js': 'tx', 'public/web/web.js': 'tx', 'public/photo/photo.js': 'tx', 'public/shared/render.js': 'tr' };
 export function extract() {
   const out = new Set();
   for (const [f, fn] of Object.entries(FILES)) {

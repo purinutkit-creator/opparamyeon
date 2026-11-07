@@ -14,7 +14,7 @@ export const FIELD_LABELS = {
   mobile_ref: 'เลขอ้างอิง QR', mobile_expires: 'วันหมดอายุ QR', reward_name: 'ชื่อรางวัล', coupon_code: 'โค้ดคูปอง', points_used: 'แต้มที่ใช้',
   pay_amount: 'ยอดชำระ (QR)', promptpay_name: 'ชื่อบัญชีพร้อมเพย์', promptpay_masked: 'เลขพร้อมเพย์ (ปิดบางส่วน)',
 };
-export const ELEMENT_TYPES = { logo: 'โลโก้', field: 'ข้อมูลจากระบบ', text: 'ข้อความอิสระ', items: 'รายการสินค้า', totals: 'ยอดรวม', payments: 'การชำระเงิน', divider: 'เส้นคั่น',
+export const ELEMENT_TYPES = { photo: 'QR ถ่ายรูปฟรี (ตู้ถ่ายรูป)', logo: 'โลโก้', field: 'ข้อมูลจากระบบ', text: 'ข้อความอิสระ', items: 'รายการสินค้า', totals: 'ยอดรวม', payments: 'การชำระเงิน', divider: 'เส้นคั่น',
   space: 'ช่องว่าง', image: 'รูปภาพ', barcode: 'บาร์โค้ด', qr: 'QR Code', cut: 'จุดตัดกระดาษ', shift_summary: 'สรุปรอบการขาย', rows: 'ตารางสองคอลัมน์', points: 'กรอบสะสมแต้ม (QR รับแต้ม / แต้มสมาชิก)' };
 export const VARS = ['detail_url', 'shift_url', 'queue_number', 'bill_no', 'table_name', 'customer_name', 'member_name', 'total', 'store_name', 'datetime', 'staff', 'claim_url', 'mobile_url', 'footer', 'phone', 'pay_qr'];
 
@@ -69,6 +69,8 @@ function valueOf(field, d) {
 export async function renderDoc(tpl, data, opts = {}) {
   const width = opts.width || tpl.width_dots || paperDots(tpl.paper);
   const tr = trOf(data);
+  // a receipt that earns a booth photo always shows its QR, also on layouts made before the booth existed
+  if (data.photo_url && !tpl.elements.some((e) => e.type === 'photo')) tpl = { ...tpl, elements: [...tpl.elements, { type: 'photo' }] };
   let margin = Number(tpl.margin ?? 8);
   let inner = width - margin * 2; // narrowed while drawing inside a framed element (e.box)
   const baseFamily = opts.font || tpl.font || 'Sarabun'; // opts.font: the shop's font for printed documents (may be a TH/EN stack)
@@ -85,6 +87,7 @@ export async function renderDoc(tpl, data, opts = {}) {
     if (e.type === 'image') images.set(e, await loadImage(e.src));
     if (e.type === 'qr') { const v = fillVars(e.value, vars); if (v) images.set(e, await qrMatrix(v)); }
     if (e.type === 'points' && data.points_mode === 'claim' && data.claim_url) images.set(e, await qrMatrix(data.claim_url));
+    if (e.type === 'photo' && data.photo_url) images.set(e, await qrMatrix(data.photo_url));
   }
   const run = (ctx, draw) => {
     let y = margin;
@@ -269,6 +272,17 @@ export async function renderDoc(tpl, data, opts = {}) {
           if (!m) break;
           qrAt(m, e.size_mm, e.align, margin, inner);
           if (e.caption) text(fillVars(e.caption, vars), { ...e, align: 'center' }, { size: e.caption_size || 22 });
+          break;
+        }
+        case 'photo': {
+          // photo booth coupon: "free photo — scan at the booth"
+          const m = images.get(e);
+          if (!m) break;
+          const size = e.size || 24;
+          y += 6; text(e.title ? tr(e.title) : tr('📸 ถ่ายรูปฟรี! สแกนที่ตู้ถ่ายรูป'), e, { size: Math.round(size * 1.05), weight: 800, align: 'center', invert: true }); y += 4;
+          qrAt(m, e.size_mm || 26, 'center', margin, inner);
+          text(e.caption ? tr(e.caption) : tr('ใช้ได้ 1 ครั้ง ภายในวันนี้'), e, { size: Math.round(size * 0.8), align: 'center' });
+          y += 6;
           break;
         }
         case 'points': {

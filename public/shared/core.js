@@ -1,7 +1,7 @@
 // Pure logic shared by the server (Node) and the browser.
 // Money is always an integer number of satang (1 บาท = 100 satang).
 
-export const VERSION = '1.60.0';
+export const VERSION = '1.61.0';
 
 export const baht = (satang) => {
   const v = (Number(satang) || 0) / 100;
@@ -359,6 +359,7 @@ export function keyFromCode(e) {
   let m = /^Key([A-Z])$/.exec(c);
   if (m) { const up = e.shiftKey !== (e.getModifierState && e.getModifierState('CapsLock')); return up ? m[1] : m[1].toLowerCase(); }
   m = /^(?:Digit|Numpad)([0-9])$/.exec(c);
-  if (m && !e.shiftKey) return m[1];
-  return ({ Minus: e.shiftKey ? '_' : '-', Period: '.', Slash: '/', Equal: e.shiftKey ? '+' : '=', NumpadSubtract: '-', NumpadDecimal: '.', NumpadDivide: '/', NumpadAdd: '+' })[c] || null;
+  if (m) return e.shiftKey && c.startsWith('Digit') ? ')!@#$%^&*('[Number(m[1])] : m[1];
+  return ({ Minus: e.shiftKey ? '_' : '-', Period: e.shiftKey ? '>' : '.', Slash: e.shiftKey ? '?' : '/', Equal: e.shiftKey ? '+' : '=', Semicolon: e.shiftKey ? ':' : ';', Comma: e.shiftKey ? '<' : ',',
+    NumpadSubtract: '-', NumpadDecimal: '.', NumpadDivide: '/', NumpadAdd: '+' })[c] || null;
 }

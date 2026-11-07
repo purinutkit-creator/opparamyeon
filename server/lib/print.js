@@ -57,6 +57,11 @@ export async function storeData() {
 // the customer's copy in the language they used (order.lang); merchant / kitchen copies stay Thai
 export async function receiptDocData(order, extra = {}) {
   const d = await orderDocData(order, extra);
+  // photo booth: a bill of at least the set amount gets a QR to scan at the booth
+  const pb = (await getSettings()).photobooth || {};
+  if (pb.enabled && pb.require_receipt && order.status === 'paid' && order.total - (order.refunded_amount || 0) >= (pb.min_spend || 0)) {
+    d.photo_url = `${process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || ''}/photo/#r=${await billToken(order.bill_no)}`;
+  }
   const lang = order.lang;
   if (!lang || lang === 'th') return d;
   const { translationMap, uiDict } = await import('./translate.js');
