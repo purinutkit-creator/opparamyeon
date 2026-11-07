@@ -96,6 +96,9 @@ function render() {
       h('nav', { class: 'nav' }, D.menu ? h('a', { href: '#menu' }, tx('เมนู')) : null, h('a', { href: '#hours' }, tx('เวลาเปิด')), h('a', { href: '#contact' }, tx('ติดต่อ')), W.about ? h('a', { href: '#about' }, tx('เกี่ยวกับร้าน')) : null),
       langPicker(h, () => { localize(); render(); }, { fontSize: '.8em', maxWidth: '108px', marginRight: '6px' }),
       h('span', { class: 'status' + (O.open ? ' open' : '') }, O.open ? tx('เปิดอยู่') : tx('ปิดอยู่')))),
+    D.members ? h('section', { class: 'member-top', style: { paddingTop: '16px', paddingBottom: 0 } }, h('div', { class: 'wrap' }, h('div', { class: 'member' },
+      h('div', {}, h('h2', { style: { color: '#fff' } }, tx('สมัครสมาชิก สะสมแต้ม')), h('p', {}, tx('ทุกการสั่งได้แต้ม แลกของรางวัลและส่วนลดที่ร้าน'))),
+      h('a', { class: 'cta', href: '/member/' }, tx('⭐ สมัคร / เข้าสู่ระบบสมาชิก'))))) : null,
     h('section', { class: 'hero', id: 'top' }, h('div', { class: 'wrap' },
       h('div', {},
         S.branch ? h('span', { class: 'eyebrow' }, S.branch) : null,
@@ -126,9 +129,6 @@ function render() {
     h('section', { id: 'contact', style: { paddingTop: 0 } }, h('div', { class: 'wrap' }, h('div', { class: 'info' },
       contact.length ? h('div', { class: 'box reveal' }, h('h3', {}, tx('☎️ ติดต่อร้าน')), h('div', { class: 'links' }, contact)) : null,
       delivery.length ? h('div', { class: 'box reveal' }, h('h3', {}, tx('🛵 สั่งเดลิเวอรี่')), h('div', { class: 'links' }, delivery)) : null))),
-    D.members ? h('section', { style: { paddingTop: 0 } }, h('div', { class: 'wrap' }, h('div', { class: 'member reveal' },
-      h('div', {}, h('h2', { style: { color: '#fff' } }, tx('สมัครสมาชิก สะสมแต้ม')), h('p', {}, tx('ทุกการสั่งได้แต้ม แลกของรางวัลและส่วนลดที่ร้าน'))),
-      h('a', { class: 'cta', href: '/member/' }, tx('⭐ สมัคร / เข้าสู่ระบบสมาชิก'))))) : null,
     h('footer', {}, h('div', { class: 'wrap' }, `© ${new Date().getFullYear()} ${S.name}`, S.branch ? ' · ' + S.branch : '')));
   drawMenu();
   observe(app);
